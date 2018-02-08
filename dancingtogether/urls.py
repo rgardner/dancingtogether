@@ -17,9 +17,12 @@ from django.contrib import admin
 from django.urls import include, path
 
 from musicplayer import views as musicplayer_views
+from accounts import views as accounts_views
 
 urlpatterns = [
-    path('', musicplayer_views.room),
-    path('musicplayer/', include('musicplayer.urls')),
+    path('', include('musicplayer.urls')),
+    path('login/', accounts_views.LoginView.as_view()),
+    path('logout/', accounts_views.LogoutView.as_view()),
+    path('accounts/', include('accounts.urls')),
     path('admin/', admin.site.urls),
 ]
