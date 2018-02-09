@@ -1,6 +1,6 @@
 {
     "name": "Dancing Together",
-    "description": "Have dancy parties across the Internet.",
+    "description": "Have dance parties across the Internet.",
     "image": "heroku/python",
     "repository": "https://github.com/rgardner/dancingtogether",
     "keywords": ["python", "django", "spotify"],
