@@ -1,4 +1,5 @@
 from django.http import HttpResponse
 
-def index(request):
-    return HttpResponse("Hello, world. You'are at the musicplayer index")
+
+def room(request, room_id=None):
+    return HttpResponse("Hello, world. You're trying to go to {}".format(room_id))
