@@ -2,33 +2,87 @@
 
 {% block content %}
 
+<div id="album-art-container">
+</div>
+
+<div id="playback-controls">
+    <button type="button" aria-pressed="false" onclick="handlePreviousTrackButtonClick(event)" disabled="true">
+        Previous Track
+    </button>
+
+    <button id="playPauseButton" type="button" aria-pressed="false" onclick="handlePlayPauseButtonClick(event)" disabled="true">
+        Play
+    </button>
+
+    <button type="button" aria-pressed="false" onclick="handleNextTrackButtonClick(event)" disabled="true">
+        Next Track
+    </button>
+</div>
+
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script>
 window.onSpotifyWebPlaybackSDKReady = () => {
-    const token = '{{ access_token }}';
-    const player = new Spotify.Player({
+    window.player = new Spotify.Player({
         name: 'Dancing Together',
-        getOAuthToken: cb => { cb(token); }
+        getOAuthToken: cb => { cb('{{ access_token }}'); }
     });
 
     // Error handling
-    player.on('initialization_error', e => { console.error(e); });
-    player.on('authentication_error', e => { console.error(e); });
-    player.on('account_error', e => { console.error(e); });
-    player.on('playback_error', e => { console.error(e); });
+    window.player.on('initialization_error', e => { console.error(e); });
+    window.player.on('authentication_error', e => { console.error(e); });
+    window.player.on('account_error', e => { console.error(e); });
+    window.player.on('playback_error', e => { console.error(e); });
 
     // Playback status updates
-    player.on('player_state_changed', state => { console.log(state); });
+    window.player.on('player_state_changed', state => {
+        console.log('Player state changed', state);
+
+        // Update Play/Pause button
+        if (state.paused) {
+            $('#playPauseButton').html("Play");
+        } else {
+            $('#playPauseButton').html("Pause");
+        }
+
+        // Update album art
+        $('#album-art-container').empty();
+        $('<img/>', {
+            src: state.track_window.current_track.album.images[0].url,
+            alt: state.track_window.current_track.album.name
+        }).appendTo('#album-art-container');
+    });
 
     // Ready
-    player.on('ready', data => {
+    window.player.on('ready', data => {
         let { device_id } = data;
         console.log('Ready with Device ID', device_id);
+
+        // Show Playback UI
+        $("#playback-controls :button").prop("disabled", false);
     });
 
     // Connect to the player!
-    player.connect();
+    window.player.connect();
 }
+
+function handlePreviousTrackButtonClick(event) {
+    window.player.previousTrack().then(() => {
+        console.log("Set to previous track");
+    });
+}
+
+function handlePlayPauseButtonClick(event) {
+    window.player.togglePlay().then(() => {
+        console.log("Toggled playback");
+    });
+}
+
+function handleNextTrackButtonClick(event) {
+    window.player.nextTrack().then(() => {
+        console.log("Set to next track");
+    });
+}
+
 </script>
 
 {% endblock %}{# content #}
