@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+<script>
+window.onSpotifyWebPlaybackSDKReady = () => {
+    const token = '{{ access_token }}';
+    const player = new Spotify.Player({
+        name: 'Dancing Together',
+        getOAuthToken: cb => { cb(token); }
+    });
+
+    // Error handling
+    player.on('initialization_error', e => { console.error(e); });
+    player.on('authentication_error', e => { console.error(e); });
+    player.on('account_error', e => { console.error(e); });
+    player.on('playback_error', e => { console.error(e); });
+
+    // Playback status updates
+    player.on('player_state_changed', state => { console.log(state); });
+
+    // Ready
+    player.on('ready', data => {
+        let { device_id } = data;
+        console.log('Ready with Device ID', device_id);
+    });
+
+    // Connect to the player!
+    player.connect();
+}
+</script>
+
+{% endblock %}{# content #}

@@ -3,3 +3,6 @@
 
 # Django
 staticfiles
+
+# Dancing Together
+.env

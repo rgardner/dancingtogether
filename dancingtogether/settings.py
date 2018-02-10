@@ -126,3 +126,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 django_heroku.settings(locals())
+
+SITE_URL = os.environ.get('DT_SITE_URL')
+SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
+SPOTIFY_CLIENT_SECRET = os.environ.get('DT_SPOTIFY_CLIENT_SECRET')
