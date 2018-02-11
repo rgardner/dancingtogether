@@ -12,6 +12,8 @@ django-heroku = "*"
 gunicorn = "*"
 requests = "*"
 python-dateutil = "*"
+channels = "*"
+channels-redis = "*"
 
 
 [requires]
