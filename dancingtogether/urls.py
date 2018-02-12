@@ -17,8 +17,10 @@ from django.contrib import admin
 from django.urls import include, path
 
 import accounts.views
+import main.views
 
 urlpatterns = [
+    path('', main.views.index, name='homepage'),
     path('stations/', include('radio.urls')),
     path('login/', accounts.views.LoginView.as_view()),
     path('logout/', accounts.views.LogoutView.as_view()),

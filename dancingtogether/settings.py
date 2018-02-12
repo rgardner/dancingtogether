@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'channels',
     # Project Apps
+    'main',
     'radio',
     'accounts',
 ]

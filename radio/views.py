@@ -35,7 +35,7 @@ def spotify_fresh_access_token_required(view_func):
 
 
 def index(request):
-    return HttpResponse('TODO: implement stations index')
+    return render(request, 'station_index.html')
 
 
 @login_required
