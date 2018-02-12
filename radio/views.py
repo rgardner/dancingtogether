@@ -34,13 +34,17 @@ def spotify_fresh_access_token_required(view_func):
     return _wrapped_view_func
 
 
+def index(request):
+    pass
+
+
 @login_required
 @spotify_authorization_required
 @spotify_fresh_access_token_required
-def room(request, room_id=None):
-    logger.info("{} visited the room page")
+def station(request, station_id=None):
     access_token = SpotifyAccessToken(request).token
-    return render(request, 'room.html', context={'access_token': access_token})
+    return render(
+        request, 'station.html', context={'access_token': access_token})
 
 
 def request_spotify_authorization(request):
@@ -87,17 +91,17 @@ def get_url_safe_oauth_request_state(request):
 
 def build_request_authorization_url(request):
     base = 'https://accounts.spotify.com/authorize'
+    scope = 'streaming user-read-birthdate user-read-email user-read-private'
     query_params = {
         'client_id': settings.SPOTIFY_CLIENT_ID,
         'response_type': 'code',
         'redirect_uri': get_oauth_redirect_uri(),
         'state': get_url_safe_oauth_request_state(request),
-        'scope':'streaming user-read-birthdate user-read-email user-read-private'
+        'scope':scope,
     }
 
     query_params = urllib.parse.urlencode(query_params)
     return '{}?{}'.format(base, query_params)
-
 
 
 # Spotify OAuth Step 2: Request access and refresh tokens
@@ -123,7 +127,7 @@ class SpotifyAccessToken:
 
     def refresh(self):
         refresh_token = self._request.user.spotifycredentials.refresh_token
-        SpotifyAccessToken.request_refreshed_access_token(refresh_token, self._request)
+        SpotifyAccessToken.refresh_token(refresh_token, self._request)
 
     @staticmethod
     def request_refresh_and_access_token(code, request):
@@ -133,7 +137,7 @@ class SpotifyAccessToken:
             'code': code,
             'redirect_uri': get_oauth_redirect_uri(),
             'client_id': settings.SPOTIFY_CLIENT_ID,
-            'client_secret': settings.SPOTIFY_CLIENT_SECRET
+            'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
 
         r = requests.post(url, data)
@@ -151,13 +155,13 @@ class SpotifyAccessToken:
         request.session['spotify_access_token_expiration_time'] = expiration_time.isoformat()
 
     @staticmethod
-    def request_refreshed_access_token(refresh_token, request):
+    def refresh_token(refresh_token, request):
         url = 'https://accounts.spotify.com/api/token'
         data = {
             'grant_type': 'refresh_token',
             'refresh_token': refresh_token,
             'client_id': settings.SPOTIFY_CLIENT_ID,
-            'client_secret': settings.SPOTIFY_CLIENT_SECRET
+            'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
 
         r = requests.post(url, data)

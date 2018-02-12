@@ -3,7 +3,7 @@ from channels.http import AsgiHandler
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 
-from musicplayer.consumers import MusicConsumer
+from radio.consumers import StationConsumer
 
 
 # The channel routing defines what connections get handled by what consumers,
@@ -19,10 +19,10 @@ application = ProtocolTypeRouter({
     # We actually don't need the URLRouter here, but we've put it in for
     # illustration. Also note the inclusion of the AuthMiddlewareStack to
     # add users and sessions - see http://channels.readthedocs.io/en/latest/topics/authentication.html
-    "websocket": AuthMiddlewareStack(
+    'websocket': AuthMiddlewareStack(
         URLRouter([
             # URLRouter just takes standard Django path() or url() entries.
-            path("chat/stream/", MusicConsumer),
+            path('radio/stream/', StationConsumer),
         ]),
     ),
 

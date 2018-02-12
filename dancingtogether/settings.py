@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'channels',
     # Project Apps
-    'musicplayer',
+    'radio',
     'accounts',
 ]
 
@@ -157,7 +157,7 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'DEBUG',
         },
-        'musicplayer': {
+        'radio': {
             'handlers': ['console'],
             'level': 'DEBUG',
         },
