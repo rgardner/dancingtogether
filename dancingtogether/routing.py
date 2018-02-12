@@ -22,7 +22,7 @@ application = ProtocolTypeRouter({
     'websocket': AuthMiddlewareStack(
         URLRouter([
             # URLRouter just takes standard Django path() or url() entries.
-            path('radio/stream/', StationConsumer),
+            path('station/stream/', StationConsumer),
         ]),
     ),
 

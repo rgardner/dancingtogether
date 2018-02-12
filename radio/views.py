@@ -35,7 +35,7 @@ def spotify_fresh_access_token_required(view_func):
 
 
 def index(request):
-    pass
+    return HttpResponse('TODO: implement stations index')
 
 
 @login_required
@@ -69,14 +69,14 @@ def oauth_callback(request):
         code = result['code']
         SpotifyAccessToken.request_refresh_and_access_token(code, request)
         # TODO(rogardn): redirect to original destination before oauth request
-        return redirect('/')
+        return redirect('/stations')
 
 
 # Spotify OAuth Common
 
 
 def get_oauth_redirect_uri():
-    return settings.SITE_URL + '/request-authorization-callback'
+    return settings.SITE_URL + '/stations/request-authorization-callback'
 
 
 def get_url_safe_oauth_request_state(request):
