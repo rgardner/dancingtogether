@@ -19,6 +19,9 @@
     </button>
 </div>
 
+<div id="chats">
+</div>
+
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script>
 window.onSpotifyWebPlaybackSDKReady = () => {
@@ -59,10 +62,93 @@ window.onSpotifyWebPlaybackSDKReady = () => {
 
         // Show Playback UI
         $("#playback-controls :button").prop("disabled", false);
+
+        // Set up connection to server
+        setUpWebSocket();
     });
 
     // Connect to the player!
     window.player.connect();
+}
+
+function setUpWebSocket() {
+    // Correctly decide between ws:// and wss://
+    const ws_scheme = window.location.protocol == "https:" ? "wss" : "ws";
+    const ws_path = ws_scheme + '://' + window.location.host + "/chat/stream/";
+    console.log("Connecting to " + ws_path);
+    window.socket = new ReconnectingWebSocket(ws_path);
+
+    window.socket.onopen = function() {
+        console.log("Connected to room socket");
+    }
+
+    window.socket.onclose = function() {
+        console.log("Disconnected from room socket");
+    }
+
+    window.socket.onmessage = function(message) {
+        console.log("Got websocket message " + message.data);
+        const data = JSON.parse(message.data);
+
+        if (data.error) {
+            console.log(data.error);
+            return;
+        }
+
+        if (data.join) {
+            console.log("Joining room " + data.join);
+            var roomdiv = $(
+                    "<div class='room' id='room-" + data.join + "'>" +
+                    //"<h2>" + data.title + "</h2>" +
+                    "<div class='messages'></div>" +
+                    "<form><input><button>Send</button></form>" +
+                    "</div>"
+            );
+            // Hook up send button to send a message
+            roomdiv.find("form").on("submit", function () {
+                socket.send(JSON.stringify({
+                    "command": "send",
+                    "room": data.join,
+                    "message": roomdiv.find("input").val()
+                }));
+                roomdiv.find("input").val("");
+                return false;
+            });
+            $("#chats").append(roomdiv);
+        } else if (data.leave) {
+            console.log("Leaving room " + data.leave);
+        } else if (data.message || data.msg_type != 0) {
+            console.log("received message: ", data.message, "from: ", data.username);
+
+            const msgdiv = $("#room-" + data.room + " .messages");
+            var ok_msg = "";
+            if (data.msg_type === "message") {
+                // Message
+                ok_msg = "<div class='message'>" +
+                         "<span class='username'>" + data.username + "</span>" +
+                         "<span class='body'>" + data.message + "</span>" +
+                         "</div>";
+            } else if (data.msg_type === "enter") {
+                // User joined room
+                ok_msg = "<div class='contextual-message text-muted'>" + data.username +
+                         " joined the room!" +
+                         "</div>";
+            } else if (data.msg_type === "leave") {
+                // User left room
+                ok_msg = "<div class='contextual-message text-muted'>" + data.username +
+                         " left the room!" +
+                         "</div>";
+            } else {
+                console.error("Unsupported message type!");
+                return;
+            }
+
+            msgdiv.append(ok_msg);
+            msgdiv.scrollTop(msgdiv.prop("scrollHeight"));
+        } else {
+            console.error("Cannot handle message!");
+        }
+    }
 }
 
 function handlePreviousTrackButtonClick(event) {

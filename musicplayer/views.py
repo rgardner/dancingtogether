@@ -13,6 +13,8 @@ import requests
 from dancingtogether import settings
 from .models import SpotifyCredentials
 
+logger = logging.getLogger(__name__)
+
 
 def spotify_authorization_required(view_func):
     def _wrapped_view_func(request, *args, **kwargs):
@@ -36,6 +38,7 @@ def spotify_fresh_access_token_required(view_func):
 @spotify_authorization_required
 @spotify_fresh_access_token_required
 def room(request, room_id=None):
+    logger.info("{} visited the room page")
     access_token = SpotifyAccessToken(request).token
     return render(request, 'room.html', context={'access_token': access_token})
 
@@ -51,12 +54,12 @@ def oauth_callback(request):
     # Validate OAuth state parameter
     expected_state = get_url_safe_oauth_request_state(request)
     if result['state'] != expected_state:
-        logging.debug('User received invalid oauth request state response')
+        logger.debug('User received invalid oauth request state response')
         return HttpResponse('Invalid OAuth state', status_code=400)
 
     if 'error' in result:
         error = result['error']
-        logging.debug('User rejected the oauth permissions: {}'.format(error))
+        logger.debug('User rejected the oauth permissions: {}'.format(error))
         return redirect('/')
     else:
         code = result['code']

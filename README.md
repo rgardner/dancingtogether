@@ -9,6 +9,8 @@ it, rewind it, enjoy it!
 
 ## Development
 
+### Manual Installation
+
 Want to run it locally? Simply run `dev_setup.sh` to install dependencies, set
 up heroku deployment, and run the initial database migrations. Then create the
 superuser and set the values in `.env`.
@@ -24,6 +26,29 @@ Now you're ready to run the local server!
 
 ```sh
 $ heroku local web
+```
+
+### Docker installation
+
+Run the app:
+
+```sh
+$ docker-compose up -d
+```
+
+**Note**: Prefix any `python manage.py` commands with
+`docker-compose run --rm web`.
+
+```sh
+$ docker-compose run --rm web python manage.py migrate
+$ docker-compose run --rm web python manage.py createsuperuser
+```
+
+To enable easy debugging with `pdb`:
+
+```sh
+$ docker-compose up -d
+$ docker attach dancingtogether_web_1
 ```
 
 ### Code Map
