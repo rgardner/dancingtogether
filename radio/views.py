@@ -16,10 +16,13 @@ def index(request):
 @login_required
 @spotify.authorization_required
 @spotify.fresh_access_token_required
-def station(request, station_id=None):
+def station(request, station_id):
     access_token = spotify.AccessToken(request).token
     return render(
-        request, 'station.html', context={'access_token': access_token})
+        request, 'station.html', context={
+            'access_token': access_token,
+            'station_id': station_id,
+        })
 
 
 def oauth_callback(request):

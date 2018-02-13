@@ -40,6 +40,15 @@ window.onSpotifyWebPlaybackSDKReady = () => {
     window.player.on('player_state_changed', state => {
         console.log('Player state changed', state);
 
+        // Let the server determine what to do. Potential perf optimization
+        // for both client and server is to only send this event if:
+        // 1) the user is a dj (this can change during the stream)
+        // 2) if this is a legitimate change and not just a random update
+        window.socket.send(JSON.stringify({
+            'command': 'dj_state_change',
+            'state': state
+        }));
+
         // Update Play/Pause button
         if (state.paused) {
             $('#playPauseButton').html("Play");
@@ -80,6 +89,12 @@ function setUpWebSocket() {
 
     window.socket.onopen = function() {
         console.log("Connected to station socket");
+
+        console.log("Joining station {{ station_id }}");
+        socket.send(JSON.stringify({
+            "command": "join",
+            "station": {{ station_id }},
+        }));
     }
 
     window.socket.onclose = function() {
@@ -117,6 +132,8 @@ function setUpWebSocket() {
             $("#chats").append(stationdiv);
         } else if (data.leave) {
             console.log("Leaving station " + data.leave);
+        } else if (data.type === 'dj_state_change') {
+            console.log("DJ State Change");
         } else if (data.message || data.msg_type != 0) {
             console.log("received message: ", data.message, "from: ", data.username);
 
