@@ -11,7 +11,8 @@ class SpotifyCredentials(models.Model):
 class Station(models.Model):
     title = models.CharField(max_length=256)
 
-    members = models.ManyToManyField(User, through='Listener')
+    members = models.ManyToManyField(
+        User, related_name='stations', through='Listener')
     pending_members = models.ManyToManyField(
         User, related_name='pending_stations', through='PendingListener')
 
@@ -25,7 +26,7 @@ class Station(models.Model):
 
 class Listener(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    room = models.ForeignKey(Station, on_delete=models.CASCADE)
+    station = models.ForeignKey(Station, on_delete=models.CASCADE)
 
     is_admin = models.BooleanField()
     is_dj = models.BooleanField()
