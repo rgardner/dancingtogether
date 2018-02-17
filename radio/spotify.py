@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 import hashlib
+import logging
+import time
 import urllib.parse
 
 import dateutil.parser
@@ -8,6 +10,8 @@ import requests
 
 from dancingtogether import settings
 from .models import SpotifyCredentials
+
+logger = logging.getLogger(__name__)
 
 # View decorators
 
@@ -53,7 +57,7 @@ def request_spotify_authorization(request):
 
 
 def build_request_authorization_url(request):
-    base = 'https://accounts.spotify.com/authorize'
+    url = 'https://accounts.spotify.com/authorize'
     scope = 'streaming user-read-birthdate user-read-email user-read-private'
     query_params = {
         'client_id': settings.SPOTIFY_CLIENT_ID,
@@ -64,7 +68,7 @@ def build_request_authorization_url(request):
     }
 
     query_params = urllib.parse.urlencode(query_params)
-    return '{}?{}'.format(base, query_params)
+    return f'{url}?{query_params}'
 
 
 # Spotify OAuth Step 2: Request access and refresh tokens
@@ -135,3 +139,40 @@ class AccessToken:
         expires_in = timedelta(seconds=expires_in)
         expiration_time = datetime.utcnow() + expires_in
         request.session['spotify_access_token_expiration_time'] = expiration_time.isoformat()
+
+
+# Web API Client
+
+
+def start_resume_playback(access_token, device_id, context_uri, offset):
+    """
+    https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
+    """
+    url = 'https://api.spotify.com/v1/me/player/play'
+    query_params = {'device_id': device_id}
+    data = {'context_uri': context_uri, 'offset': offset}
+
+    r = requests.post(url, params=query_params, data=data)
+    if r.status_code == requests.codes.nocontent:
+        # device is temporarily unavailable, retry after 5 seconds, up to 5
+        # retries
+        for r in range(5):
+            time.sleep(5)
+            r = requests.post(url, params=query_params, data=data)
+            if r.satus_code != requests.codes.nocontent:
+                break
+
+    if r.status_code == requests.codes.accepted:
+        # successful request
+        # do nothing
+        logger.debug(f'start/resuming playback for {device_id}')
+    elif r.status_code == requests.codes.notfound:
+        # device is not found
+        # TODO: refetch device id from user
+        pass
+    elif r.status_code == requests.codes.forbidden:
+        # the user making the request is non-premium
+        # TODO: alert user and prevent them from using the site
+        pass
+    else:
+        logger.error(f'start resume playback API returned unexpected response: {r}')

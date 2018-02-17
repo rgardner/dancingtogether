@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 
 from channels.db import database_sync_to_async
-from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
 
 from .exceptions import ClientError
 from .models import Listener, Station
@@ -16,7 +16,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         """Called during initial websocket handshaking."""
-        logger.debug(f"{self.scope['user']} connected to the MusicConsumer")
+        logger.debug(f"user {self.scope['user'].id} connected to StationConsumer")
         if self.scope['user'].is_anonymous:
             await self.close()
         else:
@@ -25,8 +25,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content):
         """Called when we get a text frame."""
-        logger.info('received message: ', content)
         command = content.get('command', None)
+        logger.debug(f'received command: {command}')
         try:
             if command == 'join':
                 await self.join_station(content['station'])
@@ -34,7 +34,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             elif command == 'leave':
                 await self.leave_station(content['station'])
 
-            elif command == 'dj_state_change':
+            elif command == 'player_state_change':
                 listener_relationship = await get_listener_relationship_or_error(
                     self.station_id, self.scope['user'])
                 if listener_relationship.is_dj:
@@ -83,7 +83,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'leave': str(station_id)})
 
     async def update_dj_state(self, state):
+        logger.debug('update_dj_state called')
         station = await get_station_or_error(self.station_id, self.scope['user'])
+        await update_station(station, state)
         await self.channel_layer.group_send(station.group_name, {
             'type': 'station.dj_state_change',
             'state': state,
@@ -93,11 +95,12 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def update_listener_state(self, state):
         # TODO: detect if intentional change and disconnect the client if so
         # for now, ignore the request.
+        logger.debug('update_listener_state called')
         pass
 
     async def send_station(self, station_id, message):
         user = self.scope['user']
-        logger.debug(f'{user.username} sent {message} to {station_id}')
+        logger.debug(f'{user.id} sent {message} to {station_id}')
         if station_id != self.station_id:
             raise ClientError("station_ACCESS_DENIED", "access denied")
 
@@ -111,14 +114,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         })
 
     # Handlers for messages sent over the channel layer
-
-    async def station_dj_state_change(self, event):
-        await self.send_json(
-            {
-                'type': 'dj_state_change',
-                'state': event['state'],
-            },
-        )
 
     async def station_join(self, event):
         """Called when someone has joined our chat."""
@@ -142,6 +137,25 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             },
         )
 
+    async def station_dj_state_change(self, event):
+        # TODO: change this to pass the necessary info
+        logging.debug('about to call spotify-dispatcher')
+
+        # Need to know whether to use Web API or client API
+        # For Play (set-
+
+        await self.channel_layer.send('spotify-dispatcher', {
+            'type': 'spotify.startresumeplayback',
+            'state': event['state'],
+        })
+
+        await self.send_json(
+            {
+                'type': 'dj_state_change',
+                'state': event['state'],
+            },
+        )
+
     async def station_message(self, event):
         """Called when someone has messaged our chat."""
         # Send a message down to the client
@@ -151,6 +165,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             'username': event['username'],
             'message': event['message'],
         })
+
+
+class SpotifyConsumer(JsonWebsocketConsumer):
+    def spotify_startresumeplayback(self, event):
+        logger.debug('spotify_start_resume_playback_called')
 
 
 @database_sync_to_async
@@ -189,3 +208,11 @@ def get_listener_relationship_or_error(station_id: Optional[int], user):
         raise ClientError('forbidden', 'This station is not available')
 
     return listener_relationship
+
+
+@database_sync_to_async
+def update_station(station, state):
+    station.context_uri = state['context']['uri']
+    station.current_track_uri = state['track_window']['current_track']['uri']
+    station.paused = state['paused']
+    station.save()

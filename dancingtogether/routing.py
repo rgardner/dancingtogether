@@ -1,9 +1,9 @@
 from django.urls import path
 from channels.http import AsgiHandler
-from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.routing import ChannelNameRouter, ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 
-from radio.consumers import StationConsumer
+import radio.consumers
 
 
 # The channel routing defines what connections get handled by what consumers,
@@ -22,8 +22,11 @@ application = ProtocolTypeRouter({
     'websocket': AuthMiddlewareStack(
         URLRouter([
             # URLRouter just takes standard Django path() or url() entries.
-            path('station/stream/', StationConsumer),
+            path('station/stream/', radio.consumers.StationConsumer),
         ]),
     ),
 
+    'channel': ChannelNameRouter({
+        'spotify-dispatcher': radio.consumers.SpotifyConsumer,
+    }),
 })

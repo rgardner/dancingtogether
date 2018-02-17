@@ -45,7 +45,7 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         // 1) the user is a dj (this can change during the stream)
         // 2) if this is a legitimate change and not just a random update
         window.socket.send(JSON.stringify({
-            'command': 'dj_state_change',
+            'command': 'player_state_change',
             'state': state
         }));
 

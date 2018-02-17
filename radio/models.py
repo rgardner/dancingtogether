@@ -16,6 +16,10 @@ class Station(models.Model):
     pending_members = models.ManyToManyField(
         User, related_name='pending_stations', through='PendingListener')
 
+    context_uri = models.CharField(max_length=256, default='')
+    current_track_uri = models.CharField(max_length=256, default='')
+    paused = models.NullBooleanField(default=None)
+
     def __str__(self):
         return self.title
 
