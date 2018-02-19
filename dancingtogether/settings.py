@@ -138,18 +138,15 @@ LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'handlers': {
-        'file': {
-            'level': 'DEBUG',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'debug.log'),
-        },
         'console': {
-            'level': 'DEBUG',
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
         },
     },
     'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
         'django': {
             'handlers': ['console'],
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
@@ -182,7 +179,7 @@ CHANNEL_LAYERS = {
     },
 }
 
-django_heroku.settings(locals())
+django_heroku.settings(locals(), logging=False)
 
 SITE_URL = os.environ.get('DT_SITE_URL')
 SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
