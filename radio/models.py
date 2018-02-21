@@ -6,6 +6,7 @@ from accounts.models import User
 class SpotifyCredentials(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     refresh_token = models.CharField(max_length=256)
+    access_token = models.CharField(max_length=256)
 
 
 class Station(models.Model):
@@ -19,6 +20,7 @@ class Station(models.Model):
     context_uri = models.CharField(max_length=256, default='')
     current_track_uri = models.CharField(max_length=256, default='')
     paused = models.NullBooleanField(default=None)
+    position_ms = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return self.title

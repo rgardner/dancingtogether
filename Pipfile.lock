@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "398975ea749f042efe967143901f1b56d5c49847d88064f8292e14090d4c61ae"
+            "sha256": "87a02aa3944bdeb540229e168b08769b55d5e8873bd83ce16751ad1780313244"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
@@ -38,10 +38,10 @@
         },
         "asgiref": {
             "hashes": [
-                "sha256:5992e60a40c77d143c65c2057a93112510141eb18042924c8f80704ef892a7c2",
-                "sha256:758bed82647d7f6e50bad5f332fd5801014d8cb39c777b6c0f35374db6b57bc1"
+                "sha256:8d8a2380ed0cdf553986e6184355e6e81886965b104ebbfbf8b4dbb91826ae9b",
+                "sha256:882ca28d791e5c9c624b25849d59191fe44b760a35f88726d7248700ce84bfa0"
             ],
-            "version": "==2.1.4"
+            "version": "==2.1.6"
         },
         "async-timeout": {
             "hashes": [
@@ -87,10 +87,10 @@
         },
         "channels-redis": {
             "hashes": [
-                "sha256:6307f01abb59202a35266798c539d53949e16458d0a982b1197165785b6771c6",
-                "sha256:72182cd8a8435cb4e85d379f6d397734813bcdc7ca072821616d2083d6fddc57"
+                "sha256:21f2c42fdbf8fe8644f20e3efdc50559cf5d62f51b1798835728b273e763aa41",
+                "sha256:00f727eaec79ea5a8205b652b84ccc47cb03fc9544e8e3667149d103f60f4587"
             ],
-            "version": "==2.0.2"
+            "version": "==2.0.3"
         },
         "chardet": {
             "hashes": [
@@ -364,6 +364,13 @@
                 "sha256:57fe287f0cdd9ceaf69e7b71a2e94a24b5d268b35df251a88fef5cc241bf73aa"
             ],
             "version": "==1.1.0"
+        },
+        "yapf": {
+            "hashes": [
+                "sha256:0ba4765012218b67a8c67da5c045d1fb9171d786ffe8dce6c8d1e11cbbaba8eb",
+                "sha256:7f5efdb7edf0318b91e53721d934580a77153e24a222f52f6e1c3b7629aead43"
+            ],
+            "version": "==0.20.2"
         }
     }
 }

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import hashlib
 import logging
 import time
+from typing import Dict
 import urllib.parse
 
 import dateutil.parser
@@ -144,13 +145,13 @@ class AccessToken:
 # Web API Client
 
 
-def start_resume_playback(access_token, device_id, context_uri, offset):
+def start_resume_playback(access_token, device_id, context_uri, uri):
     """
     https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
     """
     url = 'https://api.spotify.com/v1/me/player/play'
     query_params = {'device_id': device_id}
-    data = {'context_uri': context_uri, 'offset': offset}
+    data = {'context_uri': context_uri, 'offset': {'uri': uri}}
 
     r = requests.post(url, params=query_params, data=data)
     if r.status_code == requests.codes.nocontent:

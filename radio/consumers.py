@@ -4,10 +4,48 @@ from typing import Optional
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
 
+from . import spotify
 from .exceptions import ClientError
 from .models import Listener, Station
 
 logger = logging.getLogger(__name__)
+
+
+class PlaybackState:
+    def __init__(self, context_uri, current_track_uri, paused, position_ms):
+        self._context_uri = context_uri
+        self._current_track_uri = current_track_uri
+        self._pausedj = paused
+        self._position = position_ms
+
+    @property
+    def context_uri(self):
+        return self._context_uri
+
+    @property
+    def current_track_uri(self):
+        return self._current_track_uri
+
+    @property
+    def paused(self):
+        return self._paused
+
+    @property
+    def position_ms(self):
+        return self._position_ms
+
+    @staticmethod
+    def from_client_state(state):
+        context_uri = state['context']['uri']
+        current_track_uri = state['track_window']['current_track']['uri']
+        paused = state['paused']
+        position = state['position']
+        return PlaybackState(context_uri, current_track_uri, paused, position)
+
+    @staticmethod
+    def from_station(station):
+        return PlaybackState(station.context_uri, station.current_track_uri,
+                             station.paused, station.position_ms)
 
 
 class StationConsumer(AsyncJsonWebsocketConsumer):
@@ -21,7 +59,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
         else:
             await self.accept()
+
         self.station_id = None
+        self.device_id = None
 
     async def receive_json(self, content):
         """Called when we get a text frame."""
@@ -29,7 +69,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         logger.debug(f'received command: {command}')
         try:
             if command == 'join':
-                await self.join_station(content['station'])
+                await self.join_station(content['station'], content['device_id'])
 
             elif command == 'leave':
                 await self.leave_station(content['station'])
@@ -56,40 +96,73 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     # Command helper methods called by receive_json
 
-    async def join_station(self, station_id):
-        station = await get_station_or_error(station_id, self.scope['user'])
+    async def join_station(self, station_id, device_id):
+        self.station_id = station_id
+        self.device_id = device_id
 
+        # Message group that user has joined station. Do this before joining
+        # group to prevent receiving own join message
+        station = await get_station_or_error(station_id, self.scope['user'])
         await self.channel_layer.group_send(station.group_name, {
             'type': 'station.join',
             'station_id': station_id,
             'username': self.scope['user'].username,
         })
 
-        self.station_id = station_id
         await self.channel_layer.group_add(station.group_name, self.channel_name)
         await self.send_json({'join': station_id})
 
     async def leave_station(self, station_id):
         station = await get_station_or_error(station_id, self.scope['user'])
-
         await self.channel_layer.group_send(station.group_name, {
             'type': 'station.leave',
             'station_id': station_id,
             'username': self.scope['user'].username,
         })
 
-        self.station_id = None
-        await self.channel_layer.group_discard(str(station_id), self.channel_name)
+        await self.channel_layer.group_discard(station.group_name, self.channel_name)
         await self.send_json({'leave': str(station_id)})
+
+        self.station_id = None
 
     async def update_dj_state(self, state):
         logger.debug('update_dj_state called')
         station = await get_station_or_error(self.station_id, self.scope['user'])
-        await update_station(station, state)
-        await self.channel_layer.group_send(station.group_name, {
-            'type': 'station.dj_state_change',
-            'state': state,
-        })
+        previous_state = PlaybackState.from_station(station)
+
+        # How do we keep the listeners in sync when the DJ changes the playback
+        # state? Here, we determine what the difference between the two states
+        # are issue commands to keep them in sync. Need to know whether to use
+        # Web API or client API.
+
+        state = PlaybackState.from_client_state(state)
+        if ((previous_state.context_uri == state.context_uri)
+            and (previous_state.current_track_uri == state.current_track_uri)
+                and (previous_state.paused != state.paused)):
+            # The DJ play/pause the current track
+            await self.channel_layer.group_send(station.group_name, {
+                'type': 'station.toggle_play_pause',
+                'paused': state.paused,
+            })
+
+        elif ((previous_state.context_uri == state.context_uri)
+                and (previous_state.current_track_uri == state.current_track_uri)
+                and (previous_state.paused == state.paused)
+                and (abs(station.position_ms - state.position_ms) > 2000)):
+            # The DJ seeked in the current track
+            await self.channel_layer.group_send(station.group_name, {
+                'type': 'station.seek_current_track',
+                'position_ms': state.position_ms,
+            })
+
+        else:
+            # The DJ set a new playlist or switched tracks
+            await self.channel_layer.group_send(station.group_name, {
+                'type': 'station.start_resume_playback',
+                'position_ms': state.position_ms,
+            })
+            await update_station(station, state)
+
         self.last_dj_state = state
 
     async def update_listener_state(self, state):
@@ -137,24 +210,15 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             },
         )
 
-    async def station_dj_state_change(self, event):
-        # TODO: change this to pass the necessary info
-        logging.debug('about to call spotify-dispatcher')
-
-        # Need to know whether to use Web API or client API
-        # For Play (set-
-
+    async def station_start_resume_playback(self, event):
         await self.channel_layer.send('spotify-dispatcher', {
-            'type': 'spotify.startresumeplayback',
-            'state': event['state'],
+            'user_id': self.scope['user'].id,
+            'device_id': self.device_id,
+            'context_uri': event['context_uri'],
+            'uri': event['current_track_uri'],
         })
-
-        await self.send_json(
-            {
-                'type': 'dj_state_change',
-                'state': event['state'],
-            },
-        )
+        # TODO: consider sending event to client to notify them that the DJ
+        # changed the current state
 
     async def station_message(self, event):
         """Called when someone has messaged our chat."""
@@ -168,8 +232,21 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
 
 class SpotifyConsumer(JsonWebsocketConsumer):
+    """Background worker to send requests to the Spotify Web API."""
+
     def spotify_startresumeplayback(self, event):
         logger.debug('spotify_start_resume_playback_called')
+        user_id = event['user_id']
+        device_id = event['device_id']
+        context_uri = event['context_uri']
+        uri = event['uri']
+
+        user = User.objects.get(pk=user_id)
+        spotify.start_resume_playback(
+            user.spotifycredentials.access_token,
+            device_id,
+            context_uri,
+            uri)
 
 
 @database_sync_to_async
@@ -211,8 +288,9 @@ def get_listener_relationship_or_error(station_id: Optional[int], user):
 
 
 @database_sync_to_async
-def update_station(station, state):
-    station.context_uri = state['context']['uri']
-    station.current_track_uri = state['track_window']['current_track']['uri']
-    station.paused = state['paused']
+def update_station(station, state: PlaybackState):
+    station.context_uri = state.context_uri
+    station.current_track_uri = state.current_track_uri
+    station.paused = state.paused
+    station.position_ms = state.position_ms
     station.save()
