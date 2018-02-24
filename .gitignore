@@ -1,5 +1,6 @@
 # Python
 *pyc
+.mypy_cache
 
 # Django
 staticfiles
