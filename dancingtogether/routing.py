@@ -5,7 +5,6 @@ from channels.auth import AuthMiddlewareStack
 
 import radio.consumers
 
-
 # The channel routing defines what connections get handled by what consumers,
 # selecting on either the connection type (ProtocolTypeRouter) or properties
 # of the connection's scope (like URLRouter, which looks at scope["path"])
@@ -19,14 +18,14 @@ application = ProtocolTypeRouter({
     # We actually don't need the URLRouter here, but we've put it in for
     # illustration. Also note the inclusion of the AuthMiddlewareStack to
     # add users and sessions - see http://channels.readthedocs.io/en/latest/topics/authentication.html
-    'websocket': AuthMiddlewareStack(
+    'websocket':
+    AuthMiddlewareStack(
         URLRouter([
             # URLRouter just takes standard Django path() or url() entries.
             path('station/stream/', radio.consumers.StationConsumer),
-        ]),
-    ),
-
-    'channel': ChannelNameRouter({
+        ])),
+    'channel':
+    ChannelNameRouter({
         'spotify-dispatcher': radio.consumers.SpotifyConsumer,
     }),
 })

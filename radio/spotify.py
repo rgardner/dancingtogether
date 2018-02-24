@@ -23,6 +23,7 @@ def authorization_required(view_func):
             return request_spotify_authorization(request)
         else:
             return view_func(request, *args, **kwargs)
+
     return _wrapped_view_func
 
 
@@ -32,6 +33,7 @@ def fresh_access_token_required(view_func):
         if access_token.has_expired():
             access_token.refresh()
         return view_func(request, *args, **kwargs)
+
     return _wrapped_view_func
 
 
@@ -76,7 +78,8 @@ def build_request_authorization_url(request):
 
 
 class AccessToken:
-    def __init__(self, user, refresh_token, access_token, access_token_expiration_time):
+    def __init__(self, user, refresh_token, access_token,
+                 access_token_expiration_time):
         self._user = user
         self._refresh_token = refresh_token
         self._access_token = access_token
@@ -139,14 +142,19 @@ class AccessToken:
         expires_in = int(response_data['expires_in'])
         expires_in = timedelta(seconds=expires_in)
         expiration_time = datetime.utcnow() + expires_in
-        access_token = AccessToken(user, response_data['refresh_token'], response_data['access_token'], expiration_time)
+        access_token = AccessToken(user, response_data['refresh_token'],
+                                   response_data['access_token'],
+                                   expiration_time)
         save_access_token(access_token)
 
 
 def save_access_token(access_token: AccessToken):
-    creds = SpotifyCredentials.objects.filter(user_id=access_token.user.id).first()
+    creds = SpotifyCredentials.objects.filter(
+        user_id=access_token.user.id).first()
     if creds is None:
-        creds = SpotifyCredentials(user_id=access_token.user.id, refresh_token=access_token.refresh_token)
+        creds = SpotifyCredentials(
+            user_id=access_token.user.id,
+            refresh_token=access_token.refresh_token)
 
     creds.access_token = access_token.token
     creds.access_token_expiration_time = access_token.token_expiration_time
@@ -193,4 +201,5 @@ def start_resume_playback(access_token, device_id, context_uri, uri):
         # TODO: alert user and prevent them from using the site
         pass
     else:
-        logger.error(f'start resume playback API returned unexpected response: {r}')
+        logger.error(
+            f'start resume playback API returned unexpected response: {r}')

@@ -19,7 +19,9 @@ def index(request):
 def station(request, station_id):
     access_token = spotify.load_access_token(request.user).token
     return render(
-        request, 'station.html', context={
+        request,
+        'station.html',
+        context={
             'access_token': access_token,
             'station_id': station_id,
         })
