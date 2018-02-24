@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+readonly repo_root="$(git rev-parse --show-toplevel)"
+
 # OS detection
 is_macos() {
   [[ "$OSTYPE" =~ ^darwin ]] || return 1
@@ -33,6 +35,8 @@ fi
 
 pip3 install pipenv
 pipenv install
+
 git remote add heroku https://git.heroku.com/dancingtogether.git || true
+ln -s -f ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit
 
 python manage.py migrate
