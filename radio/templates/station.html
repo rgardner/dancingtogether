@@ -73,14 +73,14 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         $("#playback-controls :button").prop("disabled", false);
 
         // Set up connection to server
-        setUpWebSocket();
+        setUpWebSocket(device_id);
     });
 
     // Connect to the player!
     window.player.connect();
 }
 
-function setUpWebSocket() {
+function setUpWebSocket(device_id) {
     // Correctly decide between ws:// and wss://
     const ws_scheme = window.location.protocol == "https:" ? "wss" : "ws";
     const ws_path = ws_scheme + '://' + window.location.host + "/station/stream/";
@@ -94,6 +94,7 @@ function setUpWebSocket() {
         socket.send(JSON.stringify({
             "command": "join",
             "station": {{ station_id }},
+            "device_id": device_id
         }));
     }
 

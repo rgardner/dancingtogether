@@ -17,7 +17,7 @@ def index(request):
 @spotify.authorization_required
 @spotify.fresh_access_token_required
 def station(request, station_id):
-    access_token = spotify.AccessToken(request).token
+    access_token = spotify.load_access_token(request.user).token
     return render(
         request, 'station.html', context={
             'access_token': access_token,

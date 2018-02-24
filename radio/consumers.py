@@ -15,7 +15,7 @@ class PlaybackState:
     def __init__(self, context_uri, current_track_uri, paused, position_ms):
         self._context_uri = context_uri
         self._current_track_uri = current_track_uri
-        self._pausedj = paused
+        self._paused = paused
         self._position = position_ms
 
     @property
@@ -209,6 +209,20 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 'username': event['username'],
             },
         )
+
+    async def station_toggle_play_pause(self, event):
+        paused = event['paused']
+        await self.send_json({
+            'type': 'toggle_play_pause',
+            'paused': paused,
+        })
+
+    async def station_seek_current_track(self, event):
+        position_ms = event['position_ms']
+        await self.send_json({
+            'type': 'seek_current_track',
+            'position_ms': position_ms,
+        })
 
     async def station_start_resume_playback(self, event):
         await self.channel_layer.send('spotify-dispatcher', {

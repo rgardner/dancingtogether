@@ -2,11 +2,11 @@ from datetime import datetime, timedelta
 import hashlib
 import logging
 import time
-from typing import Dict
+from typing import Tuple
 import urllib.parse
 
-import dateutil.parser
 from django.shortcuts import redirect
+from django.utils import timezone
 import requests
 
 from dancingtogether import settings
@@ -28,8 +28,8 @@ def authorization_required(view_func):
 
 def fresh_access_token_required(view_func):
     def _wrapped_view_func(request, *args, **kwargs):
-        access_token = AccessToken(request)
-        if (not access_token.is_valid()) or access_token.has_expired():
+        access_token = load_access_token(request.user)
+        if access_token.has_expired():
             access_token.refresh()
         return view_func(request, *args, **kwargs)
     return _wrapped_view_func
@@ -76,29 +76,54 @@ def build_request_authorization_url(request):
 
 
 class AccessToken:
-    def __init__(self, request):
-        self._request = request
+    def __init__(self, user, refresh_token, access_token, access_token_expiration_time):
+        self._user = user
+        self._refresh_token = refresh_token
+        self._access_token = access_token
+        self._access_token_expiration_time = access_token_expiration_time
+
+    @property
+    def user(self):
+        return self._user
+
+    @property
+    def refresh_token(self):
+        return self._refresh_token
 
     @property
     def token(self):
-        return self._request.session.get('spotify_access_token')
+        return self._access_token
+
+    @property
+    def token_expiration_time(self):
+        return self._access_token_expiration_time
 
     def is_valid(self):
-        return (('spotify_access_token' in self._request.session)
-            and ('spotify_access_token_expiration_time' in self._request.session))
+        return ((self._access_token is not None)
+                and (self._access_token_expiration_time is not None))
 
     def has_expired(self):
-        now = datetime.utcnow()
-        expiration_time = self._request.session['spotify_access_token_expiration_time']
-        expiration_time = dateutil.parser.parse(expiration_time)
-        return now > expiration_time
+        return timezone.now() > self._access_token_expiration_time
 
     def refresh(self):
-        refresh_token = self._request.user.spotifycredentials.refresh_token
-        AccessToken.refresh_token(refresh_token, self._request)
+        url = 'https://accounts.spotify.com/api/token'
+        data = {
+            'grant_type': 'refresh_token',
+            'refresh_token': self.refresh_token,
+            'client_id': settings.SPOTIFY_CLIENT_ID,
+            'client_secret': settings.SPOTIFY_CLIENT_SECRET,
+        }
+
+        r = requests.post(url, data)
+        response_data = r.json()
+        self._access_token = response_data['access_token']
+        expires_in = int(response_data['expires_in'])
+        expires_in = timedelta(seconds=expires_in)
+        self._access_token_expiration_time = datetime.utcnow() + expires_in
+        save_access_token(self)
 
     @staticmethod
-    def request_refresh_and_access_token(code, request):
+    def request_refresh_and_access_token(code, user):
         url = 'https://accounts.spotify.com/api/token'
         data = {
             'grant_type': 'authorization_code',
@@ -111,35 +136,27 @@ class AccessToken:
         r = requests.post(url, data)
 
         response_data = r.json()
-        creds = SpotifyCredentials()
-        creds.user = request.user
-        creds.refresh_token = response_data['refresh_token']
-        creds.save()
-
-        request.session['spotify_access_token'] = response_data['access_token']
         expires_in = int(response_data['expires_in'])
         expires_in = timedelta(seconds=expires_in)
         expiration_time = datetime.utcnow() + expires_in
-        request.session['spotify_access_token_expiration_time'] = expiration_time.isoformat()
+        access_token = AccessToken(user, response_data['refresh_token'], response_data['access_token'], expiration_time)
+        save_access_token(access_token)
 
-    @staticmethod
-    def refresh_token(refresh_token, request):
-        url = 'https://accounts.spotify.com/api/token'
-        data = {
-            'grant_type': 'refresh_token',
-            'refresh_token': refresh_token,
-            'client_id': settings.SPOTIFY_CLIENT_ID,
-            'client_secret': settings.SPOTIFY_CLIENT_SECRET,
-        }
 
-        r = requests.post(url, data)
+def save_access_token(access_token: AccessToken):
+    creds = SpotifyCredentials.objects.filter(user_id=access_token.user.id).first()
+    if creds is None:
+        creds = SpotifyCredentials(user_id=access_token.user.id, refresh_token=access_token.refresh_token)
 
-        response_data = r.json()
-        request.session['spotify_access_token'] = response_data['access_token']
-        expires_in = int(response_data['expires_in'])
-        expires_in = timedelta(seconds=expires_in)
-        expiration_time = datetime.utcnow() + expires_in
-        request.session['spotify_access_token_expiration_time'] = expiration_time.isoformat()
+    creds.access_token = access_token.token
+    creds.access_token_expiration_time = access_token.token_expiration_time
+    creds.save()
+
+
+def load_access_token(user):
+    creds = user.spotifycredentials
+    return AccessToken(user, creds.refresh_token, creds.access_token,
+                       creds.access_token_expiration_time)
 
 
 # Web API Client

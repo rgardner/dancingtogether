@@ -7,6 +7,7 @@ class SpotifyCredentials(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     refresh_token = models.CharField(max_length=256)
     access_token = models.CharField(max_length=256)
+    access_token_expiration_time = models.DateTimeField()
 
 
 class Station(models.Model):
