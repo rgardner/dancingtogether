@@ -161,7 +161,10 @@ LOGGING = {
 
 # Channels-specific settings
 
-redis_host = os.environ.get('REDIS_HOST', 'localhost')
+if 'REDIS_URL' in os.environ:
+    redis_hosts_value = os.environ['REDIS_URL']
+else:
+    redis_hosts_value = (os.environ.get('REDIS_HOST', 'localhost'), 6379)
 
 # Channel layer definitions
 # http://channels.readthedocs.io/en/latest/topics/channel_layers.html
@@ -170,7 +173,7 @@ CHANNEL_LAYERS = {
         # This example app uses the Redis channel layer implementation channels_redis
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [(redis_host, 6379)],
+            'hosts': [redis_hosts_value],
         },
     },
 }
