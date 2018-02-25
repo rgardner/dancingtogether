@@ -13,10 +13,16 @@
 
     <span id="playback-track-title"></span><br>
     <span id="playback-track-artist"></span><br>
-    <span id="playback-dj"></span><br>
 </div>
 
 <div id="listener-controls">
+    <button class="btn" type="submit" aria-pressed="false" onclick="handleStopStreamButtonClick(event)" disabled="true">
+        <i class="fas fa-stop"></i>
+    </button>
+
+    <button class="btn" type="submit" aria-pressed="false" onclick="handleResumeStreamButtonClick(event)" disabled="true">
+        <i class="fas fa-play"></i>
+    </button>
 </div>
 
 <div id="dj-controls">
@@ -42,6 +48,18 @@
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static "js/reconnecting-websocket.min.js" %}"></script>
 <script>
+$(window).on('load', (e) => {
+    window.user_is_dj = {{ is_dj|yesno:"true,false" }};
+
+    // Show Playback UI
+    window.user_is_dj = {{ is_dj|yesno:"true,false" }};
+    if (window.user_is_dj) {
+        $("#listener-controls").hide();
+    } else {
+        $("#dj-controls").hide();
+    }
+});
+
 window.onSpotifyWebPlaybackSDKReady = () => {
     window.player = new Spotify.Player({
         name: 'Dancing Together',
@@ -81,7 +99,7 @@ window.onSpotifyWebPlaybackSDKReady = () => {
             alt: state.track_window.current_track.album.name
         }).appendTo('#album-art');
 
-        // Update track title, track artist, and DJ
+        // Update track title and track artist
         $('#playback-track-title').html(state.track_window.current_track.name);
         $('#playback-track-artist').html(state.track_window.current_track.artists[0].name);
     });
@@ -91,10 +109,11 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         let { device_id } = data;
         console.log('Ready with Device ID', device_id);
 
-        // Show Playback UI
-        window.user_is_dj = {{ is_dj|yesno:"true,false" }};
+        // Enable DJ or Listener Controls
         if (window.user_is_dj) {
             $("#dj-controls :button").prop("disabled", false);
+        } else {
+            $("#listener-controls :button").prop("disabled", false);
         }
 
         // Set up connection to server
@@ -163,12 +182,12 @@ function setUpWebSocket(device_id) {
             if (data.msg_type === "enter") {
                 // User joined station
                 ok_msg = "<div class='contextual-message text-muted'>" + data.username +
-                         " joined the station!" +
+                         " joined the station" +
                          "</div>";
             } else if (data.msg_type === "leave") {
                 // User left station
                 ok_msg = "<div class='contextual-message text-muted'>" + data.username +
-                         " left the station!" +
+                         " left the station" +
                          "</div>";
             } else {
                 console.error("Unsupported message type!");
@@ -182,6 +201,18 @@ function setUpWebSocket(device_id) {
         }
     }
 }
+
+// Listener Controls
+
+function handleStopStreamButtonClick(event) {
+    console.log("Stopping the stream");
+}
+
+function handleResumeStreamButtonClick(event) {
+    console.log("Resuming the stream");
+}
+
+// DJ Controls
 
 function handlePreviousTrackButtonClick(event) {
     window.player.previousTrack().then(() => {
