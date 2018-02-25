@@ -46,6 +46,7 @@ def oauth_callback(request):
         return redirect('/')
     else:
         code = result['code']
-        spotify.AccessToken.request_refresh_and_access_token(code, request)
+        spotify.AccessToken.request_refresh_and_access_token(
+            code, request.user)
         # TODO(rogardn): redirect to original destination before oauth request
         return redirect('/stations')
