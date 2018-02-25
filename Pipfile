@@ -7,11 +7,12 @@ name = "pypi"
 
 [packages]
 
-Django = "*"
+django = "*"
 django-heroku = "*"
 requests = "*"
 channels = "*"
-channels_redis = "*"
+channels-redis = "*"
+"django-bootstrap4" = "*"
 
 
 [requires]

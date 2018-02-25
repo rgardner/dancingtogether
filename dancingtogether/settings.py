@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'channels',
+    'bootstrap4',
     # Project Apps
     'main',
     'radio',
