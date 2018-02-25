@@ -4,10 +4,22 @@
 
 {% block content %}
 
-<div id="album-art-container">
+
+<div>
+    <h1 id="station-name"></h2>
+
+    <div id="album-art">
+    </div>
+
+    <span id="playback-track-title"></span><br>
+    <span id="playback-track-artist"></span><br>
+    <span id="playback-dj"></span><br>
 </div>
 
-<div id="playback-controls">
+<div id="listener-controls">
+</div>
+
+<div id="dj-controls">
     <button class="btn" type="submit" aria-pressed="false" onclick="handlePreviousTrackButtonClick(event)" disabled="true">
         <i class="fas fa-step-backward"></i>
     </button>
@@ -63,11 +75,15 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         }
 
         // Update album art
-        $('#album-art-container').empty();
+        $('#album-art').empty();
         $('<img/>', {
             src: state.track_window.current_track.album.images[0].url,
             alt: state.track_window.current_track.album.name
-        }).appendTo('#album-art-container');
+        }).appendTo('#album-art');
+
+        // Update track title, track artist, and DJ
+        $('#playback-track-title').html(state.track_window.current_track.name);
+        $('#playback-track-artist').html(state.track_window.current_track.artists[0].name);
     });
 
     // Ready
@@ -78,7 +94,7 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         // Show Playback UI
         window.user_is_dj = {{ is_dj|yesno:"true,false" }};
         if (window.user_is_dj) {
-            $("#playback-controls :button").prop("disabled", false);
+            $("#dj-controls :button").prop("disabled", false);
         }
 
         // Set up connection to server
@@ -122,7 +138,8 @@ function setUpWebSocket(device_id) {
 
         if (data.join) {
             console.log("Joining station " + data.join);
-            // TODO: show station info
+
+            $('#station-name').html(data.join);
         } else if (data.leave) {
             console.log("Leaving station " + data.leave);
         } else if (data.type === 'dj_state_change') {

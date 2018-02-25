@@ -120,19 +120,17 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             station.admin_group_name, {
                 'type': 'station.join',
-                'station_id': station_id,
                 'username': self.scope['user'].username,
             })
 
         # Reply to client to finish setting up station
-        await self.send_json({'join': station_id})
+        await self.send_json({'join': station.title})
 
     async def leave_station(self, station_id):
         station = await get_station_or_error(station_id, self.scope['user'])
         await self.channel_layer.group_send(
             station.admin_group_name, {
                 'type': 'station.leave',
-                'station_id': station_id,
                 'username': self.scope['user'].username,
             })
 
@@ -223,7 +221,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # Send a message down to the client
         await self.send_json({
             'msg_type': 'enter',
-            'station': event['station_id'],
             'username': event['username'],
         }, )
 
@@ -232,7 +229,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # Send a message down to the client
         await self.send_json({
             'msg_type': 'leave',
-            'station': event['station_id'],
             'username': event['username'],
         }, )
 
