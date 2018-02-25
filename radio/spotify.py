@@ -170,7 +170,7 @@ def load_access_token(user):
 # Web API Client
 
 
-def start_resume_playback(access_token, device_id, context_uri, uri):
+def start_resume_playback(access_token, device_id, context_uri, uri, user_id):
     """
     https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
     """
@@ -193,7 +193,7 @@ def start_resume_playback(access_token, device_id, context_uri, uri):
     if r.status_code == requests.codes.no_content:
         # successful request
         # do nothing
-        logger.debug(f'start/resuming playback for {device_id}')
+        logger.debug(f'starting playback for user-{user_id}')
 
     elif r.status_code == requests.codes.not_found:
         # device is not found
@@ -205,4 +205,5 @@ def start_resume_playback(access_token, device_id, context_uri, uri):
         pass
     else:
         logger.error(
-            f'start resume playback API returned unexpected response: {r}')
+            f'user-{user_id} received unexpected Spotify Web API response {r.text}'
+        )

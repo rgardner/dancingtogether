@@ -54,20 +54,25 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         """Called during initial websocket handshaking."""
-        logger.debug(
-            f"user {self.scope['user'].id} connected to StationConsumer")
+        logger.debug(f'{self.scope["user"]} connected to StationConsumer')
         if self.scope['user'].is_anonymous:
+            logger.warn(
+                f'anonymous user ({self.scope["user"]}) attempted to connect to station'
+            )
             await self.close()
         else:
             await self.accept()
 
         self.station_id = None
         self.device_id = None
+        self.is_admin = None
+        self.is_dj = None
 
     async def receive_json(self, content):
         """Called when we get a text frame."""
         command = content.get('command', None)
-        logger.debug(f'received command: {command}')
+        logger.debug(f'received command ({command}) from {self.scope["user"]}')
+
         try:
             if command == 'join':
                 await self.join_station(content['station'],
@@ -77,15 +82,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 await self.leave_station(content['station'])
 
             elif command == 'player_state_change':
-                listener_relationship = await get_listener_relationship_or_error(
-                    self.station_id, self.scope['user'])
-                if listener_relationship.is_dj:
+                listener = await get_listener_or_error(self.station_id,
+                                                       self.scope['user'])
+                if listener.is_dj:
                     await self.update_dj_state(content['state'])
                 else:
                     await self.update_listener_state(content['state'])
 
-            elif command == 'send':
-                await self.send_station(content['station'], content['message'])
         except ClientError as e:
             await self.send_json({'error': e.code, 'message': e.message})
 
@@ -99,27 +102,35 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     # Command helper methods called by receive_json
 
     async def join_station(self, station_id, device_id):
+        listener = await get_listener_or_error(station_id, self.scope['user'])
         self.station_id = station_id
         self.device_id = device_id
+        self.is_admin = listener.is_admin
+        self.is_dj = listener.is_admin
 
-        # Message group that user has joined station. Do this before joining
-        # group to prevent receiving own join message
         station = await get_station_or_error(station_id, self.scope['user'])
+        await self.channel_layer.group_add(station.group_name,
+                                           self.channel_name)
+
+        if self.is_admin:
+            await self.channel_layer.group_add(station.admin_group_name,
+                                               self.channel_name)
+
+        # Message admins that a user has joined the station
         await self.channel_layer.group_send(
-            station.group_name, {
+            station.admin_group_name, {
                 'type': 'station.join',
                 'station_id': station_id,
                 'username': self.scope['user'].username,
             })
 
-        await self.channel_layer.group_add(station.group_name,
-                                           self.channel_name)
+        # Reply to client to finish setting up station
         await self.send_json({'join': station_id})
 
     async def leave_station(self, station_id):
         station = await get_station_or_error(station_id, self.scope['user'])
         await self.channel_layer.group_send(
-            station.group_name, {
+            station.admin_group_name, {
                 'type': 'station.leave',
                 'station_id': station_id,
                 'username': self.scope['user'].username,
@@ -127,22 +138,31 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         await self.channel_layer.group_discard(station.group_name,
                                                self.channel_name)
-        await self.send_json({'leave': str(station_id)})
+
+        if self.is_admin:
+            await self.channel_layer.group_discard(station.admin_group_name,
+                                                   self.channel_name)
 
         self.station_id = None
+        self.device_id = None
+        self.is_admin = None
+        self.is_dj = None
+
+        # Reply to client to finish tearing down station
+        await self.send_json({'leave': station_id})
 
     async def update_dj_state(self, state):
-        logger.debug('update_dj_state called')
-        station = await get_station_or_error(self.station_id,
-                                             self.scope['user'])
+        user = self.scope['user']
+        logger.debug(f'DJ {user} is updating station state...')
+        station = await get_station_or_error(self.station_id, user)
         previous_state = PlaybackState.from_station(station)
+        state = PlaybackState.from_client_state(state)
 
         # How do we keep the listeners in sync when the DJ changes the playback
         # state? Here, we determine what the difference between the two states
         # are issue commands to keep them in sync. Need to know whether to use
         # Web API or client API.
 
-        state = PlaybackState.from_client_state(state)
         same_context = (previous_state.context_uri == state.context_uri)
         same_track = (
             previous_state.current_track_uri == state.current_track_uri)
@@ -150,6 +170,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         if same_context_and_track and (previous_state.paused != state.paused):
             # The DJ play/pause the current track
+            pause_resume = 'pause' if state.paused else 'resume'
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to {pause_resume}')
             await self.channel_layer.group_send(
                 station.group_name, {
                     'type': 'station.toggle_play_pause',
@@ -160,6 +183,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         elif (same_context_and_track
               and (abs(station.position_ms - state.position_ms) > 10_000)):
             # The DJ seeked in the current track
+            seek_change = state.position_ms - station.position_ms
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to seek {seek_change}')
             await self.channel_layer.group_send(
                 station.group_name, {
                     'type': 'station.seek_current_track',
@@ -169,6 +195,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         elif not same_context_and_track:
             # The DJ set a new playlist or switched tracks
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to change context or track'
+            )
             await self.channel_layer.group_send(
                 station.group_name, {
                     'type': 'station.start_resume_playback',
@@ -186,22 +215,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # for now, ignore the request.
         logger.debug('update_listener_state called')
         pass
-
-    async def send_station(self, station_id, message):
-        user = self.scope['user']
-        logger.debug(f'{user.id} sent {message} to {station_id}')
-        if station_id != self.station_id:
-            raise ClientError("station_ACCESS_DENIED", "access denied")
-
-        station = await get_station_or_error(station_id, user)
-
-        await self.channel_layer.group_send(
-            station.group_name, {
-                'type': 'station.message',
-                'station_id': station_id,
-                'username': user.username,
-                'message': message,
-            })
 
     # Handlers for messages sent over the channel layer
 
@@ -226,6 +239,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def station_toggle_play_pause(self, event):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
+            logger.debug(f'{self.scope["user"]} pausing or resuming...')
             change_type = 'set_paused' if event['paused'] else 'set_resumed'
             await self.send_json({
                 'type': 'dj_state_change',
@@ -235,6 +249,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def station_seek_current_track(self, event):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
+            logger.debug(f'{self.scope["user"]} seeking...')
             position_ms = event['position_ms']
             await self.send_json({
                 'type': 'dj_state_change',
@@ -245,6 +260,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def station_start_resume_playback(self, event):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
+            logger.debug(f'{self.scope["user"]} starting playback...')
             await self.channel_layer.send(
                 'spotify-dispatcher', {
                     'type': 'spotify.start_resume_playback',
@@ -253,33 +269,21 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     'context_uri': event['context_uri'],
                     'uri': event['current_track_uri'],
                 })
-        # TODO: consider sending event to client to notify them that the DJ
-        # changed the current state
-
-    async def station_message(self, event):
-        """Called when someone has messaged our chat."""
-        # Send a message down to the client
-        await self.send_json({
-            'msg_type': 'message',
-            'station': event['station_id'],
-            'username': event['username'],
-            'message': event['message'],
-        })
 
 
 class SpotifyConsumer(JsonWebsocketConsumer):
     """Background worker to send requests to the Spotify Web API."""
 
     def spotify_start_resume_playback(self, event):
-        logger.debug('spotify_start_resume_playback_called')
         user_id = event['user_id']
         device_id = event['device_id']
         context_uri = event['context_uri']
         uri = event['uri']
+        logger.debug(f'{user_id} starting playback...')
 
         creds = SpotifyCredentials.objects.get(pk=user_id)
         spotify.start_resume_playback(creds.access_token, device_id,
-                                      context_uri, uri)
+                                      context_uri, uri, user_id)
 
 
 @database_sync_to_async
@@ -303,23 +307,22 @@ def get_station_or_error(station_id: Optional[int], user):
 
 
 @database_sync_to_async
-def get_listener_relationship_or_error(station_id: Optional[int], user):
+def get_listener_or_error(station_id: Optional[int], user):
     if user.is_anonymous:
-        logger.warn(f'Anonymous user attempted to stream a station: {user}')
+        logger.warn(f'Anonymous user ({user}) attempted to stream a station')
         raise ClientError('access_denied',
                           'You must be signed in to stream music')
 
     if station_id is None:
-        logger.warn(f'Client did not join the station')
+        logger.warn(f'{user} did not join the station')
         raise ClientError('bad_request', 'You must join a station first')
 
     try:
-        listener_relationship = Listener.objects.get(
-            user_id=user.id, station_id=station_id)
+        listener = Listener.objects.get(user_id=user.id, station_id=station_id)
     except Listener.DoesNotExist:
         raise ClientError('forbidden', 'This station is not available')
 
-    return listener_relationship
+    return listener
 
 
 @database_sync_to_async

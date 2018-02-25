@@ -28,7 +28,11 @@ class Station(models.Model):
 
     @property
     def group_name(self):
-        return 'room-{}'.format(self.id)
+        return f'station-{self.id}'
+
+    @property
+    def admin_group_name(self):
+        return f'station-admin-{self.id}'
 
 
 class Listener(models.Model):
