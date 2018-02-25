@@ -6,7 +6,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocket
 
 from . import spotify
 from .exceptions import ClientError
-from .models import Listener, Station
+from .models import Listener, SpotifyCredentials, Station
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class PlaybackState:
         self._context_uri = context_uri
         self._current_track_uri = current_track_uri
         self._paused = paused
-        self._position = position_ms
+        self._position_ms = position_ms
 
     @property
     def context_uri(self):
@@ -143,35 +143,41 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # Web API or client API.
 
         state = PlaybackState.from_client_state(state)
-        if ((previous_state.context_uri == state.context_uri) and
-            (previous_state.current_track_uri == state.current_track_uri)
-                and (previous_state.paused != state.paused)):
+        same_context = (previous_state.context_uri == state.context_uri)
+        same_track = (
+            previous_state.current_track_uri == state.current_track_uri)
+        same_context_and_track = (same_context and same_track)
+
+        if same_context_and_track and (previous_state.paused != state.paused):
             # The DJ play/pause the current track
             await self.channel_layer.group_send(
                 station.group_name, {
                     'type': 'station.toggle_play_pause',
+                    'sender_user_id': self.scope['user'].id,
                     'paused': state.paused,
                 })
 
-        elif ((previous_state.context_uri == state.context_uri)
-              and (previous_state.current_track_uri == state.current_track_uri)
-              and (previous_state.paused == state.paused)
-              and (abs(station.position_ms - state.position_ms) > 2000)):
+        elif (same_context_and_track
+              and (abs(station.position_ms - state.position_ms) > 10_000)):
             # The DJ seeked in the current track
             await self.channel_layer.group_send(
                 station.group_name, {
                     'type': 'station.seek_current_track',
+                    'sender_user_id': self.scope['user'].id,
                     'position_ms': state.position_ms,
                 })
 
-        else:
+        elif not same_context_and_track:
             # The DJ set a new playlist or switched tracks
             await self.channel_layer.group_send(
                 station.group_name, {
                     'type': 'station.start_resume_playback',
-                    'position_ms': state.position_ms,
+                    'sender_user_id': self.scope['user'].id,
+                    'context_uri': state.context_uri,
+                    'current_track_uri': state.current_track_uri,
                 })
-            await update_station(station, state)
+
+        await update_station(station, state)
 
         self.last_dj_state = state
 
@@ -218,27 +224,35 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         }, )
 
     async def station_toggle_play_pause(self, event):
-        paused = event['paused']
-        await self.send_json({
-            'type': 'toggle_play_pause',
-            'paused': paused,
-        })
+        sender_user_id = event['sender_user_id']
+        if sender_user_id != self.scope['user'].id:
+            change_type = 'set_paused' if event['paused'] else 'set_resumed'
+            await self.send_json({
+                'type': 'dj_state_change',
+                'change_type': change_type,
+            })
 
     async def station_seek_current_track(self, event):
-        position_ms = event['position_ms']
-        await self.send_json({
-            'type': 'seek_current_track',
-            'position_ms': position_ms,
-        })
+        sender_user_id = event['sender_user_id']
+        if sender_user_id != self.scope['user'].id:
+            position_ms = event['position_ms']
+            await self.send_json({
+                'type': 'dj_state_change',
+                'change_type': 'seek_current_track',
+                'position_ms': position_ms,
+            })
 
     async def station_start_resume_playback(self, event):
-        await self.channel_layer.send(
-            'spotify-dispatcher', {
-                'user_id': self.scope['user'].id,
-                'device_id': self.device_id,
-                'context_uri': event['context_uri'],
-                'uri': event['current_track_uri'],
-            })
+        sender_user_id = event['sender_user_id']
+        if sender_user_id != self.scope['user'].id:
+            await self.channel_layer.send(
+                'spotify-dispatcher', {
+                    'type': 'spotify.start_resume_playback',
+                    'user_id': self.scope['user'].id,
+                    'device_id': self.device_id,
+                    'context_uri': event['context_uri'],
+                    'uri': event['current_track_uri'],
+                })
         # TODO: consider sending event to client to notify them that the DJ
         # changed the current state
 
@@ -256,16 +270,16 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 class SpotifyConsumer(JsonWebsocketConsumer):
     """Background worker to send requests to the Spotify Web API."""
 
-    def spotify_startresumeplayback(self, event):
+    def spotify_start_resume_playback(self, event):
         logger.debug('spotify_start_resume_playback_called')
         user_id = event['user_id']
         device_id = event['device_id']
         context_uri = event['context_uri']
         uri = event['uri']
 
-        user = User.objects.get(pk=user_id)
-        spotify.start_resume_playback(user.spotifycredentials.access_token,
-                                      device_id, context_uri, uri)
+        creds = SpotifyCredentials.objects.get(pk=user_id)
+        spotify.start_resume_playback(creds.access_token, device_id,
+                                      context_uri, uri)
 
 
 @database_sync_to_async
@@ -302,7 +316,7 @@ def get_listener_relationship_or_error(station_id: Optional[int], user):
     try:
         listener_relationship = Listener.objects.get(
             user_id=user.id, station_id=station_id)
-    except Listener.DoesNotExit:
+    except Listener.DoesNotExist:
         raise ClientError('forbidden', 'This station is not available')
 
     return listener_relationship

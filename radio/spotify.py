@@ -61,7 +61,7 @@ def request_spotify_authorization(request):
 
 def build_request_authorization_url(request):
     url = 'https://accounts.spotify.com/authorize'
-    scope = 'streaming user-read-birthdate user-read-email user-read-private'
+    scope = 'streaming user-modify-playback-state user-read-birthdate user-read-email user-read-private'
     query_params = {
         'client_id': settings.SPOTIFY_CLIENT_ID,
         'response_type': 'code',
@@ -175,24 +175,27 @@ def start_resume_playback(access_token, device_id, context_uri, uri):
     https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
     """
     url = 'https://api.spotify.com/v1/me/player/play'
+    headers = {'Authorization': f'Bearer {access_token}'}
     query_params = {'device_id': device_id}
     data = {'context_uri': context_uri, 'offset': {'uri': uri}}
 
-    r = requests.post(url, params=query_params, data=data)
-    if r.status_code == requests.codes.nocontent:
+    r = requests.put(url, headers=headers, params=query_params, json=data)
+    if r.status_code == requests.codes.accepted:
         # device is temporarily unavailable, retry after 5 seconds, up to 5
         # retries
         for r in range(5):
             time.sleep(5)
-            r = requests.post(url, params=query_params, data=data)
-            if r.satus_code != requests.codes.nocontent:
+            r = requests.post(
+                url, headers=headers, params=query_params, json=data)
+            if r.status_code != requests.codes.accepted:
                 break
 
-    if r.status_code == requests.codes.accepted:
+    if r.status_code == requests.codes.no_content:
         # successful request
         # do nothing
         logger.debug(f'start/resuming playback for {device_id}')
-    elif r.status_code == requests.codes.notfound:
+
+    elif r.status_code == requests.codes.not_found:
         # device is not found
         # TODO: refetch device id from user
         pass

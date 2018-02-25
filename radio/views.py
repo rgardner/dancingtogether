@@ -2,8 +2,9 @@ import logging
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 
+from .models import Listener
 from . import spotify
 
 logger = logging.getLogger(__name__)
@@ -17,13 +18,16 @@ def index(request):
 @spotify.authorization_required
 @spotify.fresh_access_token_required
 def station(request, station_id):
+    listener = get_object_or_404(
+        Listener, user_id=request.user.id, station_id=station_id)
     access_token = spotify.load_access_token(request.user).token
     return render(
         request,
         'station.html',
         context={
-            'access_token': access_token,
             'station_id': station_id,
+            'access_token': access_token,
+            'is_dj': listener.is_dj,
         })
 
 

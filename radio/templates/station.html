@@ -70,7 +70,10 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         console.log('Ready with Device ID', device_id);
 
         // Show Playback UI
-        $("#playback-controls :button").prop("disabled", false);
+        window.user_is_dj = {{ is_dj|yesno:"true,false" }};
+        if (window.user_is_dj) {
+            $("#playback-controls :button").prop("disabled", false);
+        }
 
         // Set up connection to server
         setUpWebSocket(device_id);
@@ -134,7 +137,18 @@ function setUpWebSocket(device_id) {
         } else if (data.leave) {
             console.log("Leaving station " + data.leave);
         } else if (data.type === 'dj_state_change') {
-            console.log("DJ State Change");
+            console.log("DJ State Change: ", data.change_type);
+
+            if (data.change_type === "set_paused") {
+                window.player.pause().then(() => {
+                    console.log("DJ caused station to pause");
+                });
+            } else if (data.change_type === "set_resumed") {
+                window.player.resume().then(() => {
+                    console.log("DJ caused station to resume");
+                });
+            }
+
         } else if (data.message || data.msg_type != 0) {
             console.log("received message: ", data.message, "from: ", data.username);
 
