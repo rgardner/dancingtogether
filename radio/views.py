@@ -3,6 +3,7 @@ import logging
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.cache import never_cache
 
 from .models import Listener
 from . import spotify
@@ -14,6 +15,7 @@ def index(request):
     return render(request, 'station_index.html')
 
 
+@never_cache
 @login_required
 @spotify.authorization_required
 @spotify.fresh_access_token_required
