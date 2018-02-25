@@ -5,13 +5,24 @@ services:
     image: redis:latest
   web:
     build: .
-    command: daphne --bind 0.0.0.0 --port 8000 dancingtogether.asgi:application
+    command: python manage.py runserver 0.0.0.0:8000
     env_file:
       - .env
     volumes:
       - .:/code
     ports:
       - "8000:8000"
+    stdin_open: true
+    tty: true
+    links:
+      - redis
+  worker:
+    build: .
+    command: python manage.py runworker spotify-dispatcher
+    env_file:
+      - .env
+    volumes:
+      - .:/code
     stdin_open: true
     tty: true
     links:
