@@ -159,7 +159,7 @@ function setUpWebSocket(device_id) {
         displayConnectionStatusMessage(false /*isConnected*/);
     }
 
-    window.socket.onmessage = ({message}) => {
+    window.socket.onmessage = message => {
         console.log("Got websocket message " + message.data);
         const data = JSON.parse(message.data);
 
