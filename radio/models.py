@@ -4,6 +4,9 @@ from accounts.models import User
 
 
 class SpotifyCredentials(models.Model):
+    class Meta:
+        verbose_name_plural = "spotify credentials"
+
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     refresh_token = models.CharField(max_length=256)
     access_token = models.CharField(max_length=256)
