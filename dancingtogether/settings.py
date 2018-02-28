@@ -76,6 +76,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'dancingtogether.wsgi.application'
 ASGI_APPLICATION = 'dancingtogether.routing.application'
 
+# SSL/HTTPS
+
+SECURE_SSL_REDIRECT = os.environ.get('DT_USE_HTTPS', False)
+SESSION_COOKIE_SECURE = os.environ.get('DT_USE_HTTPS', False)
+
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
 
