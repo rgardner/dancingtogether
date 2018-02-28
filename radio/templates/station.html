@@ -4,13 +4,12 @@
 
 {% block content %}
 
+Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
+<span id="connection-status-error" class="bg-danger"></span><br>
 
 <div>
-    <h1 id="station-name"></h2>
-
-    <div id="album-art">
-    </div>
-
+    <h1 id="station-name"></h1>
+    <div id="album-art"></div>
     <span id="playback-track-title"></span><br>
     <span id="playback-track-artist"></span><br>
 </div>
@@ -67,10 +66,22 @@ window.onSpotifyWebPlaybackSDKReady = () => {
     });
 
     // Error handling
-    window.player.on('initialization_error', e => { console.error(e); });
-    window.player.on('authentication_error', e => { console.error(e); });
-    window.player.on('account_error', e => { console.error(e); });
-    window.player.on('playback_error', e => { console.error(e); });
+    window.player.on('initialization_error', ({ message }) => {
+        console.error('Failed to initialize', message);
+        displayConnectionStatusMessage(false, "Failed to initialize Spotify player.");
+    });
+    window.player.on('authentication_error', ({ message }) => {
+        console.error('Failed to authenticate', message);
+        displayConnectionStatusMessage(false, "Invalid access token, please refresh the page.");
+    });
+    window.player.on('account_error', ({ message }) => {
+        console.error('Failed to validate Spotify account', message);
+        displayConnectionStatusMessage(false,  "Dancing Together requires a Spotify Premium account.");
+    });
+    window.player.on('playback_error', ({ message }) => {
+        console.error('Failed to perform playback', message);
+        displayConnectionStatusMessage(true, "Failed to play the current song.");
+    });
 
     // Playback status updates
     window.player.on('player_state_changed', state => {
@@ -105,8 +116,7 @@ window.onSpotifyWebPlaybackSDKReady = () => {
     });
 
     // Ready
-    window.player.on('ready', data => {
-        let { device_id } = data;
+    window.player.on('ready', ({ device_id }) => {
         console.log('Ready with Device ID', device_id);
 
         // Enable DJ or Listener Controls
@@ -134,6 +144,8 @@ function setUpWebSocket(device_id) {
     window.socket.onopen = function() {
         console.log("Connected to station socket");
 
+        displayConnectionStatusMessage(true /*isConnected*/);
+
         console.log("Joining station {{ station_id }}");
         socket.send(JSON.stringify({
             "command": "join",
@@ -144,6 +156,7 @@ function setUpWebSocket(device_id) {
 
     window.socket.onclose = function() {
         console.log("Disconnected from station socket");
+        displayConnectionStatusMessage(false /*isConnected*/);
     }
 
     window.socket.onmessage = function(message) {
@@ -199,6 +212,25 @@ function setUpWebSocket(device_id) {
         } else {
             console.error("Cannot handle message!");
         }
+    }
+}
+
+// UI Controls
+
+function displayConnectionStatusMessage(isConnected, errorMessage = "") {
+    $("#connection-status").removeClass().empty();
+    $("#connection-status-error").empty();
+
+    if (isConnected) {
+        $('#connection-status').addClass('bg-success').html('Connected')
+    } else if (errorMessage) {
+        $('#connection-status').addClass('bg-danger').html('Not Connected')
+    } else {
+        $('#connection-status').addClass('bg-info').html('Not Connected')
+    }
+
+    if (errorMessage) {
+        $("#connection-status-error").html(errorMessage);
     }
 }
 
