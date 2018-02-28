@@ -47,6 +47,8 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static "js/reconnecting-websocket.min.js" %}"></script>
 <script>
+'use strict';
+
 $(window).on('load', (e) => {
     window.user_is_dj = {{ is_dj|yesno:"true,false" }};
 
@@ -141,9 +143,8 @@ function setUpWebSocket(device_id) {
     console.log("Connecting to " + ws_path);
     window.socket = new ReconnectingWebSocket(ws_path);
 
-    window.socket.onopen = function() {
+    window.socket.onopen = () => {
         console.log("Connected to station socket");
-
         displayConnectionStatusMessage(true /*isConnected*/);
 
         console.log("Joining station {{ station_id }}");
@@ -154,12 +155,12 @@ function setUpWebSocket(device_id) {
         }));
     }
 
-    window.socket.onclose = function() {
+    window.socket.onclose = () => {
         console.log("Disconnected from station socket");
         displayConnectionStatusMessage(false /*isConnected*/);
     }
 
-    window.socket.onmessage = function(message) {
+    window.socket.onmessage = ({message}) => {
         console.log("Got websocket message " + message.data);
         const data = JSON.parse(message.data);
 
