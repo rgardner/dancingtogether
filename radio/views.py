@@ -11,8 +11,17 @@ from . import spotify
 logger = logging.getLogger(__name__)
 
 
+@login_required
 def index(request):
-    return render(request, 'station_index.html')
+    stations = request.user.stations.all()
+    pending_stations = request.user.pending_stations.all()
+    return render(
+        request,
+        'station_index.html',
+        context={
+            'stations': stations,
+            'pending_stations': pending_stations,
+        })
 
 
 @never_cache

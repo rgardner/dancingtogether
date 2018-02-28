@@ -3,6 +3,29 @@
 {% block content %}
 
 <h1>Station List</h1>
-<p>TODO: implement station list :)</p>
+
+{% if pending_stations %}
+    <h2>Pending Stations</h2>
+    <table class="table table-striped">
+    {% for station in pending_stations %}
+
+        <tr class="table-warning">
+            <td>{{ station.title }}</td>
+        </tr>
+
+    {% endfor %}
+    </table>
+{% endif %}
+
+<h2>Stations</h2>
+<table class="table table-striped">
+{% for station in stations %}
+
+    <tr>
+        <td><a href="{% url 'station-detail' station.id %}">{{ station.title }}</a></td>
+    </tr>
+
+{% endfor %}
+</table>
 
 {% endblock %}{# content #}
