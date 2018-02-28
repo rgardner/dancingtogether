@@ -180,6 +180,10 @@ CHANNEL_LAYERS = {
     },
 }
 
+# View settings
+
+LOGIN_REDIRECT_URL = '/stations'
+
 django_heroku.settings(locals(), logging=False)
 
 SITE_URL = os.environ.get('DT_SITE_URL')
