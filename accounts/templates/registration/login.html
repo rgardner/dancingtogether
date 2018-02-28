@@ -1,36 +1,30 @@
 {% extends "base.html" %}
 
+{% load bootstrap4 %}
+
 {% block content %}
 
-{% if form.errors %}
-<p>Your username and password didn't match. Please try again</p>
-{% endif %}
+<div id="login-form">
+  <h1>Please sign in</h1>
 
-{% if next %}
-  {% if user.is_authenticated %}
-    <p>Account authenticated, but can't access page.</p>
-  {% else %}
-    <p>Please login to see this page.</p>
+  {% if next %}
+    {% if user.is_authenticated %}
+      <p>You do not have access to this page.</p>
+    {% else %}
+      <p>Please login to see this page.</p>
+    {% endif %}
   {% endif %}
-{% endif %}
 
-<form method="post" action="{% url 'login' %}">
-{% csrf_token %}
-<table>
-  <tr>
-    <td>{{ form.username.label_tag }}</td>
-    <td>{{ form.username }}</td>
-  </tr>
-  <tr>
-    <td>{{ form.password.label_tag }}</td>
-    <td>{{ form.password }}</td>
-  </tr>
-</table>
+  <form method="post" action="{% url 'login' %}" class="form-signin">
+    {% csrf_token %}
+    {% bootstrap_form form layout='inline' %}
+    {% buttons %}
+      <button type="submit" value="login" class="btn btn-lg btn-primary btn-block">Sign in</button>
+      <input type="hidden" name="next" value="{{ next }}" /?>
+    {% endbuttons %}
+  </form>
 
-<input type="submit" value="login" />
-<input type="hidden" name="next" value="{{ next }}" /?>
-</form>
-
-<p><a href="{% url 'password_reset' %}">Forgot your password?</a></p>
+  <p><a href="{% url 'password_reset' %}">Forgot your password?</a></p>
+</div>
 
 {% endblock %}{# content #}
