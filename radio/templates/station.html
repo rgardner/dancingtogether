@@ -185,6 +185,10 @@ function setUpWebSocket(device_id) {
                 window.player.resume().then(() => {
                     console.log("DJ caused station to resume");
                 });
+            } else if (data.change_type === "seek_current_track") {
+                window.player.seek(data.position_ms).then(() => {
+                    console.log("DJ caused track to seek");
+                });
             }
 
         } else if (data.message || data.msg_type != 0) {
