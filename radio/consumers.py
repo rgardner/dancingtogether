@@ -123,6 +123,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 'username': self.scope['user'].username,
             })
 
+        # Catch up to current playback state
+        await self.spotify_start_resume_playback(
+            self.scope['user'].id, self.device_id, station.context_uri,
+            station.current_track_uri)
+
         # Reply to client to finish setting up station
         await self.send_json({'join': station.title})
 
@@ -257,14 +262,22 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
             logger.debug(f'{self.scope["user"]} starting playback...')
-            await self.channel_layer.send(
-                'spotify-dispatcher', {
-                    'type': 'spotify.start_resume_playback',
-                    'user_id': self.scope['user'].id,
-                    'device_id': self.device_id,
-                    'context_uri': event['context_uri'],
-                    'uri': event['current_track_uri'],
-                })
+            await self.spotify_start_resume_playback(
+                self.scope['user'].id, self.device_id, event['context_uri'],
+                event['current_track_uri'])
+
+    # Utils
+
+    async def spotify_start_resume_playback(self, user_id, device_id,
+                                            context_uri, uri):
+        await self.channel_layer.send(
+            'spotify-dispatcher', {
+                'type': 'spotify.start_resume_playback',
+                'user_id': user_id,
+                'device_id': device_id,
+                'context_uri': context_uri,
+                'uri': uri,
+            })
 
 
 class SpotifyConsumer(JsonWebsocketConsumer):
