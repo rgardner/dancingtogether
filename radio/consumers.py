@@ -1,3 +1,5 @@
+import asyncio
+import enum
 import logging
 from typing import Optional
 
@@ -9,6 +11,13 @@ from .exceptions import ClientError
 from .models import Listener, SpotifyCredentials, Station
 
 logger = logging.getLogger(__name__)
+
+
+class StationState(enum.Enum):
+    NotConnected = enum.auto()
+    Connecting = enum.auto()
+    Connected = enum.auto()
+    Disconnecting = enum.auto()
 
 
 class PlaybackState:
@@ -48,6 +57,22 @@ class PlaybackState:
                              station.paused, station.position_ms)
 
 
+def needs_paused(old_state, new_state):
+    # The DJ play/pause the current track
+    return old_state.paused != new_state.paused
+
+
+def needs_seek(old_state, new_state, threshold_ms=10_000):
+    # The DJ seeked in the current track
+    return abs(new_state.position_ms - old_state.position_ms) > threshold_ms
+
+
+def needs_start_playback(old_state, new_state):
+    # The DJ set a new playlist or switched tracks
+    return ((old_state.context_uri != new_state.context_uri)
+            or (old_state.current_track_uri != new_state.current_track_uri))
+
+
 class StationConsumer(AsyncJsonWebsocketConsumer):
 
     # WebSocket event handlers
@@ -63,6 +88,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         else:
             await self.accept()
 
+        self.state = StationState.NotConnected
         self.station_id = None
         self.device_id = None
         self.is_admin = None
@@ -78,9 +104,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 await self.join_station(content['station'],
                                         content['device_id'])
 
-            elif command == 'leave':
-                await self.leave_station(content['station'])
-
             elif command == 'player_state_change':
                 listener = await get_listener_or_error(self.station_id,
                                                        self.scope['user'])
@@ -88,6 +111,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     await self.update_dj_state(content['state'])
                 else:
                     await self.update_listener_state(content['state'])
+
+            elif command == 'leave':
+                await self.leave_station(content['station'])
 
         except ClientError as e:
             await self.send_json({'error': e.code, 'message': e.message})
@@ -102,6 +128,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     # Command helper methods called by receive_json
 
     async def join_station(self, station_id, device_id):
+        self.state = StationState.Connecting
         listener = await get_listener_or_error(station_id, self.scope['user'])
         self.station_id = station_id
         self.device_id = device_id
@@ -117,97 +144,61 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                                self.channel_name)
 
         # Message admins that a user has joined the station
-        await self.channel_layer.group_send(
-            station.admin_group_name, {
-                'type': 'station.join',
-                'username': self.scope['user'].username,
-            })
+        await self.admin_group_send_join(station.admin_group_name,
+                                         self.scope['user'].username)
 
-        # Catch up to current playback state
-        await self.spotify_start_resume_playback(
-            self.scope['user'].id, self.device_id, station.context_uri,
-            station.current_track_uri)
+        # Catch up to current playback state. The current solution is sub-
+        # optimal. The context and track need to be loaded first. Otherwise,
+        # there's nothing to pause or seek! The user will experience a brief
+        # moment of music playing before the seek and paused events are
+        # processed. The call to sleep below is necessary because without it,
+        # the client won't have processed the start_resume_playback event yet
+        # by the time it receives pause and seek events.
+
+        await self.start_resume_playback(self.scope['user'].id, self.device_id,
+                                         station.context_uri,
+                                         station.current_track_uri)
+        await asyncio.sleep(1)
+        await self.toggle_play_pause(station.paused)
+        await self.seek_current_track(station.position_ms)
 
         # Reply to client to finish setting up station
         await self.send_json({'join': station.title})
-
-    async def leave_station(self, station_id):
-        station = await get_station_or_error(station_id, self.scope['user'])
-        await self.channel_layer.group_send(
-            station.admin_group_name, {
-                'type': 'station.leave',
-                'username': self.scope['user'].username,
-            })
-
-        await self.channel_layer.group_discard(station.group_name,
-                                               self.channel_name)
-
-        if self.is_admin:
-            await self.channel_layer.group_discard(station.admin_group_name,
-                                                   self.channel_name)
-
-        self.station_id = None
-        self.device_id = None
-        self.is_admin = None
-        self.is_dj = None
-
-        # Reply to client to finish tearing down station
-        await self.send_json({'leave': station_id})
+        self.state = StationState.Connected
 
     async def update_dj_state(self, state):
+        if self.state != StationState.Connected:
+            logger.debug(
+                '{user} hasn"t finished connecting yet, ignoring state')
+            return
+
         user = self.scope['user']
         logger.debug(f'DJ {user} is updating station state...')
         station = await get_station_or_error(self.station_id, user)
         previous_state = PlaybackState.from_station(station)
         state = PlaybackState.from_client_state(state)
 
-        # How do we keep the listeners in sync when the DJ changes the playback
-        # state? Here, we determine what the difference between the two states
-        # are issue commands to keep them in sync. Need to know whether to use
-        # Web API or client API.
-
-        same_context = (previous_state.context_uri == state.context_uri)
-        same_track = (
-            previous_state.current_track_uri == state.current_track_uri)
-        same_context_and_track = (same_context and same_track)
-
-        if same_context_and_track and (previous_state.paused != state.paused):
-            # The DJ play/pause the current track
-            pause_resume = 'pause' if state.paused else 'resume'
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to {pause_resume}')
-            await self.channel_layer.group_send(
-                station.group_name, {
-                    'type': 'station.toggle_play_pause',
-                    'sender_user_id': self.scope['user'].id,
-                    'paused': state.paused,
-                })
-
-        elif (same_context_and_track
-              and (abs(station.position_ms - state.position_ms) > 10_000)):
-            # The DJ seeked in the current track
-            seek_change = state.position_ms - station.position_ms
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to seek {seek_change}')
-            await self.channel_layer.group_send(
-                station.group_name, {
-                    'type': 'station.seek_current_track',
-                    'sender_user_id': self.scope['user'].id,
-                    'position_ms': state.position_ms,
-                })
-
-        elif not same_context_and_track:
-            # The DJ set a new playlist or switched tracks
+        if needs_start_playback(previous_state, state):
             logger.debug(
                 f'DJ {user} caused {station.group_name} to change context or track'
             )
-            await self.channel_layer.group_send(
-                station.group_name, {
-                    'type': 'station.start_resume_playback',
-                    'sender_user_id': self.scope['user'].id,
-                    'context_uri': state.context_uri,
-                    'current_track_uri': state.current_track_uri,
-                })
+            self.group_send_start_resume_playback(station.group_name, user.id,
+                                                  state.context_uri,
+                                                  state.current_track_uri)
+
+        if needs_paused(previous_state, state):
+            pause_resume = 'pause' if state.paused else 'resume'
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to {pause_resume}')
+            await self.group_send_toggle_play_pause(station.group_name,
+                                                    user.id, state.paused)
+
+        if needs_seek(previous_state, state):
+            seek_change = state.position_ms - station.position_ms
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to seek {seek_change}')
+            await self.group_send_seek_current_track(
+                station.group_name, user.id, state.position_ms)
 
         await update_station(station, state)
 
@@ -218,6 +209,69 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # for now, ignore the request.
         logger.debug('update_listener_state called')
         pass
+
+    async def leave_station(self, station_id):
+        self.state = StationState.Disconnecting
+        station = await get_station_or_error(station_id, self.scope['user'])
+        await self.admin_group_send_leave(station.admin_group_name,
+                                          self.scope['user'].username)
+
+        await self.channel_layer.group_discard(station.group_name,
+                                               self.channel_name)
+
+        if self.is_admin:
+            await self.channel_layer.group_discard(station.admin_group_name,
+                                                   self.channel_name)
+
+        self.state = StationState.NotConnected
+        self.station_id = None
+        self.device_id = None
+        self.is_admin = None
+        self.is_dj = None
+
+        # Reply to client to finish tearing down station
+        await self.send_json({'leave': station_id})
+
+    # Sending group messages
+
+    async def admin_group_send_join(self, group_name, username):
+        await self.channel_layer.group_send(group_name, {
+            'type': 'station.join',
+            'username': username,
+        })
+
+    async def admin_group_send_leave(self, group_name, username):
+        await self.channel_layer.group_send(group_name, {
+            'type': 'station.leave',
+            'username': username,
+        })
+
+    async def group_send_start_resume_playback(self, group_name, user_id,
+                                               context_uri, current_track_uri):
+        await self.channel_layer.group_send(
+            group_name, {
+                'type': 'station.start_resume_playback',
+                'sender_user_id': user_id,
+                'context_uri': context_uri,
+                'current_track_uri': current_track_uri,
+            })
+
+    async def group_send_toggle_play_pause(self, group_name, user_id, paused):
+        await self.channel_layer.group_send(
+            group_name, {
+                'type': 'station.toggle_play_pause',
+                'sender_user_id': user_id,
+                'paused': paused,
+            })
+
+    async def group_send_seek_current_track(self, group_name, user_id,
+                                            position_ms):
+        await self.channel_layer.group_send(
+            group_name, {
+                'type': 'station.seek_current_track',
+                'sender_user_id': user_id,
+                'position_ms': position_ms,
+            })
 
     # Handlers for messages sent over the channel layer
 
@@ -240,36 +294,41 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def station_toggle_play_pause(self, event):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
-            logger.debug(f'{self.scope["user"]} pausing or resuming...')
-            change_type = 'set_paused' if event['paused'] else 'set_resumed'
-            await self.send_json({
-                'type': 'dj_state_change',
-                'change_type': change_type,
-            })
+            await self.toggle_play_pause(event['paused'])
 
     async def station_seek_current_track(self, event):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
-            logger.debug(f'{self.scope["user"]} seeking...')
-            position_ms = event['position_ms']
-            await self.send_json({
-                'type': 'dj_state_change',
-                'change_type': 'seek_current_track',
-                'position_ms': position_ms,
-            })
+            await self.seek_current_track(event['position_ms'])
 
     async def station_start_resume_playback(self, event):
         sender_user_id = event['sender_user_id']
         if sender_user_id != self.scope['user'].id:
-            logger.debug(f'{self.scope["user"]} starting playback...')
-            await self.spotify_start_resume_playback(
+            await self.start_resume_playback(
                 self.scope['user'].id, self.device_id, event['context_uri'],
                 event['current_track_uri'])
 
     # Utils
 
-    async def spotify_start_resume_playback(self, user_id, device_id,
-                                            context_uri, uri):
+    async def toggle_play_pause(self, paused):
+        logger.debug(f'{self.scope["user"]} pausing or resuming...')
+        change_type = 'set_paused' if paused else 'set_resumed'
+        await self.send_json({
+            'type': 'dj_state_change',
+            'change_type': change_type,
+        })
+
+    async def seek_current_track(self, position_ms):
+        logger.debug(f'{self.scope["user"]} seeking...')
+        await self.send_json({
+            'type': 'dj_state_change',
+            'change_type': 'seek_current_track',
+            'position_ms': position_ms,
+        })
+
+    async def start_resume_playback(self, user_id, device_id, context_uri,
+                                    uri):
+        logger.debug(f'{self.scope["user"]} starting playback...')
         await self.channel_layer.send(
             'spotify-dispatcher', {
                 'type': 'spotify.start_resume_playback',
