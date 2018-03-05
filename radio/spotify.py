@@ -173,7 +173,8 @@ def load_access_token(user_id):
 # Web API Client
 
 
-def start_resume_playback(access_token, device_id, context_uri, uri, user_id):
+def start_resume_playback(access_token: str, device_id, context_uri, uri,
+                          user_id):
     """
     https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
     """
@@ -196,15 +197,20 @@ def start_resume_playback(access_token, device_id, context_uri, uri, user_id):
     if r.status_code == requests.codes.no_content:
         # successful request
         # do nothing
-        logger.debug(f'starting playback for user-{user_id}')
-
-    elif r.status_code == requests.codes.not_found:
-        # device is not found
-        # TODO: refetch device id from user
         pass
+    elif r.status_code == requests.codes.unauthorized:
+        # Access token is stale and needs to be refreshed
+        access_token = load_access_token(user_id)
+        access_token.refresh()
+        start_resume_playback(access_token.token, device_id, context_uri, uri,
+                              user_id)
     elif r.status_code == requests.codes.forbidden:
         # the user making the request is non-premium
         # TODO: alert user and prevent them from using the site
+        pass
+    elif r.status_code == requests.codes.not_found:
+        # device is not found
+        # TODO: refetch device id from user
         pass
     else:
         logger.error(

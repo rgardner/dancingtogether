@@ -347,7 +347,7 @@ class SpotifyConsumer(JsonWebsocketConsumer):
         device_id = event['device_id']
         context_uri = event['context_uri']
         uri = event['uri']
-        logger.debug(f'{user_id} starting playback...')
+        logger.debug(f'{user_id} starting {context_uri}: {uri}')
 
         creds = SpotifyCredentials.objects.get(pk=user_id)
         spotify.start_resume_playback(creds.access_token, device_id,
