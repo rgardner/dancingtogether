@@ -46,7 +46,7 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 {% block extra_script %}
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static "js/reconnecting-websocket.min.js" %}"></script>
-<script src="{% static "js/station.js" %}"></script>"
+<script src="{% static "js/station.js" %}"></script>
 <script>
     'use strict';
     window.user_is_dj = {{ is_dj|yesno:"true,false" }};
