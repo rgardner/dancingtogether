@@ -30,7 +30,7 @@ def index(request):
 def station(request, station_id):
     listener = get_object_or_404(
         Listener, user_id=request.user.id, station_id=station_id)
-    access_token = request.session['access_token']
+    access_token = spotify.load_access_token(request.user.id).token
     return render(
         request,
         'station.html',

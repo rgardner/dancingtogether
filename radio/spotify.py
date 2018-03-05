@@ -153,8 +153,7 @@ class AccessToken:
 
 
 def save_access_token(access_token: AccessToken):
-    creds = SpotifyCredentials.objects.filter(
-        user_id=access_token.user.id).first()
+    creds = SpotifyCredentials.objects.get(user_id=access_token.user.id)
     if creds is None:
         creds = SpotifyCredentials(
             user_id=access_token.user.id,
@@ -165,9 +164,9 @@ def save_access_token(access_token: AccessToken):
     creds.save()
 
 
-def load_access_token(user):
-    creds = user.spotifycredentials
-    return AccessToken(user, creds.refresh_token, creds.access_token,
+def load_access_token(user_id):
+    creds = SpotifyCredentials.objects.get(user_id=user_id)
+    return AccessToken(creds.user, creds.refresh_token, creds.access_token,
                        creds.access_token_expiration_time)
 
 
