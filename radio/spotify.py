@@ -28,10 +28,14 @@ def authorization_required(view_func):
 
 
 def fresh_access_token_required(view_func):
+    """Ensures the access token is fresh and caches it in the session."""
+
     def _wrapped_view_func(request, *args, **kwargs):
         access_token = load_access_token(request.user)
         if access_token.has_expired():
             access_token.refresh()
+
+        request.session['access_token'] = access_token.token
         return view_func(request, *args, **kwargs)
 
     return _wrapped_view_func

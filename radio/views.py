@@ -24,14 +24,13 @@ def index(request):
         })
 
 
-@never_cache
 @login_required
 @spotify.authorization_required
 @spotify.fresh_access_token_required
 def station(request, station_id):
     listener = get_object_or_404(
         Listener, user_id=request.user.id, station_id=station_id)
-    access_token = spotify.load_access_token(request.user).token
+    access_token = request.session['access_token']
     return render(
         request,
         'station.html',
