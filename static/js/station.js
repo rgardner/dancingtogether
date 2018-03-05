@@ -2,9 +2,7 @@
 
 $(window).on('load', (e) => {
     // Show Playback UI
-    if (window.user_is_dj) {
-        $("#listener-controls").hide();
-    } else {
+    if (!window.user_is_dj) {
         $("#dj-controls").hide();
     }
 });
@@ -189,12 +187,21 @@ function displayConnectionStatusMessage(isConnected, errorMessage = "") {
 
 // Listener Controls
 
-function handleStopStreamButtonClick(event) {
-    console.log("Stopping the stream");
-}
-
-function handleResumeStreamButtonClick(event) {
-    console.log("Resuming the stream");
+function handleMuteButtonClick(event) {
+    window.player.getVolume().then(volume => {
+        // BUG: Spotify API returns null instead of 0.0.
+        // Tracked by https://github.com/rgardner/dancingtogether/issues/12
+        const newVolume = ((volume === 0.0) || (volume === null)) ? 1.0 : 0.0;
+        window.player.setVolume(newVolume).then(() => {
+            if (newVolume === 0.0) {
+                console.log("Muting playback");
+                $('#mute-button').html("<i class='fas fa-volume-off'></i>");
+            } else {
+                console.log("Unmuting playback");
+                $('#mute-button').html("<i class='fas fa-volume-up'></i>");
+            }
+        })
+    })
 }
 
 // DJ Controls

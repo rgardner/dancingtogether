@@ -15,12 +15,8 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 </div>
 
 <div id="listener-controls">
-    <button class="btn" type="submit" aria-pressed="false" onclick="handleStopStreamButtonClick(event)" disabled="true">
-        <i class="fas fa-stop"></i>
-    </button>
-
-    <button class="btn" type="submit" aria-pressed="false" onclick="handleResumeStreamButtonClick(event)" disabled="true">
-        <i class="fas fa-play"></i>
+    <button id="mute-button" class="btn" type="submit" aria-pressed="false" onclick="handleMuteButtonClick(event)">
+        <i class="fas fa-volume-up"></i>
     </button>
 </div>
 
