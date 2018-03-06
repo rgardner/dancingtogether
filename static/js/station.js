@@ -74,6 +74,15 @@ window.onSpotifyWebPlaybackSDKReady = () => {
             $("#listener-controls :button").prop("disabled", false);
         }
 
+        // Set up volume slider
+        $("#volume-slider").change(() => {
+            const newVolume = parseFloat($("#volume-slider").val());
+            window.player.setVolume(newVolume).then(() => {
+                console.log(`Changed volume to ${newVolume}`);
+                updateVolumeControls(newVolume);
+            });
+        });
+
         // Set up connection to server
         setUpWebSocket(device_id);
     });
@@ -86,7 +95,7 @@ function setUpWebSocket(device_id) {
     // Correctly decide between ws:// and wss://
     const ws_scheme = window.location.protocol == "https:" ? "wss" : "ws";
     const ws_path = ws_scheme + '://' + window.location.host + "/station/stream/";
-    console.log("Connecting to " + ws_path);
+    console.log(`Connecting to ${ws_path}`);
     window.socket = new ReconnectingWebSocket(ws_path);
 
     window.socket.onopen = () => {
@@ -116,7 +125,7 @@ function setUpWebSocket(device_id) {
         }
 
         if (data.join) {
-            console.log("Joining station " + data.join);
+            console.log(`Joining station ${data.join}`);
 
             $('#station-name').html(data.join);
         } else if (data.leave) {
@@ -187,19 +196,33 @@ function displayConnectionStatusMessage(isConnected, errorMessage = "") {
 
 // Listener Controls
 
+function updateVolumeControls(volume) {
+    if (volume === 0.0) {
+        $('#mute-button').html("<i class='fas fa-volume-off'></i>");
+    } else {
+        $('#mute-button').html("<i class='fas fa-volume-up'></i>");
+    }
+
+    $("#volume-slider").val(volume);
+}
+
 function handleMuteButtonClick(event) {
     window.player.getVolume().then(volume => {
         // BUG: Spotify API returns null instead of 0.0.
         // Tracked by https://github.com/rgardner/dancingtogether/issues/12
-        const newVolume = ((volume === 0.0) || (volume === null)) ? 1.0 : 0.0;
+
+        if ((volume === 0.0) || (volume === null)) {
+            // currently muted, so unmute
+            var newVolume = window.unmuteVolume;
+        } else {
+            // currently unmuted, so mute and store current volume for restore
+            window.unmuteVolume = volume;
+            var newVolume = 0.0;
+        }
+
         window.player.setVolume(newVolume).then(() => {
-            if (newVolume === 0.0) {
-                console.log("Muting playback");
-                $('#mute-button').html("<i class='fas fa-volume-off'></i>");
-            } else {
-                console.log("Unmuting playback");
-                $('#mute-button').html("<i class='fas fa-volume-up'></i>");
-            }
+            console.log(`${(newVolume === 0.0) ? "Muting" : "Umuting"} playback`);
+            updateVolumeControls(newVolume);
         })
     })
 }
