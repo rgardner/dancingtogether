@@ -51,6 +51,12 @@ $ docker-compose up -d
 $ docker attach dancingtogether_web_1
 ```
 
+Rebuilding the Docker machine, e.g. after adding a new dependency
+
+```sh
+$ docker-compose build
+```
+
 ### Code Map
 
 - Pipfile: specifies project dependencies

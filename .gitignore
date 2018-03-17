@@ -5,5 +5,8 @@
 # Django
 staticfiles
 
+# Node
+node_modules
+
 # Dancing Together
 .env
