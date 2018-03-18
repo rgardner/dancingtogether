@@ -12,6 +12,10 @@ from .models import Listener, SpotifyCredentials, Station
 
 logger = logging.getLogger(__name__)
 
+# This is used to determine if a client is too far ahead/behind the stream
+# and should be caught up via seeking
+DEFAULT_SEEK_THRESHOLD_MS = 2000
+
 
 class StationState(enum.Enum):
     NotConnected = enum.auto()
@@ -62,7 +66,7 @@ def needs_paused(old_state, new_state):
     return old_state.paused != new_state.paused
 
 
-def needs_seek(old_state, new_state, threshold_ms=10_000):
+def needs_seek(old_state, new_state, threshold_ms=DEFAULT_SEEK_THRESHOLD_MS):
     # The DJ seeked in the current track
     return abs(new_state.position_ms - old_state.position_ms) > threshold_ms
 
