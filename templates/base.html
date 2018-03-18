@@ -5,7 +5,7 @@
 {# Load CSS and JavaScript #}
 {% load bootstrap4 %}
 {% bootstrap_css %}
-{% bootstrap_javascript %}
+{% bootstrap_javascript jquery=True %}
 
 {# Display django.contrib.messages as Bootstrap alerts #}
 {% bootstrap_messages %}
@@ -19,16 +19,14 @@
 
 {% block bootstrap4_content %}
 
-<div class="container">
-
-    <header>
-        <nav class="navbar navbar-expand-lg navbar-light bg-light">
-            <a class="navbar-brand" href="{% url 'homepage' %}">Dancing Together</a>
-            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+<header>
+    <nav class="navbar navbar-expand-md navbar-light bg-light">
+        <a class="navbar-brand" href="{% url 'homepage' %}">Dancing Together</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
-            </button>
+        </button>
 
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <div class="collapse navbar-collapse">
             <ul class="navbar-nav mr-auto">
                 <li class="nav-item active">
                     <a class="nav-link" href="{% url 'homepage' %}">Home</a>
@@ -44,10 +42,11 @@
                 {% endif %}
                 </li>
             </ul>
-            </div>
-        </nav>
-    </header>
+        </div>
+    </nav>
+</header>
 
+<div class="container">
     {% block content %}{% endblock %}
 </div>
 
@@ -55,7 +54,6 @@
 
 {% block bootstrap4_extra_script %}
 
-<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
 {% block extra_script %}{% endblock %}
 
 {% endblock %}
