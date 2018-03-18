@@ -215,6 +215,7 @@ class StationServer {
 
 class StationView {
     constructor(user_is_dj) {
+        this.musicPositionView = new MusicPositionView();
         this.listener = new StationListenerView();
         this.dj = new StationDJView(user_is_dj);
     }
@@ -256,10 +257,52 @@ class StationView {
         // Update track title and track artist
         $('#playback-track-title').html(playbackState.track_window.current_track.name);
         $('#playback-track-artist').html(playbackState.track_window.current_track.artists[0].name);
+
+        // Update current position and duration
+        this.musicPositionView.update(playbackState);
+        $('#playback-duration').html(msToTimeString(playbackState.duration));
     }
 
     updateVolumeControls(volume) {
         this.listener.updateVolumeControls(volume);
+    }
+}
+
+class MusicPositionView {
+    constructor() {
+        this.refreshTimeoutId = null;
+        this.positionMS = 0.0;
+    }
+
+    update(playbackState) {
+        this.positionMS = playbackState.position;
+        this.draw();
+
+        if (playbackState.paused) {
+            this.ensureDisableRefresh();
+        } else {
+            this.ensureEnableRefresh();
+        }
+    }
+
+    draw() {
+        $('#playback-current-position').html(msToTimeString(this.positionMS));
+    }
+
+    ensureEnableRefresh() {
+        if (this.refreshTimeoutId === null) {
+            this.refreshTimeoutId = window.setInterval(() => {
+                this.draw();
+                this.positionMS += 1000;
+            }, 1000);
+        }
+    }
+
+    ensureDisableRefresh() {
+        if (this.refreshTimeoutId !== null) {
+            window.clearInterval(this.refreshTimeoutId);
+            this.refreshTimeoutId = null;
+        }
     }
 }
 
@@ -449,4 +492,16 @@ class StationDJView {
             this.musicPlayer.player.nextTrack();
         }
     }
+}
+
+// milliseconds -> 'm:ss', rounding down, and left-padding seconds
+// '0' -> '0:00'
+// '153790' -> '2:33'
+// Does not support hours (most songs are <60mins)
+function msToTimeString(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60).toString();
+    const secondsRemainder = Math.floor(seconds % 60).toString();
+    const secondsRemainderPad = (secondsRemainder.length === 1) ? '0' + secondsRemainder : secondsRemainder;
+    return `${minutes}:${secondsRemainderPad}`;
 }
