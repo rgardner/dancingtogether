@@ -23,7 +23,8 @@ class StationMusicPlayer {
 
         this.player = new Spotify.Player({
             name: client_name,
-            getOAuthToken: cb => { cb(access_token); }
+            getOAuthToken: cb => { cb(access_token); },
+            volume: MusicVolume.getCachedVolume(),
         });
 
         this.bindSpotifyActions();
@@ -262,15 +263,94 @@ class StationView {
     }
 }
 
+class MusicVolume {
+    constructor() {
+        this.musicPlayer = null;
+        this.volume = MusicVolume.getCachedVolume();
+        this.volumeBeforeMute = this.volume;
+    }
+
+    setMusicPlayer(musicPlayer) {
+        this.musicPlayer = musicPlayer;
+    }
+
+    static getCachedVolume() {
+        if (localStorage.getItem('musicVolume') !== null) {
+            return localStorage['musicVolume'];
+        } else {
+            return 0.8;
+        }
+    }
+
+    static setCachedVolume(volume) {
+        localStorage['musicVolume'] = volume;
+    }
+
+    getVolume() {
+        return new Promise((resolve, reject) => {
+            if (this.musicPlayer) {
+                this.musicPlayer.player.getVolume().then((volume) => {
+                    resolve(volume);
+                });
+            } else {
+                reject();
+            }
+        });
+    }
+
+    setVolume(volume) {
+        return new Promise((resolve, reject) => {
+            if (this.musicPlayer) {
+                this.musicPlayer.player.setVolume(volume).then(() => {
+                    MusicVolume.setCachedVolume(volume);
+                    resolve();
+                });
+            } else {
+                reject();
+            }
+        });
+    }
+
+    mute() {
+        return new Promise((resolve, reject) => {
+            if (this.musicPlayer) {
+                this.getVolume().then(volume => {
+                    // BUG: Spotify API returns null instead of 0.0.
+                    // Tracked by https://github.com/rgardner/dancingtogether/issues/12
+
+                    var newVolume = 0.0;
+                    if ((volume === 0.0) || (volume === null)) {
+                        // currently muted, so unmute
+                        newVolume = this.volumeBeforeMute;
+                    } else {
+                        // currently unmuted, so mute and store current volume for restore
+                        this.volumeBeforeMute = volume;
+                        newVolume = 0.0;
+                    }
+
+                    this.setVolume(newVolume).then(() => resolve(newVolume));
+                });
+            } else {
+                reject();
+            }
+        });
+    }
+}
+
 class StationListenerView {
     constructor() {
         this.musicPlayer = null;
-        this.volumeBeforeMute = null;
+        this.musicVolume = new MusicVolume();
         this.bindUIActions();
     }
 
     setMusicPlayer(musicPlayer) {
         this.musicPlayer = musicPlayer;
+        this.musicVolume.setMusicPlayer(musicPlayer);
+        this.musicVolume.getVolume().then((volume) => {
+            this.updateVolumeControls(volume);
+        });
+
         $('#listener-controls :button').prop('disabled', false);
     }
 
@@ -285,33 +365,16 @@ class StationListenerView {
     }
 
     muteUnmuteStation() {
-        if (this.musicPlayer) {
-            this.musicPlayer.player.getVolume().then(volume => {
-                // BUG: Spotify API returns null instead of 0.0.
-                // Tracked by https://github.com/rgardner/dancingtogether/issues/12
-
-                var newVolume = 0.0;
-                if ((volume === 0.0) || (volume === null)) {
-                    // currently muted, so unmute
-                    newVolume = this.volumeBeforeMute;
-                } else {
-                    // currently unmuted, so mute and store current volume for restore
-                    this.volumeBeforeMute = volume;
-                    newVolume = 0.0;
-                }
-
-                this.musicPlayer.player.setVolume(newVolume).then(() => {
-                    console.log(`${(newVolume === 0.0) ? 'Muting' : 'Umuting'} playback`);
-                    this.updateVolumeControls(newVolume);
-                });
-            });
-        }
+        this.musicVolume.mute().then(newVolume => {
+            console.log(`${(newVolume === 0.0) ? 'Muting' : 'Umuting'} playback`);
+            this.updateVolumeControls(newVolume);
+        });
     }
 
     changeVolume() {
         if (this.musicPlayer) {
             const newVolume = parseFloat($('#volume-slider').val());
-            this.musicPlayer.player.setVolume(newVolume).then(() => {
+            this.musicVolume.setVolume(newVolume).then(() => {
                 this.updateVolumeControls(newVolume);
             });
         }
