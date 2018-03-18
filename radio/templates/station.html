@@ -15,7 +15,7 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 </div>
 
 <div id="listener-controls">
-    <button id="mute-button" class="btn" type="submit" aria-pressed="false" onclick="handleMuteButtonClick(event)">
+    <button id="mute-button" class="btn" type="submit" aria-pressed="false">
         <i class="fas fa-volume-up"></i>
     </button>
 
@@ -23,15 +23,15 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 </div>
 
 <div id="dj-controls">
-    <button class="btn" type="submit" aria-pressed="false" onclick="handlePreviousTrackButtonClick(event)" disabled="true">
+    <button id="previous-track-button" class="btn" type="submit" aria-pressed="false" disabled="true">
         <i class="fas fa-step-backward"></i>
     </button>
 
-    <button id="playPauseButton" class="btn" type="submit" aria-pressed="false" onclick="handlePlayPauseButtonClick(event)" disabled="true">
+    <button id="play-pause-button" class="btn" type="submit" aria-pressed="false" disabled="true">
         <i class="fas fa-play"></i>
     </button>
 
-    <button class="btn" type="submit" aria-pressed="false" onclick="handleNextTrackButtonClick(event)" disabled="true">
+    <button id="next-track-button" class="btn" type="submit" aria-pressed="false" disabled="true">
         <i class="fas fa-step-forward"></i>
     </button>
 </div>
@@ -47,8 +47,9 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 <script src="{% static "js/station.js" %}"></script>
 <script>
     'use strict';
-    window.user_is_dj = {{ is_dj|yesno:"true,false" }};
-    window.access_token = "{{ access_token }}";
-    window.station_id = {{ station_id }};
+    const user_is_dj = {{ is_dj|yesno:"true,false" }};
+    const access_token = "{{ access_token }}";
+    const station_id = {{ station_id }};
+    this.app = new StationApp(user_is_dj, access_token, station_id);
 </script>
 {% endblock %}{# extra_script #}
