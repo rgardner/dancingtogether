@@ -2,15 +2,14 @@
 
 {% block bootstrap4_title %}{% block title %}{% endblock %}{% endblock %}
 
-{# Load CSS and JavaScript #}
 {% load bootstrap4 %}
+{% load staticfiles %}
+
 {% bootstrap_css %}
-{% bootstrap_javascript jquery=True %}
+{% bootstrap_javascript %}
 
 {# Display django.contrib.messages as Bootstrap alerts #}
 {% bootstrap_messages %}
-
-{% load staticfiles %}
 
 {% block bootstrap4_extra_head %}
     <link href="{% static "css/main.css" %}" rel="stylesheet"></link>
@@ -26,7 +25,7 @@
             <span class="navbar-toggler-icon"></span>
         </button>
 
-        <div class="collapse navbar-collapse">
+        <div id="navbarSupportedContent" class="collapse navbar-collapse">
             <ul class="navbar-nav mr-auto">
                 <li class="nav-item active">
                     <a class="nav-link" href="{% url 'homepage' %}">Home</a>
@@ -53,6 +52,14 @@
 {% endblock %} {# bootstrap4_content#}
 
 {% block bootstrap4_extra_script %}
+
+<script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+{% comment %}
+HACK: Include bootstrap.min.js again (already incldued in
+'bootstrap_javascript' above) to get navbar toggler working.
+See https://github.com/rgardner/dancingtogether/issues/1
+{% endcomment %}
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
 {% block extra_script %}{% endblock %}
 
