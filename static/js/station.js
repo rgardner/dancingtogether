@@ -3,6 +3,9 @@
 /*global Spotify*/
 /*global ReconnectingWebSocket*/
 
+const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
+const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
+
 class StationApp { // eslint-disable-line no-unused-vars
     constructor(user_is_dj, access_token, station_id) {
         this.view = new StationView(user_is_dj);
@@ -103,6 +106,7 @@ class StationServer {
         this.musicPlayer = musicPlayer;
         this.connect();
         this.bindSpotifyActions();
+        this.enableHeartbeat();
     }
 
     connect() {
@@ -129,6 +133,15 @@ class StationServer {
             // 2) if this is a legitimate change and not just a random update
             this.sendPlayerState(state);
         });
+    }
+
+    enableHeartbeat() {
+        window.setInterval(() => {
+            this.musicPlayer.player.getCurrentState().then(state => {
+                console.log('Heartbeat: sending current state to server');
+                this.sendPlayerState(state);
+            });
+        }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
     // Socket Callbacks
@@ -318,7 +331,7 @@ class MusicPositionView {
             this.refreshTimeoutId = window.setInterval(() => {
                 this.draw();
                 this.positionMS += 1000;
-            }, 1000);
+            }, MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS);
         }
     }
 

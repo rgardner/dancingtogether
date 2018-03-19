@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # This is used to determine if a client is too far ahead/behind the stream
 # and should be caught up via seeking
-DEFAULT_SEEK_THRESHOLD_MS = 2000
+DEFAULT_SEEK_THRESHOLD_MS = 3000
 
 
 class StationState(enum.Enum):
@@ -190,14 +190,14 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                                   state.context_uri,
                                                   state.current_track_uri)
 
-        if needs_paused(previous_state, state):
+        elif needs_paused(previous_state, state):
             pause_resume = 'pause' if state.paused else 'resume'
             logger.debug(
                 f'DJ {user} caused {station.group_name} to {pause_resume}')
             await self.group_send_toggle_play_pause(station.group_name,
                                                     user.id, state.paused)
 
-        if needs_seek(previous_state, state):
+        elif needs_seek(previous_state, state):
             seek_change = state.position_ms - station.position_ms
             logger.debug(
                 f'DJ {user} caused {station.group_name} to seek {seek_change}')
@@ -205,8 +205,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 station.group_name, user.id, state.position_ms)
 
         await update_station(station, state)
-
-        self.last_dj_state = state
 
     async def update_listener_state(self, state):
         # TODO: detect if intentional change and disconnect the client if so
