@@ -207,10 +207,36 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await update_station(station, state)
 
     async def update_listener_state(self, state):
-        # TODO: detect if intentional change and disconnect the client if so
-        # for now, ignore the request.
         logger.debug('update_listener_state called')
-        pass
+        if self.state != StationState.Connected:
+            logger.debug(
+                '{user} hasn"t finished connecting yet, ignoring state')
+            return
+
+        user = self.scope['user']
+        station = await get_station_or_error(self.station_id, user)
+        station_state = PlaybackState.from_station(station)
+        state = PlaybackState.from_client_state(state)
+
+        if needs_start_playback(state, station_state):
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to change context or track'
+            )
+            await self.start_resume_playback(user.id, self.device_id,
+                                             station_state.context_uri,
+                                             station_state.current_track_uri)
+
+        elif needs_paused(state, station_state):
+            pause_resume = 'pause' if state.paused else 'resume'
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to {pause_resume}')
+            await self.toggle_play_pause(state.paused)
+
+        elif needs_seek(state, station_state):
+            seek_change = state.position_ms - station.position_ms
+            logger.debug(
+                f'DJ {user} caused {station.group_name} to seek {seek_change}')
+            await self.seek_current_track(station_state.position_ms)
 
     async def leave_station(self, station_id):
         self.state = StationState.Disconnecting
