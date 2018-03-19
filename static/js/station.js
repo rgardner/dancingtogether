@@ -416,6 +416,7 @@ class StationListenerView {
         this.bindSpotifyActions();
         this.musicVolume = new MusicVolume(musicPlayer);
         this.bindUIActions();
+        this.updateVolumeControls(MusicVolume.getCachedVolume());
     }
 
     bindSpotifyActions() {
