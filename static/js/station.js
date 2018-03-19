@@ -68,14 +68,6 @@ class StationMusicPlayer {
 
     onPlayerStateChanged(state) {
         console.log('Player state changed', state);
-
-        // Let the server determine what to do. Potential perf optimization
-        // for both client and server is to only send this event if:
-        // 1) the user is a dj (this can change during the stream)
-        // 2) if this is a legitimate change and not just a random update
-        this.stationServer.sendPlayerState(state);
-
-        this.view.update(state);
     }
 
     onInitializationError(message) {
@@ -110,6 +102,7 @@ class StationServer {
     setMusicPlayer(musicPlayer) {
         this.musicPlayer = musicPlayer;
         this.connect();
+        this.bindSpotifyActions();
     }
 
     connect() {
@@ -128,12 +121,17 @@ class StationServer {
         this.socket.onmessage = message => { this.onMessage(message); };
     }
 
-    sendPlayerState(state) {
-        this.socket.send(JSON.stringify({
-            'command': 'player_state_change',
-            'state': state
-        }));
+    bindSpotifyActions() {
+        this.musicPlayer.player.on('player_state_changed', state => {
+            // Let the server determine what to do. Potential perf optimization
+            // for both client and server is to only send this event if:
+            // 1) the user is a dj (this can change during the stream)
+            // 2) if this is a legitimate change and not just a random update
+            this.sendPlayerState(state);
+        });
     }
+
+    // Socket Callbacks
 
     onOpen() {
         console.log('Connected to station socket');
@@ -209,22 +207,40 @@ class StationServer {
             console.error('Cannot handle message!');
         }
     }
+
+    // Spotify Callbacks
+
+    sendPlayerState(state) {
+        this.socket.send(JSON.stringify({
+            'command': 'player_state_change',
+            'state': state
+        }));
+    }
 }
 
 // View Management
 
 class StationView {
     constructor(user_is_dj) {
+        this.musicPlayer = null;
         this.musicPositionView = new MusicPositionView();
         this.listener = new StationListenerView();
         this.dj = new StationDJView(user_is_dj);
     }
 
     setMusicPlayer(musicPlayer) {
+        this.musicPlayer = musicPlayer;
+        this.bindSpotifyActions();
+
+        this.musicPositionView.setMusicPlayer(musicPlayer);
         this.listener.setMusicPlayer(musicPlayer);
-        if (this.dj) {
-            this.dj.setMusicPlayer(musicPlayer);
-        }
+        this.dj.setMusicPlayer(musicPlayer);
+    }
+
+    bindSpotifyActions() {
+        this.musicPlayer.player.on('player_state_changed', state => {
+            this.update(state);
+        });
     }
 
     displayConnectionStatusMessage(isConnected, errorMessage = '') {
@@ -245,8 +261,6 @@ class StationView {
     }
 
     update(playbackState) {
-        this.listener.update(playbackState);
-
         // Update album art
         $('#album-art').empty();
         $('<img/>', {
@@ -258,8 +272,7 @@ class StationView {
         $('#playback-track-title').html(playbackState.track_window.current_track.name);
         $('#playback-track-artist').html(playbackState.track_window.current_track.artists[0].name);
 
-        // Update current position and duration
-        this.musicPositionView.update(playbackState);
+        // Update duration, current position is handled in MusicPositionView
         $('#playback-duration').html(msToTimeString(playbackState.duration));
     }
 
@@ -272,6 +285,17 @@ class MusicPositionView {
     constructor() {
         this.refreshTimeoutId = null;
         this.positionMS = 0.0;
+    }
+
+    setMusicPlayer(musicPlayer) {
+        this.musicPlayer = musicPlayer;
+        this.bindSpotifyActions();
+    }
+
+    bindSpotifyActions() {
+        this.musicPlayer.player.on('player_state_changed', state => {
+            this.update(state);
+        });
     }
 
     update(playbackState) {
@@ -389,6 +413,7 @@ class StationListenerView {
 
     setMusicPlayer(musicPlayer) {
         this.musicPlayer = musicPlayer;
+
         this.musicVolume.setMusicPlayer(musicPlayer);
         this.musicVolume.getVolume().then((volume) => {
             this.updateVolumeControls(volume);
@@ -423,15 +448,6 @@ class StationListenerView {
         }
     }
 
-    update(playbackState) {
-        // Update Play/Pause Button
-        if (playbackState.paused) {
-            $('#play-pause-button').html('<i class="fas fa-play"></i>');
-        } else {
-            $('#play-pause-button').html('<i class="fas fa-pause"></i>');
-        }
-    }
-
     updateVolumeControls(volume) {
         if (volume === 0.0) {
             $('#mute-button').html('<i class="fas fa-volume-off"></i>');
@@ -456,6 +472,7 @@ class StationDJView {
 
     setMusicPlayer(musicPlayer) {
         this.musicPlayer = musicPlayer;
+        this.bindSpotifyActions();
         if (this.isEnabled) {
             $('#dj-controls :button').prop('disabled', false);
         }
@@ -475,6 +492,12 @@ class StationDJView {
         });
     }
 
+    bindSpotifyActions() {
+        this.musicPlayer.player.on('player_state_changed', state => {
+            this.update(state);
+        });
+    }
+
     playPause() {
         if (this.isEnabled && this.musicPlayer) {
             this.musicPlayer.player.togglePlay();
@@ -490,6 +513,14 @@ class StationDJView {
     nextTrack() {
         if (this.isEnabled && this.musicPlayer) {
             this.musicPlayer.player.nextTrack();
+        }
+    }
+
+    update(playbackState) {
+        if (playbackState.paused) {
+            $('#play-pause-button').html('<i class="fas fa-play"></i>');
+        } else {
+            $('#play-pause-button').html('<i class="fas fa-pause"></i>');
         }
     }
 }
