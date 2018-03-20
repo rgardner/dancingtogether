@@ -80,6 +80,8 @@ ASGI_APPLICATION = 'dancingtogether.routing.application'
 
 SECURE_SSL_REDIRECT = os.environ.get('DT_USE_HTTPS', False)
 SESSION_COOKIE_SECURE = os.environ.get('DT_USE_HTTPS', False)
+if SECURE_SSL_REDIRECT:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
