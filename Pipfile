@@ -5,7 +5,7 @@ name = "pypi"
 
 [packages]
 django = "*"
-django-heroku = "*"
+django-heroku = {git = "https://github.com/rgardner/django-heroku", editable=true}
 requests = "*"
 channels = "*"
 channels-redis = "*"

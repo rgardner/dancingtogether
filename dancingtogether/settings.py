@@ -24,7 +24,7 @@ SECRET_KEY = os.environ.get(
     'DT_SECRET_KEY', '%)jx84v!m(5$52w6yf6@*ib*likhgl2!o#k(171%4$c3_ykwb!')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = bool(os.environ.get('DT_DEBUG', True))
+DEBUG = bool(os.environ.get('DT_DEBUG', False))
 
 ALLOWED_HOSTS = []
 
@@ -78,8 +78,8 @@ ASGI_APPLICATION = 'dancingtogether.routing.application'
 
 # SSL/HTTPS
 
-SECURE_SSL_REDIRECT = os.environ.get('DT_USE_HTTPS', False)
-SESSION_COOKIE_SECURE = os.environ.get('DT_USE_HTTPS', False)
+SECURE_SSL_REDIRECT = bool(os.environ.get('DT_USE_HTTPS', True))
+SESSION_COOKIE_SECURE = bool(os.environ.get('DT_USE_HTTPS', True))
 if SECURE_SSL_REDIRECT:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
@@ -197,7 +197,7 @@ CHANNEL_LAYERS = {
 
 LOGIN_REDIRECT_URL = '/stations'
 
-django_heroku.settings(locals(), logging=False)
+django_heroku.settings(locals(), db_ssl_require=False, logging=False)
 
 SITE_URL = os.environ.get('DT_SITE_URL')
 SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
