@@ -1,27 +1,21 @@
 [[source]]
-
 url = "https://pypi.python.org/simple"
 verify_ssl = true
 name = "pypi"
 
-
 [packages]
-
 django = "*"
 django-heroku = "*"
 requests = "*"
 channels = "*"
 channels-redis = "*"
 "django-bootstrap4" = "*"
-
+nose = "*"
 
 [requires]
-
 python_version = "3.6"
 
-
 [dev-packages]
-
 pycodestyle = "*"
 mypy = "*"
 yapf = "*"
