@@ -1,14 +1,16 @@
 import asyncio
+from datetime import datetime
 import enum
 import logging
 from typing import Optional
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
+import dateutil.parser
 
-from . import spotify
 from .exceptions import ClientError
-from .models import Listener, SpotifyCredentials, Station
+from .models import Listener, Station
+from .spotify import SpotifyWebAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +50,22 @@ class PlaybackState:
         return self._position_ms
 
     @staticmethod
-    def from_client_state(state):
+    def from_client_state(state_time, state):
         context_uri = state['context']['uri']
         current_track_uri = state['track_window']['current_track']['uri']
         paused = state['paused']
+
+        # If the track is not paused, account for message latency and adjust
+        # to the expected current position.
         position = state['position']
+        if not paused:
+            client_time = dateutil.parser.parse(state_time)
+            client_time_tzinfo = client_time.tzinfo
+            now = datetime.now(client_time_tzinfo)
+            diff = now - client_time
+            # position += 1000 * diff.seconds
+            logger.debug(f'adjusted position by {diff.seconds} seconds')
+
         return PlaybackState(context_uri, current_track_uri, paused, position)
 
     @staticmethod
@@ -112,9 +125,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 listener = await get_listener_or_error(self.station_id,
                                                        self.scope['user'])
                 if listener.is_dj:
-                    await self.update_dj_state(content['state'])
+                    await self.update_dj_state(content['state_time'],
+                                               content['state'])
                 else:
-                    await self.update_listener_state(content['state'])
+                    await self.update_listener_state(content['state_time'],
+                                                     content['state'])
 
             elif command == 'leave':
                 await self.leave_station(content['station'])
@@ -170,7 +185,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'join': station.title})
         self.state = StationState.Connected
 
-    async def update_dj_state(self, state):
+    async def update_dj_state(self, state_time, state):
         if self.state != StationState.Connected:
             logger.debug(
                 '{user} hasn"t finished connecting yet, ignoring state')
@@ -180,7 +195,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         logger.debug(f'DJ {user} is updating station state...')
         station = await get_station_or_error(self.station_id, user)
         previous_state = PlaybackState.from_station(station)
-        state = PlaybackState.from_client_state(state)
+        state = PlaybackState.from_client_state(state_time, state)
 
         if needs_start_playback(previous_state, state):
             logger.debug(
@@ -206,7 +221,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         await update_station(station, state)
 
-    async def update_listener_state(self, state):
+    async def update_listener_state(self, state_time, state):
         logger.debug('update_listener_state called')
         if self.state != StationState.Connected:
             logger.debug(
@@ -216,7 +231,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         station = await get_station_or_error(self.station_id, user)
         station_state = PlaybackState.from_station(station)
-        state = PlaybackState.from_client_state(state)
+        state = PlaybackState.from_client_state(state_time, state)
 
         if needs_start_playback(state, station_state):
             logger.debug(
@@ -370,16 +385,17 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 class SpotifyConsumer(JsonWebsocketConsumer):
     """Background worker to send requests to the Spotify Web API."""
 
+    def __init__(self, scope):
+        super().__init__(scope)
+        self.spotify_client = SpotifyWebAPIClient()
+
     def spotify_start_resume_playback(self, event):
         user_id = event['user_id']
         device_id = event['device_id']
         context_uri = event['context_uri']
         uri = event['uri']
         logger.debug(f'{user_id} starting {context_uri}: {uri}')
-
-        creds = SpotifyCredentials.objects.get(pk=user_id)
-        spotify.start_resume_playback(creds.access_token, device_id,
-                                      context_uri, uri, user_id)
+        self.spotify_client.player_play(user_id, device_id, context_uri, uri)
 
 
 @database_sync_to_async

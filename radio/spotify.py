@@ -164,7 +164,7 @@ def save_access_token(access_token: AccessToken):
     creds.save()
 
 
-def load_access_token(user_id):
+def load_access_token(user_id) -> AccessToken:
     creds = SpotifyCredentials.objects.get(user_id=user_id)
     return AccessToken(creds.user, creds.refresh_token, creds.access_token,
                        creds.access_token_expiration_time)
@@ -173,46 +173,94 @@ def load_access_token(user_id):
 # Web API Client
 
 
-def start_resume_playback(access_token: str, device_id, context_uri, uri,
-                          user_id):
-    """
-    https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
-    """
-    url = 'https://api.spotify.com/v1/me/player/play'
-    headers = {'Authorization': f'Bearer {access_token}'}
-    query_params = {'device_id': device_id}
-    data = {'context_uri': context_uri, 'offset': {'uri': uri}}
+class SpotifyWebAPIClient:
+    throttled_until = None
 
-    r = requests.put(url, headers=headers, params=query_params, json=data)
-    if r.status_code == requests.codes.accepted:
-        # device is temporarily unavailable, retry after 5 seconds, up to 5
-        # retries
-        for r in range(5):
-            time.sleep(5)
-            r = requests.post(
-                url, headers=headers, params=query_params, json=data)
-            if r.status_code != requests.codes.accepted:
-                break
+    def player_play(self, user_id, device_id, context_uri, uri):
+        """
+        https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
+        """
+        if self.is_throttled():
+            return
 
-    if r.status_code == requests.codes.no_content:
-        # successful request
-        # do nothing
-        pass
-    elif r.status_code == requests.codes.unauthorized:
-        # Access token is stale and needs to be refreshed
-        access_token = load_access_token(user_id)
-        access_token.refresh()
-        start_resume_playback(access_token.token, device_id, context_uri, uri,
-                              user_id)
-    elif r.status_code == requests.codes.forbidden:
-        # the user making the request is non-premium
-        # TODO: alert user and prevent them from using the site
-        pass
-    elif r.status_code == requests.codes.not_found:
-        # device is not found
-        # TODO: refetch device id from user
-        pass
-    else:
-        logger.error(
-            f'user-{user_id} received unexpected Spotify Web API response {r.text}'
-        )
+        access_token = load_access_token(user_id).token
+
+        url = 'https://api.spotify.com/v1/me/player/play'
+        headers = {'Authorization': f'Bearer {access_token}'}
+        query_params = {'device_id': device_id}
+        data = {'context_uri': context_uri, 'offset': {'uri': uri}}
+
+        r = requests.put(url, headers=headers, params=query_params, json=data)
+        if r.status_code == requests.codes.accepted:
+            # device is temporarily unavailable, retry after 5 seconds, up to 5
+            # retries
+            for r in range(5):
+                time.sleep(5)
+                r = requests.post(
+                    url, headers=headers, params=query_params, json=data)
+                if r.status_code != requests.codes.accepted:
+                    break
+
+        if r.status_code == requests.codes.no_content:
+            # successful request
+            # do nothing
+            pass
+        elif r.status_code == requests.codes.unauthorized:
+            # Access token is stale and needs to be refreshed
+            access_token = load_access_token(user_id)
+            access_token.refresh()
+            self.player_play(access_token.token, device_id, context_uri, uri,
+                             user_id)
+        elif r.status_code == requests.codes.forbidden:
+            # the user making the request is non-premium
+            # TODO: alert user and prevent them from using the site
+            pass
+        elif r.status_code == requests.codes.not_found:
+            # device is not found
+            # TODO: refetch device id from user
+            pass
+        elif r.status_code == requests.codes.too_many_requests:
+            # API rate limit exceeded. This applies to all web playback calls
+            self._start_throttling(r.headers['Retry-After'])
+        else:
+            logger.error(
+                f'user-{user_id} received unexpected Spotify Web API response {r.text}'
+            )
+
+    def player_pause(self):
+        """
+        https://beta.developer.spotify.com/documentation/web-api/reference/player/pause-a-users-playback/
+        """
+        if self.is_throttled():
+            return
+
+    def player_seek(self):
+        """
+        https://beta.developer.spotify.com/documentation/web-api/reference/player/seek-to-position-in-currently-playing-track/
+        """
+        if self.is_throttled():
+            return
+
+    def player_next(self):
+        """
+        https://beta.developer.spotify.com/documentation/web-api/reference/player/skip-users-playback-to-next-track/
+        """
+        if self.is_throttled():
+            return
+
+    def player_previous(self):
+        """
+        https://beta.developer.spotify.com/documentation/web-api/reference/player/skip-users-playback-to-previous-track/
+        """
+        if self.is_throttled():
+            return
+
+    @classmethod
+    def _start_throttling(cls, retry_after_seconds):
+        logger.warn('Spotify Web API throttle is now in effect')
+        cls.throttled_until = datetime.now() + retry_after_seconds
+
+    @classmethod
+    def is_throttled(cls) -> bool:
+        return (cls.throttled_until is not None
+                and (datetime.now() < cls.throttled_until))

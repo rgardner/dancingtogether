@@ -10,7 +10,7 @@ requests = "*"
 channels = "*"
 channels-redis = "*"
 "django-bootstrap4" = "*"
-nose = "*"
+python-dateutil = "*"
 
 [requires]
 python_version = "3.6"

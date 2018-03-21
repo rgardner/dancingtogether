@@ -122,7 +122,9 @@ class StationServer {
             // for both client and server is to only send this event if:
             // 1) the user is a dj (this can change during the stream)
             // 2) if this is a legitimate change and not just a random update
-            this.sendPlayerState(state);
+            if (state) {
+                this.sendPlayerState(state);
+            }
         });
     }
 
@@ -147,7 +149,9 @@ class StationServer {
         window.setInterval(() => {
             this.musicPlayer.player.getCurrentState().then(state => {
                 console.log('Heartbeat: sending current state to server');
-                this.sendPlayerState(state);
+                if (state) {
+                    this.sendPlayerState(state);
+                }
             });
         }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
@@ -234,7 +238,8 @@ class StationServer {
     sendPlayerState(state) {
         this.socket.send(JSON.stringify({
             'command': 'player_state_change',
-            'state': state
+            'state_time': new Date(),
+            'state': state,
         }));
     }
 }
