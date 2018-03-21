@@ -75,11 +75,11 @@
         },
         "channels-redis": {
             "hashes": [
-                "sha256:c5276d8c479c2375c75adace0c90d98a50e47e04641b948e72346d6170d3e26f",
-                "sha256:e014d54cac2ae40f524c007eaabc67bdf608786aaa1095a0469f3349fef22433"
+                "sha256:688233f0114a921239345c388ae4ed3314de345b53832f67b85926b0040a279a",
+                "sha256:c471e69c39c212af09e064ba8bc69808be9437b576982b2fda725f02e5f74c6d"
             ],
             "index": "pypi",
-            "version": "==2.1.0"
+            "version": "==2.1.1"
         },
         "chardet": {
             "hashes": [
@@ -207,11 +207,11 @@
         },
         "python-dateutil": {
             "hashes": [
-                "sha256:07009062406cffd554a9b4135cd2ff167c9bf6b7aac61fe946c93e69fad1bbd8",
-                "sha256:8f95bb7e6edbb2456a51a1fb58c8dca942024b4f5844cae62c90aa88afe6e300"
+                "sha256:14eb44faa298942c6385636bfd76bd5c21361632cf8ebc9c20d63fd00f6a069f",
+                "sha256:6c0e72580272b561d8594362ab0e6b5b2191c703982150fc06ed45f7fae725be"
             ],
             "index": "pypi",
-            "version": "==2.7.0"
+            "version": "==2.7.1"
         },
         "pytz": {
             "hashes": [
@@ -359,11 +359,11 @@
         },
         "mypy": {
             "hashes": [
-                "sha256:83d798f66323f2de6191d66d9ae5ab234e4ee5b400010e19c58d75d308049f25",
-                "sha256:884f18f3a40cfcf24cdd5860b84958cfb35e6563e439c5adc1503878df221dc3"
+                "sha256:3bd95a1369810f7693366911d85be9f0a0bd994f6cb7162b7a994e5ded90e3d9",
+                "sha256:7247f9948d7cdaae9408a4ee1662a01853c24e668117b4419acf025b05fbe3ce"
             ],
             "index": "pypi",
-            "version": "==0.570"
+            "version": "==0.580"
         },
         "pycodestyle": {
             "hashes": [
