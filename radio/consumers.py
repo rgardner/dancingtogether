@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # This is used to determine if a client is too far ahead/behind the stream
 # and should be caught up via seeking
-DEFAULT_SEEK_THRESHOLD_MS = 3000
+DEFAULT_SEEK_THRESHOLD_MS = 5000
 
 
 class StationState(enum.Enum):
@@ -98,7 +98,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         """Called during initial websocket handshaking."""
         logger.debug(f'{self.scope["user"]} connected to StationConsumer')
         if self.scope['user'].is_anonymous:
-            logger.warn(
+            logger.warning(
                 f'anonymous user ({self.scope["user"]}) attempted to connect to station'
             )
             await self.close()
@@ -402,12 +402,12 @@ class SpotifyConsumer(JsonWebsocketConsumer):
 def get_station_or_error(station_id: Optional[int], user):
     """Fetch station for user and check permissions."""
     if user.is_anonymous:
-        logger.warn(f'Anonymous user attempted to stream a station: {user}')
+        logger.warning(f'Anonymous user attempted to stream a station: {user}')
         raise ClientError('access_denied',
                           'You must be signed in to stream music')
 
     if station_id is None:
-        logger.warn(f'Client did not join the station')
+        logger.warning(f'Client did not join the station')
         raise ClientError('bad_request', 'You must join a station first')
 
     try:
@@ -421,12 +421,13 @@ def get_station_or_error(station_id: Optional[int], user):
 @database_sync_to_async
 def get_listener_or_error(station_id: Optional[int], user):
     if user.is_anonymous:
-        logger.warn(f'Anonymous user ({user}) attempted to stream a station')
+        logger.warning(
+            f'Anonymous user ({user}) attempted to stream a station')
         raise ClientError('access_denied',
                           'You must be signed in to stream music')
 
     if station_id is None:
-        logger.warn(f'{user} did not join the station')
+        logger.warning(f'{user} did not join the station')
         raise ClientError('bad_request', 'You must join a station first')
 
     try:

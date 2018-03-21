@@ -47,12 +47,12 @@ def oauth_callback(request):
     # Validate OAuth state parameter
     expected_state = spotify.get_url_safe_oauth_request_state(request)
     if result['state'] != expected_state:
-        logger.warn('User received invalid oauth request state response')
+        logger.warning('User received invalid oauth request state response')
         return HttpResponse('Invalid OAuth state', status_code=400)
 
     if 'error' in result:
         error = result['error']
-        logger.warn(f'User rejected the oauth permissions: {error}')
+        logger.warning(f'User rejected the oauth permissions: {error}')
         return redirect('/')
     else:
         code = result['code']

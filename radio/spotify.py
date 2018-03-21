@@ -257,7 +257,7 @@ class SpotifyWebAPIClient:
 
     @classmethod
     def _start_throttling(cls, retry_after_seconds):
-        logger.warn('Spotify Web API throttle is now in effect')
+        logger.warning('Spotify Web API throttle is now in effect')
         cls.throttled_until = datetime.now() + retry_after_seconds
 
     @classmethod
