@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # This is used to determine if a client is too far ahead/behind the stream
 # and should be caught up via seeking
-DEFAULT_SEEK_THRESHOLD_MS = 5000
+DEFAULT_SEEK_THRESHOLD_MS = 4000
 
 
 class StationState(enum.Enum):
