@@ -4,13 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-django = "*"
-django-heroku = {git = "https://github.com/rgardner/django-heroku", editable=true}
+Django = "*"
 requests = "*"
 channels = "*"
-channels-redis = "*"
+channels_redis = "*"
 "django-bootstrap4" = "*"
 python-dateutil = "*"
+django-heroku = { git = "https://github.com/rgardner/django-heroku.git", editable = true }
 
 [requires]
 python_version = "3.6"

@@ -221,7 +221,7 @@ class SpotifyWebAPIClient:
             pass
         elif r.status_code == requests.codes.too_many_requests:
             # API rate limit exceeded. This applies to all web playback calls
-            self._start_throttling(r.headers['Retry-After'])
+            self._start_throttling(int(r.headers['Retry-After']))
         else:
             logger.error(
                 f'user-{user_id} received unexpected Spotify Web API response {r.text}'
@@ -256,9 +256,10 @@ class SpotifyWebAPIClient:
             return
 
     @classmethod
-    def _start_throttling(cls, retry_after_seconds):
+    def _start_throttling(cls, retry_after_seconds: int):
         logger.warning('Spotify Web API throttle is now in effect')
-        cls.throttled_until = datetime.now() + retry_after_seconds
+        retry_after = timedelta(seconds=retry_after_seconds)
+        cls.throttled_until = datetime.now() + retry_after
 
     @classmethod
     def is_throttled(cls) -> bool:

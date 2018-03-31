@@ -236,6 +236,7 @@ class StationServer {
     // Spotify Callbacks
 
     sendPlayerState(state) {
+        state['current_time'] = new Date();
         this.socket.send(JSON.stringify({
             'command': 'player_state_change',
             'state_time': new Date(),

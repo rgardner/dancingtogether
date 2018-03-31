@@ -8,6 +8,7 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
 import dateutil.parser
 
+from . import models
 from .exceptions import ClientError
 from .models import Listener, Station
 from .spotify import SpotifyWebAPIClient
@@ -27,11 +28,13 @@ class StationState(enum.Enum):
 
 
 class PlaybackState:
-    def __init__(self, context_uri, current_track_uri, paused, position_ms):
+    def __init__(self, context_uri, current_track_uri, paused, position_ms,
+                 sample_time):
         self._context_uri = context_uri
         self._current_track_uri = current_track_uri
         self._paused = paused
         self._position_ms = position_ms
+        self._sample_time = sample_time
 
     @property
     def context_uri(self):
@@ -47,7 +50,20 @@ class PlaybackState:
 
     @property
     def position_ms(self):
-        return self._position_ms
+        if self.paused:
+            return self._position_ms
+        else:
+            # Assume music has been playing continuously and adjust based on
+            # elapsed time since sample was taken
+            elapsed_time = datetime.now(
+                self.sample_time.tzinfo) - self.sample_time
+            millis = (elapsed_time.seconds * 1000) + (
+                elapsed_time.microseconds / 1000)
+            return self._position_ms + millis
+
+    @property
+    def sample_time(self):
+        return self._sample_time
 
     @staticmethod
     def from_client_state(state_time, state):
@@ -58,20 +74,17 @@ class PlaybackState:
         # If the track is not paused, account for message latency and adjust
         # to the expected current position.
         position = state['position']
-        if not paused:
-            client_time = dateutil.parser.parse(state_time)
-            client_time_tzinfo = client_time.tzinfo
-            now = datetime.now(client_time_tzinfo)
-            diff = now - client_time
-            # position += 1000 * diff.seconds
-            logger.debug(f'adjusted position by {diff.seconds} seconds')
+        sample_time = dateutil.parser.parse(state_time)
 
-        return PlaybackState(context_uri, current_track_uri, paused, position)
+        return PlaybackState(context_uri, current_track_uri, paused, position,
+                             sample_time)
 
     @staticmethod
-    def from_station(station):
-        return PlaybackState(station.context_uri, station.current_track_uri,
-                             station.paused, station.position_ms)
+    def from_station_state(station_state: models.PlaybackState):
+        return PlaybackState(station_state.context_uri,
+                             station_state.current_track_uri,
+                             station_state.paused, station_state.position_ms,
+                             station_state.last_updated_time)
 
 
 def needs_paused(old_state, new_state):
@@ -174,12 +187,14 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # the client won't have processed the start_resume_playback event yet
         # by the time it receives pause and seek events.
 
-        await self.start_resume_playback(self.scope['user'].id, self.device_id,
-                                         station.context_uri,
-                                         station.current_track_uri)
-        await asyncio.sleep(1)
-        await self.toggle_play_pause(station.paused)
-        await self.seek_current_track(station.position_ms)
+        if hasattr(station, 'playbackstate'):
+            station_state = station.playbackstate
+            await self.start_resume_playback(
+                self.scope['user'].id, self.device_id,
+                station_state.context_uri, station_state.current_track_uri)
+            await asyncio.sleep(1)
+            await self.toggle_play_pause(station_state.paused)
+            await self.seek_current_track(station_state.position_ms)
 
         # Reply to client to finish setting up station
         await self.send_json({'join': station.title})
@@ -194,32 +209,56 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         logger.debug(f'DJ {user} is updating station state...')
         station = await get_station_or_error(self.station_id, user)
-        previous_state = PlaybackState.from_station(station)
         state = PlaybackState.from_client_state(state_time, state)
+        if hasattr(station, 'playbackstate'):
+            station_state = station.playbackstate
+            previous_state = PlaybackState.from_station_state(station_state)
 
-        if needs_start_playback(previous_state, state):
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to change context or track'
-            )
-            self.group_send_start_resume_playback(station.group_name, user.id,
-                                                  state.context_uri,
-                                                  state.current_track_uri)
+            if needs_start_playback(previous_state, state):
+                logger.debug(
+                    f'DJ {user} caused {station.group_name} to change context or track'
+                )
+                await self.group_send_start_resume_playback(
+                    station.group_name, user.id, state.context_uri,
+                    state.current_track_uri)
 
-        elif needs_paused(previous_state, state):
-            pause_resume = 'pause' if state.paused else 'resume'
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to {pause_resume}')
+            elif needs_paused(previous_state, state):
+                pause_resume = 'pause' if state.paused else 'resume'
+                logger.debug(
+                    f'DJ {user} caused {station.group_name} to {pause_resume}')
+                await self.group_send_toggle_play_pause(
+                    station.group_name, user.id, state.paused)
+
+            elif needs_seek(previous_state, state):
+                seek_change = state.position_ms - station_state.position_ms
+                logger.debug(
+                    f'DJ {user} caused {station.group_name} to seek {seek_change}'
+                )
+                await self.group_send_seek_current_track(
+                    station.group_name, user.id, state.position_ms)
+
+        else:
+            # Copied from join
+            #
+            # Catch up to current playback state. The current solution is sub-
+            # optimal. The context and track need to be loaded first. Otherwise,
+            # there's nothing to pause or seek! The user will experience a brief
+            # moment of music playing before the seek and paused events are
+            # processed. The call to sleep below is necessary because without it,
+            # the client won't have processed the start_resume_playback event yet
+            # by the time it receives pause and seek events.
+
+            await self.group_send_start_resume_playback(
+                station.group_name, user.id, state.context_uri,
+                state.current_track_uri)
             await self.group_send_toggle_play_pause(station.group_name,
                                                     user.id, state.paused)
-
-        elif needs_seek(previous_state, state):
-            seek_change = state.position_ms - station.position_ms
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to seek {seek_change}')
             await self.group_send_seek_current_track(
                 station.group_name, user.id, state.position_ms)
 
-        await update_station(station, state)
+            station_state = models.PlaybackState(station_id=station.id)
+
+        await update_station_state(station_state, state)
 
     async def update_listener_state(self, state_time, state):
         logger.debug('update_listener_state called')
@@ -230,28 +269,21 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         user = self.scope['user']
         station = await get_station_or_error(self.station_id, user)
-        station_state = PlaybackState.from_station(station)
-        state = PlaybackState.from_client_state(state_time, state)
+        if hasattr(station, 'playbackstate'):
+            station_state = station.playbackstate
+            station_state = PlaybackState.from_station_state(station_state)
+            state = PlaybackState.from_client_state(state_time, state)
 
-        if needs_start_playback(state, station_state):
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to change context or track'
-            )
-            await self.start_resume_playback(user.id, self.device_id,
-                                             station_state.context_uri,
-                                             station_state.current_track_uri)
+            if needs_start_playback(state, station_state):
+                await self.start_resume_playback(
+                    user.id, self.device_id, station_state.context_uri,
+                    station_state.current_track_uri)
 
-        elif needs_paused(state, station_state):
-            pause_resume = 'pause' if state.paused else 'resume'
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to {pause_resume}')
-            await self.toggle_play_pause(state.paused)
+            elif needs_paused(state, station_state):
+                await self.toggle_play_pause(state.paused)
 
-        elif needs_seek(state, station_state):
-            seek_change = state.position_ms - station.position_ms
-            logger.debug(
-                f'DJ {user} caused {station.group_name} to seek {seek_change}')
-            await self.seek_current_track(station_state.position_ms)
+            elif needs_seek(state, station_state):
+                await self.seek_current_track(station_state.position_ms)
 
     async def leave_station(self, station_id):
         self.state = StationState.Disconnecting
@@ -439,9 +471,9 @@ def get_listener_or_error(station_id: Optional[int], user):
 
 
 @database_sync_to_async
-def update_station(station, state: PlaybackState):
-    station.context_uri = state.context_uri
-    station.current_track_uri = state.current_track_uri
-    station.paused = state.paused
-    station.position_ms = state.position_ms
-    station.save()
+def update_station_state(station_state, state: PlaybackState):
+    station_state.context_uri = state.context_uri
+    station_state.current_track_uri = state.current_track_uri
+    station_state.paused = state.paused
+    station_state.position_ms = state.position_ms
+    station_state.save()

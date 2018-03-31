@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 from accounts.models import User
 
@@ -20,11 +21,6 @@ class Station(models.Model):
         User, related_name='stations', through='Listener')
     pending_members = models.ManyToManyField(
         User, related_name='pending_stations', through='PendingListener')
-
-    context_uri = models.CharField(max_length=256, default='')
-    current_track_uri = models.CharField(max_length=256, default='')
-    paused = models.NullBooleanField(default=None)
-    position_ms = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return self.title
@@ -49,3 +45,12 @@ class Listener(models.Model):
 class PendingListener(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     room = models.ForeignKey(Station, on_delete=models.CASCADE)
+
+
+class PlaybackState(models.Model):
+    station = models.OneToOneField(Station, on_delete=models.CASCADE)
+    context_uri = models.CharField(max_length=256)
+    current_track_uri = models.CharField(max_length=256)
+    paused = models.NullBooleanField()
+    position_ms = models.PositiveIntegerField()
+    last_updated_time = models.DateTimeField(auto_now=True)
