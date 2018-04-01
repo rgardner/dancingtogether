@@ -1,7 +1,4 @@
-#album-art {
-    height: 300px;
-    width: 300px;
-}
+/* Accounts */
 
 /*
  * Originally based on the example Bootstrap 4 Sign in Form.
@@ -12,5 +9,18 @@
     max-width: 330px;
     padding: 15px;
     text-align: center;
+    width: 100%;
+}
+
+/* Radio */
+
+#album-art {
+    height: 300px;
+    width: 300px;
+}
+
+#invite-listener-form {
+    margin: auto;
+    padding: 10px;
     width: 100%;
 }

@@ -4,40 +4,77 @@
 
 {% block content %}
 
-Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
-<span id="connection-status-error" class="bg-danger"></span><br>
+<div class="row">
 
-<div>
-    <h1 id="station-name"></h1>
-    <div id="album-art"></div>
-    <span id="playback-track-title"></span><br>
-    <span id="playback-track-artist"></span><br>
-    <span id="playback-current-position"></span>/<span id="playback-duration"></span>
+<div class="col">
+    Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
+    <span id="connection-status-error" class="bg-danger"></span><br>
+
+    <div>
+        <h1 id="station-name"></h1>
+        <div id="album-art"></div>
+        <span id="playback-track-title"></span><br>
+        <span id="playback-track-artist"></span><br>
+        <span id="playback-current-position"></span>/<span id="playback-duration"></span>
+    </div>
+
+    <div id="listener-controls">
+        <button id="mute-button" class="btn" type="submit" aria-pressed="false">
+            <i class="fas fa-volume-up"></i>
+        </button>
+
+        <input id="volume-slider" type="range" min="0" max="1" step="0.1" />
+    </div>
+
+    <div id="dj-controls">
+        <button id="previous-track-button" class="btn" type="submit" aria-pressed="false" disabled="true">
+            <i class="fas fa-step-backward"></i>
+        </button>
+
+        <button id="play-pause-button" class="btn" type="submit" aria-pressed="false" disabled="true">
+            <i class="fas fa-play"></i>
+        </button>
+
+        <button id="next-track-button" class="btn" type="submit" aria-pressed="false" disabled="true">
+            <i class="fas fa-step-forward"></i>
+        </button>
+    </div>
 </div>
-
-<div id="listener-controls">
-    <button id="mute-button" class="btn" type="submit" aria-pressed="false">
-        <i class="fas fa-volume-up"></i>
-    </button>
-
-    <input id="volume-slider" type="range" min="0" max="1" step="0.1" />
+<div id="admin-view" class="col">
+    <div>
+        <h2>Listeners</h2>
+        <table class="table table-striped">
+            <tr>
+                <td>boppers327@gmail.com</td>
+                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+            </tr>
+            <tr>
+                <td>nicoleansbacher@gmail.com</td>
+                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+            </tr>
+        </table>
+    </div>
+    <div>
+        <h3>Invite listeners</h3>
+        <form id="invite-listener-form" class="form-inline">
+            <input type="email" class="form-control form-control-sm" id="invite-listener-email" placeholder="name@example.com">
+            <button type="submit" class="btn btn-primary btn-sm">Send invite</button>
+        </form>
+        <span id="admin-invite-sent"></span>
+        <table class="table table-striped">
+            <tr>
+                <td>test@gmail.com</td>
+                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+            </tr>
+            <tr>
+                <td>test2@gmail.com</td>
+                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+            </tr>
+        </table>
+    </div>
+    <div id="admin-messages">
+    </div>
 </div>
-
-<div id="dj-controls">
-    <button id="previous-track-button" class="btn" type="submit" aria-pressed="false" disabled="true">
-        <i class="fas fa-step-backward"></i>
-    </button>
-
-    <button id="play-pause-button" class="btn" type="submit" aria-pressed="false" disabled="true">
-        <i class="fas fa-play"></i>
-    </button>
-
-    <button id="next-track-button" class="btn" type="submit" aria-pressed="false" disabled="true">
-        <i class="fas fa-step-forward"></i>
-    </button>
-</div>
-
-<div id="admin-messages">
 </div>
 
 {% endblock %}{# content #}
@@ -49,8 +86,9 @@ Status: <span id="connection-status" class="bg-info">Not Connected</span><br>
 <script>
     'use strict';
     const user_is_dj = {{ is_dj|yesno:"true,false" }};
+    const user_is_admin = {{ is_admin|yesno:"true,false" }};
     const access_token = "{{ access_token }}";
     const station_id = {{ station_id }};
-    this.app = new StationApp(user_is_dj, access_token, station_id);
+    this.app = new StationApp(user_is_dj, user_is_admin, access_token, station_id);
 </script>
 {% endblock %}{# extra_script #}

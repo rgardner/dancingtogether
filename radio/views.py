@@ -38,6 +38,7 @@ def station(request, station_id):
             'station_id': station_id,
             'access_token': access_token,
             'is_dj': listener.is_dj,
+            'is_admin': listener.is_admin,
         })
 
 

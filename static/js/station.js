@@ -7,10 +7,10 @@ const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
 class StationApp { // eslint-disable-line no-unused-vars
-    constructor(user_is_dj, access_token, station_id) {
+    constructor(user_is_dj, user_is_admin, access_token, station_id) {
         this.musicPlayer = new StationMusicPlayer('Dancing Together', access_token);
-        this.view = new StationView(user_is_dj, this.musicPlayer);
         this.stationServer = new StationServer(station_id, this.musicPlayer);
+        this.view = new StationView(user_is_dj, user_is_admin, this.musicPlayer, this.stationServer);
     }
 }
 
@@ -110,6 +110,12 @@ class StationServer {
         this.musicPlayer = musicPlayer;
         this.bindSpotifyActions();
         this.socket = null;
+    }
+
+    on(eventName, cb) {
+        // TODO: add callback mechanism
+        eventName;
+        cb;
     }
 
     bindSpotifyActions() {
@@ -233,8 +239,6 @@ class StationServer {
         }
     }
 
-    // Spotify Callbacks
-
     sendPlayerState(state) {
         state['current_time'] = new Date();
         this.socket.send(JSON.stringify({
@@ -243,17 +247,23 @@ class StationServer {
             'state': state,
         }));
     }
+
+    sendListenerInvite(listenerEmail) {
+        // TODO: send invite message to server
+        listenerEmail;
+    }
 }
 
 // View Management
 
 class StationView {
-    constructor(user_is_dj, musicPlayer) {
+    constructor(user_is_dj, user_is_admin, musicPlayer, stationServer) {
         this.musicPlayer = musicPlayer;
         this.bindSpotifyActions();
         this.musicPositionView = new MusicPositionView(musicPlayer);
-        this.listener = new StationListenerView(musicPlayer);
-        this.dj = new StationDJView(user_is_dj, musicPlayer);
+        this.listenerView = new StationListenerView(musicPlayer);
+        this.djView = new StationDJView(user_is_dj, musicPlayer);
+        this.adminView = new StationAdminView(user_is_admin, stationServer);
     }
 
     bindSpotifyActions() {
@@ -296,7 +306,7 @@ class StationView {
     }
 
     updateVolumeControls(volume) {
-        this.listener.updateVolumeControls(volume);
+        this.listenerView.updateVolumeControls(volume);
     }
 }
 
@@ -538,6 +548,47 @@ class StationDJView {
         } else {
             $('#play-pause-button').html('<i class="fas fa-pause"></i>');
         }
+    }
+}
+
+class StationAdminView {
+    constructor(user_is_admin, stationServer) {
+        this.isEnabled = user_is_admin;
+        this.stationServer = stationServer;
+        this.bindUIActions();
+
+        if (!this.isEnabled) {
+            $('#admin-view').hide();
+        }
+    }
+
+    bindUIActions() {
+        $('#invite-listener-form').submit(e => {
+            // Stop form from submitting normally
+            e.preventDefault();
+
+            this.inviteListener();
+        });
+    }
+
+    bindServerActions() {
+        this.stationServer.on('invite_sent', () => {
+            this.finishSendingInvite();
+        });
+    }
+
+    inviteListener() {
+        const listenerEmail = $('#invite-listener-email').val();
+        this.stationServer.sendListenerInvite(listenerEmail);
+    }
+
+    finishSendingInvite() {
+        $('#admin-invite-sent').html('Invite sent!');
+        setTimeout(() => {
+            $('#admin-invite-sent').hide();
+        }, 5000);
+
+        $('#invite-listener-email').val('');
     }
 }
 
