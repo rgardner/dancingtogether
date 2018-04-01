@@ -1,15 +1,16 @@
 # Dancing Together
 
-Dancing Together is a website for friends, family, couples, coworkers, and even
-Internet strangers to listen to Spotify together. Simply sign up for an
-account, create or join a room with friends, select some killer tunes, and hit
-play. The music stays in sync so you can all listen together. Pause it, skip
-it, rewind it, enjoy it!
+Dancing Together is a website for friends, family, couples, coworkers, and
+even Internet strangers to listen to Spotify together. Simply sign up for an
+account, create or join a room with friends, select some killer tunes, and
+hit play. Each person listens to music using their own Spotify account and
+Dancing Together keeps the jammin' in sync. Pause it, skip it, rewind it,
+enjoy it!
 
 
 ## Development
 
-### Manual Installation
+### Installation and First Time Setup
 
 Want to run it locally? Simply run `dev_setup.sh` to install dependencies, set
 up heroku deployment, and run the initial database migrations. Then create the
@@ -17,48 +18,27 @@ superuser and set the values in `.env`.
 
 ```sh
 $ ./scripts/dev_setup.sh
-$ python manage.py createsuperuser
+$ ./manage.py createsuperuser
 $ cp .env.example .env
 $ vim .env
 ```
 
-Now you're ready to run the local server!
+### Docker Usage
 
 ```sh
-$ heroku local web
+$ # Start the docker containers
+$ ./manage.py docker --start
+$ # Attach to running containers to enable easy debugging with `pdb`
+$ ./manage.py docker --attach-web
+$ ./manage.py docker --attach-worker
+$ # Rebuild the docker containers after updating the dependencies
+$ ./manage.py docker --build
 ```
 
-### Docker installation
-
-Run the app:
-
-```sh
-$ docker-compose up -d
-```
-
-**Note**: Prefix any `python manage.py` commands with
-`docker-compose run --rm web`.
-
-```sh
-$ docker-compose run --rm web python manage.py migrate
-$ docker-compose run --rm web python manage.py createsuperuser
-```
-
-To enable easy debugging with `pdb`:
-
-```sh
-$ docker-compose up -d
-$ docker attach dancingtogether_web_1
-```
-
-Rebuilding the Docker machine, e.g. after adding a new dependency
-
-```sh
-$ docker-compose build
-```
 
 ### Code Map
 
+- Dockerfile
 - Pipfile: specifies project dependencies
 - Pipfile.lock: pins dependency versions to ensure deterministic builds
 - Procfile: specifies how to start the app, use for macOS/Ubuntu
@@ -66,9 +46,13 @@ $ docker-compose build
 - README.md: this file
 - accounts: Django app for managing user accounts
 - app.json: specifies configuration for Heroku
-- dancingtogether: the main Django app
-- musicplayer: Django app for listening to music
+- dancingtogether: the main Django project, contains overall url routing
+- docker-compose.yml: specifies Docker services that compose this project
+- main: Django app for site index and management commands
+- manage.py: Program for running management commands
+- radio: Django app for listening to music
 - scripts: small scripts for developers
+- static: Contains the site's css and js files
 - templates: common templates for the entire project
   + base.html: the base template for every page
 
