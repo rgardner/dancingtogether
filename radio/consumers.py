@@ -177,7 +177,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         # Message admins that a user has joined the station
         await self.admin_group_send_join(station.admin_group_name,
-                                         self.scope['user'].username)
+                                         self.scope['user'].username,
+                                         self.scope['user'].email)
 
         # Catch up to current playback state. The current solution is sub-
         # optimal. The context and track need to be loaded first. Otherwise,
@@ -289,7 +290,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         self.state = StationState.Disconnecting
         station = await get_station_or_error(station_id, self.scope['user'])
         await self.admin_group_send_leave(station.admin_group_name,
-                                          self.scope['user'].username)
+                                          self.scope['user'].username,
+                                          self.scope['user'].email)
 
         await self.channel_layer.group_discard(station.group_name,
                                                self.channel_name)
@@ -309,16 +311,18 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     # Sending group messages
 
-    async def admin_group_send_join(self, group_name, username):
+    async def admin_group_send_join(self, group_name, username, email):
         await self.channel_layer.group_send(group_name, {
             'type': 'station.join',
             'username': username,
+            'email': email,
         })
 
-    async def admin_group_send_leave(self, group_name, username):
+    async def admin_group_send_leave(self, group_name, username, email):
         await self.channel_layer.group_send(group_name, {
             'type': 'station.leave',
             'username': username,
+            'email': email,
         })
 
     async def group_send_start_resume_playback(self, group_name, user_id,
@@ -351,20 +355,26 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     # Handlers for messages sent over the channel layer
 
     async def station_join(self, event):
-        """Called when someone has joined our chat."""
-        # Send a message down to the client
+        """Called when someone has joined our station."""
         await self.send_json({
-            'msg_type': 'enter',
-            'username': event['username'],
-        }, )
+            'type': 'listener_change',
+            'listener_change_type': 'join',
+            'listener': {
+                'username': event['username'],
+                'email': event['email'],
+            }
+        })
 
     async def station_leave(self, event):
-        """Called when someone has left our chat."""
-        # Send a message down to the client
+        """Called when someone has left our station."""
         await self.send_json({
-            'msg_type': 'leave',
-            'username': event['username'],
-        }, )
+            'type': 'listener_change',
+            'listener_change_type': 'leave',
+            'listener': {
+                'username': event['username'],
+                'email': event['email'],
+            }
+        })
 
     async def station_toggle_play_pause(self, event):
         sender_user_id = event['sender_user_id']

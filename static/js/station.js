@@ -50,10 +50,6 @@ class StationMusicPlayer {
             this.onReady(device_id);
         });
 
-        this.player.on('player_state_changed', state => {
-            this.onPlayerStateChanged(state);
-        });
-
         // Error handling
 
         this.player.on('initialization_error', ({ message }) => {
@@ -74,13 +70,8 @@ class StationMusicPlayer {
     }
 
     onReady(deviceId) {
-        console.log('Ready with Device ID', deviceId);
         this.deviceId = deviceId;
         this.isReady = true;
-    }
-
-    onPlayerStateChanged(state) {
-        console.log('Player state changed', state);
     }
 
     onInitializationError(message) {
@@ -104,18 +95,26 @@ class StationMusicPlayer {
     }
 }
 
+// Events
+// 'ready' -> Server is now ready to accept requests
+// 'listener_change' -> The station's listeners have changed
 class StationServer {
     constructor(stationId, musicPlayer) {
         this.stationId = stationId;
         this.musicPlayer = musicPlayer;
         this.bindSpotifyActions();
         this.socket = null;
+        this.observers = {
+            'ready': $.Callbacks(),
+            'get_listeners_result': $.Callbacks(),
+            'listener_change': $.Callbacks(),
+        };
+        this.heartbeatIntervalId = null;
+        this.requestId = 0;
     }
 
     on(eventName, cb) {
-        // TODO: add callback mechanism
-        eventName;
-        cb;
+        this.observers[eventName].add(cb);
     }
 
     bindSpotifyActions() {
@@ -145,16 +144,13 @@ class StationServer {
         // Correctly decide between ws:// and wss://
         const ws_scheme = window.location.protocol == 'https:' ? 'wss' : 'ws';
         const ws_path = ws_scheme + '://' + window.location.host + '/station/stream/';
-        console.log(`Connecting to ${ws_path}`);
         this.socket = new ReconnectingWebSocket(ws_path);
         this.bindSocketActions();
-        this.enableHeartbeat();
     }
 
     enableHeartbeat() {
-        window.setInterval(() => {
+        this.heartbeatIntervalId = window.setInterval(() => {
             this.musicPlayer.player.getCurrentState().then(state => {
-                console.log('Heartbeat: sending current state to server');
                 if (state) {
                     this.sendPlayerState(state);
                 }
@@ -162,13 +158,15 @@ class StationServer {
         }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
+    disableHeartbeat() {
+        window.clearInterval(this.heartbeatIntervalId);
+        this.heartbeatIntervalId = null;
+    }
+
     // Socket Callbacks
 
     onOpen() {
-        console.log('Connected to station socket');
         StationView.displayConnectionStatusMessage(true /*isConnected*/);
-
-        console.log('Joining station', this.stationId);
         this.socket.send(JSON.stringify({
             'command': 'join',
             'station': this.stationId,
@@ -177,65 +175,37 @@ class StationServer {
     }
 
     onClose() {
-        console.log('Disconnected from station socket');
         StationView.displayConnectionStatusMessage(false /*isConnected*/);
     }
 
     onMessage(message) {
-        console.log('Got websocket message ' + message.data);
         const data = JSON.parse(message.data);
-
         if (data.error) {
-            console.log(data.error);
+            console.error(data.error);
             return;
         }
 
         if (data.join) {
-            console.log(`Joining station ${data.join}`);
             $('#station-name').html(data.join);
+            this.enableHeartbeat();
+            this.observers['ready'].fire();
         } else if (data.leave) {
-            console.log('Leaving station ' + data.leave);
+            $('#station-name').html('');
+            this.disableHeartbeat();
         } else if (data.type === 'dj_state_change') {
-            console.log('DJ State Change: ', data.change_type);
-
             if (data.change_type === 'set_paused') {
-                this.musicPlayer.player.pause().then(() => {
-                    console.log('DJ caused station to pause');
-                });
+                this.musicPlayer.player.pause();
             } else if (data.change_type === 'set_resumed') {
-                this.musicPlayer.player.resume().then(() => {
-                    console.log('DJ caused station to resume');
-                });
+                this.musicPlayer.player.resume();
             } else if (data.change_type === 'seek_current_track') {
-                this.musicPlayer.player.seek(data.position_ms).then(() => {
-                    console.log('DJ caused track to seek');
-                });
+                this.musicPlayer.player.seek(data.position_ms);
             }
-
-        } else if (data.message || data.msg_type != 0) {
-            console.log('received message: ', data.message, 'from: ', data.username);
-
-            const msgdiv = $('#admin-messages');
-            var ok_msg = '';
-            if (data.msg_type === 'enter') {
-                // User joined station
-                ok_msg = '<div class="contextual-message text-muted">' + data.username +
-                        ' joined the station' +
-                        '</div>';
-            } else if (data.msg_type === 'leave') {
-                // User left station
-                ok_msg = '<div class="contextual-message text-muted">' + data.username +
-                        ' left the station' +
-                        '</div>';
-            } else {
-                console.error('Unsupported message type!');
-                return;
-            }
-
-            msgdiv.append(ok_msg);
-            msgdiv.scrollTop(msgdiv.prop('scrollHeight'));
+        } else if (data.type === 'get_listeners_result') {
+            this.observers['get_listeners_result'].fire(data.requestId, data.listeners);
+        } else if (data.type === 'listener_change') {
+            this.observers['listener_change'].fire(data.listener_change_type, data.listener);
         } else {
-            console.error('Cannot handle message!');
+            console.error('Unknown message from server: ', data);
         }
     }
 
@@ -249,8 +219,25 @@ class StationServer {
     }
 
     sendListenerInvite(listenerEmail) {
-        // TODO: send invite message to server
-        listenerEmail;
+        return new Promise((resolve, reject) => {
+            this.socket.send(JSON.stringify({
+            }));
+        });
+    }
+
+    getListeners() {
+        return new Promise((resolve) => {
+            const thisRequestId = ++this.requestId;
+            this.on('get_listeners_result', (requestId, listeners) => {
+                if (thisRequestId === requestId) {
+                    resolve(listeners);
+                }
+            });
+            this.socket.send(JSON.stringify({
+                'command': 'get_listeners',
+                'request_id': thisRequestId,
+            }));
+        });
     }
 }
 
@@ -461,7 +448,6 @@ class StationListenerView {
 
     muteUnmuteStation() {
         this.musicVolume.mute().then(newVolume => {
-            console.log(`${(newVolume === 0.0) ? 'Muting' : 'Umuting'} playback`);
             this.updateVolumeControls(newVolume);
         });
     }
@@ -554,13 +540,17 @@ class StationDJView {
 
 class StationAdminView {
     constructor(userIsAdmin, stationServer) {
-        this.isEnabled = userIsAdmin;
+        this.state = {
+            isEnabled: userIsAdmin,
+            isReady: false,
+            listeners: [],
+            invitedListeners: [],
+        };
+
         this.stationServer = stationServer;
         this.bindUIActions();
-
-        if (!this.isEnabled) {
-            $('#admin-view').hide();
-        }
+        this.bindServerActions();
+        this.render();
     }
 
     bindUIActions() {
@@ -568,7 +558,7 @@ class StationAdminView {
             // Stop form from submitting normally
             e.preventDefault();
 
-            if (this.isEnabled) {
+            if (this.state.isEnabled) {
                 this.sendListenerInvite();
             }
         });
@@ -576,49 +566,74 @@ class StationAdminView {
 
     bindServerActions() {
         this.stationServer.on('ready', () => {
-            if (this.isEnabled) {
-                this.enableUI();
-                this.loadListeners();
-            }
+            this.setState(() => ({
+                isReady: true,
+            }));
+
+            this.loadListeners();
         });
 
-        this.stationServer.on('listeners_change', listeners => {
-            if (this.isEnabled) {
-                this.displayListeners(listeners);
+        this.stationServer.on('listener_change', (listener_change_type, listener) => {
+            if (listener_change_type === 'join') {
+                this.setState(prevState => ({
+                    listeners: prevState.listeners.concat(listener),
+                }));
+            } else if (listener_change_type === 'leave') {
+                this.setState(prevState => ({
+                    listeners: prevState.listeners.splice(prevState.listeners.indexOf(listener), 1),
+                }));
             }
         });
     }
 
-    enableUI() {
-        $('#admin-view :button').prop('disabled', false);
+    render() {
+        if (this.state.isEnabled) {
+            $('#admin-view').show();
+        } else {
+            $('#admin-view').hide();
+            return;
+        }
+
+        $('#admin-view :input,:button').prop('disabled', false);
+
+        $('#listeners-table tr').remove();
+        this.state.listeners.forEach(({ username, email }) => {
+            this.makeListenerTableRow(username, email).appendTo('#listeners-table');
+        });
+
+        $('#invited-listeners-table tr').remove();
+        this.state.invitedListeners.forEach(({ username, email }) => {
+            this.makeListenerTableRow(username, email).appendTo('#invited-listeners-table');
+        });
+    }
+
+    makeListenerTableRow(username, email) {
+        var $row = $('<tr>');
+        $('<td>').html(username).appendTo($row);
+        $('<td>').html(email).appendTo($row);
+        $('<td>').html($('<button>', {
+            type: 'submit',
+            class: 'btn btn-warning btn-sm',
+            value: email,
+        }).html('Remove')).appendTo($row);
+        return $row;
+    }
+
+    setState(updater) {
+        // Merge previous state and new state
+        this.state = Object.assign({}, this.state, updater(this.state));
+
+        this.render();
     }
 
     loadListeners() {
-        this.stationServer.getListeners().then(listeners => {
-            this.displayListeners(listeners);
-        });
-    }
-
-    displayListeners(listeners) {
-        $('#listeners-table tr').remove();
-        $('#invited-listeners-table tr').remove();
-
-        listeners.forEach(({ username, email, isPending }) => {
-            var $row = $('<tr>');
-            $('<td>').html(username).appendTo($row);
-            $('<td>').html(email).appendTo($row);
-            $('<button>', {
-                type: 'submit',
-                class: 'btn btn-warning btn-sm',
-                value: email,
-            }).html('Remove').appendTo($row);
-
-            if (isPending) {
-                $row.appendTo('#invited-listeners-table');
-            } else {
-                $row.appendTo('#listeners-table');
-            }
-        });
+        if (this.state.isEnabled) {
+            this.stationServer.getListeners().then(listeners => {
+                this.setState(() => ({
+                    listeners: listeners,
+                }));
+            });
+        }
     }
 
     sendListenerInvite() {
