@@ -201,7 +201,7 @@ class StationServer {
                 this.musicPlayer.player.seek(data.position_ms);
             }
         } else if (data.type === 'get_listeners_result') {
-            this.observers['get_listeners_result'].fire(data.requestId, data.listeners);
+            this.observers['get_listeners_result'].fire(data.request_id, data.listeners, data.pending_listeners);
         } else if (data.type === 'listener_change') {
             this.observers['listener_change'].fire(data.listener_change_type, data.listener);
         } else {
@@ -228,9 +228,9 @@ class StationServer {
     getListeners() {
         return new Promise((resolve) => {
             const thisRequestId = ++this.requestId;
-            this.on('get_listeners_result', (requestId, listeners) => {
+            this.on('get_listeners_result', (requestId, listeners, pendingListeners) => {
                 if (thisRequestId === requestId) {
-                    resolve(listeners);
+                    resolve({listeners, pendingListeners});
                 }
             });
             this.socket.send(JSON.stringify({
@@ -544,7 +544,7 @@ class StationAdminView {
             isEnabled: userIsAdmin,
             isReady: false,
             listeners: [],
-            invitedListeners: [],
+            pendingListeners: [],
         };
 
         this.stationServer = stationServer;
@@ -575,13 +575,22 @@ class StationAdminView {
 
         this.stationServer.on('listener_change', (listener_change_type, listener) => {
             if (listener_change_type === 'join') {
-                this.setState(prevState => ({
-                    listeners: prevState.listeners.concat(listener),
-                }));
+                this.setState(prevState => {
+                    let listeners = prevState.listeners;
+                    const listenerIdx = listeners.findIndex(l => l.id == listener.id);
+                    if (listenerIdx === -1) {
+                        listeners.push(listener);
+                    } else {
+                        listeners[listenerIdx] = listener;
+                    }
+                    return { listeners: listeners };
+                });
             } else if (listener_change_type === 'leave') {
-                this.setState(prevState => ({
-                    listeners: prevState.listeners.splice(prevState.listeners.indexOf(listener), 1),
-                }));
+                this.setState(prevState => {
+                    let listeners = prevState.listeners;
+                    listeners.splice(listeners.indexOf(listener), 1);
+                    return { listeners: listeners };
+                });
             }
         });
     }
@@ -601,9 +610,9 @@ class StationAdminView {
             this.makeListenerTableRow(username, email).appendTo('#listeners-table');
         });
 
-        $('#invited-listeners-table tr').remove();
-        this.state.invitedListeners.forEach(({ username, email }) => {
-            this.makeListenerTableRow(username, email).appendTo('#invited-listeners-table');
+        $('#pending-listeners-table tr').remove();
+        this.state.pendingListeners.forEach(({ username, email }) => {
+            this.makeListenerTableRow(username, email).appendTo('#pending-listeners-table');
         });
     }
 
@@ -628,9 +637,10 @@ class StationAdminView {
 
     loadListeners() {
         if (this.state.isEnabled) {
-            this.stationServer.getListeners().then(listeners => {
+            this.stationServer.getListeners().then(({listeners, pendingListeners}) => {
                 this.setState(() => ({
                     listeners: listeners,
+                    pendingListeners: pendingListeners,
                 }));
             });
         }

@@ -10,7 +10,7 @@ import dateutil.parser
 
 from . import models
 from .exceptions import ClientError
-from .models import Listener, Station
+from .models import Listener, PendingListener, Station
 from .spotify import SpotifyWebAPIClient
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,12 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 await self.join_station(content['station'],
                                         content['device_id'])
 
+            elif command == 'leave':
+                await self.leave_station(content['station'])
+
+            elif command == 'get_listeners':
+                await self.get_listeners(content['request_id'])
+
             elif command == 'player_state_change':
                 listener = await get_listener_or_error(self.station_id,
                                                        self.scope['user'])
@@ -144,10 +150,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     await self.update_listener_state(content['state_time'],
                                                      content['state'])
 
-            elif command == 'leave':
-                await self.leave_station(content['station'])
-
         except ClientError as e:
+            logger.error(f'Station client error: {e.code}: {e.message}')
             await self.send_json({'error': e.code, 'message': e.message})
 
     async def disconnect(self, code):
@@ -201,11 +205,56 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'join': station.title})
         self.state = StationState.Connected
 
+    async def leave_station(self, station_id):
+        self.state = StationState.Disconnecting
+        station = await get_station_or_error(station_id, self.scope['user'])
+        await self.admin_group_send_leave(station.admin_group_name,
+                                          self.scope['user'].username,
+                                          self.scope['user'].email)
+
+        await self.channel_layer.group_discard(station.group_name,
+                                               self.channel_name)
+
+        if self.is_admin:
+            await self.channel_layer.group_discard(station.admin_group_name,
+                                                   self.channel_name)
+
+        self.state = StationState.NotConnected
+        self.station_id = None
+        self.device_id = None
+        self.is_admin = None
+        self.is_dj = None
+
+        # Reply to client to finish tearing down station
+        await self.send_json({'leave': station_id})
+
+    async def get_listeners(self, request_id):
+        if self.state != StationState.Connected:
+            raise ClientError('bad_request',
+                              'user has not connected to station')
+
+        if not self.is_admin:
+            raise ClientError(
+                'forbidden',
+                'user does not have permission to request listeners')
+
+        listeners = await get_listeners(self.station_id)
+        pending_listeners = await get_pending_listeners(self.station_id)
+        filter_user = lambda user: { 'id': user.id, 'username': user.username, 'email': user.email }
+        await self.send_json({
+            'type':
+            'get_listeners_result',
+            'request_id':
+            request_id,
+            'listeners': [filter_user(l.user) for l in listeners],
+            'pending_listeners':
+            [filter_user(l.user) for l in pending_listeners],
+        })
+
     async def update_dj_state(self, state_time, state):
         if self.state != StationState.Connected:
-            logger.debug(
-                '{user} hasn"t finished connecting yet, ignoring state')
-            return
+            raise ClientError('bad_request',
+                              'user has not connected to station')
 
         user = self.scope['user']
         logger.debug(f'DJ {user} is updating station state...')
@@ -262,11 +311,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await update_station_state(station_state, state)
 
     async def update_listener_state(self, state_time, state):
-        logger.debug('update_listener_state called')
         if self.state != StationState.Connected:
-            logger.debug(
-                '{user} hasn"t finished connecting yet, ignoring state')
-            return
+            raise ClientError('bad_request',
+                              'user has not connected to station')
 
         user = self.scope['user']
         station = await get_station_or_error(self.station_id, user)
@@ -285,29 +332,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
             elif needs_seek(state, station_state):
                 await self.seek_current_track(station_state.position_ms)
-
-    async def leave_station(self, station_id):
-        self.state = StationState.Disconnecting
-        station = await get_station_or_error(station_id, self.scope['user'])
-        await self.admin_group_send_leave(station.admin_group_name,
-                                          self.scope['user'].username,
-                                          self.scope['user'].email)
-
-        await self.channel_layer.group_discard(station.group_name,
-                                               self.channel_name)
-
-        if self.is_admin:
-            await self.channel_layer.group_discard(station.admin_group_name,
-                                                   self.channel_name)
-
-        self.state = StationState.NotConnected
-        self.station_id = None
-        self.device_id = None
-        self.is_admin = None
-        self.is_dj = None
-
-        # Reply to client to finish tearing down station
-        await self.send_json({'leave': station_id})
 
     # Sending group messages
 
@@ -444,12 +468,10 @@ class SpotifyConsumer(JsonWebsocketConsumer):
 def get_station_or_error(station_id: Optional[int], user):
     """Fetch station for user and check permissions."""
     if user.is_anonymous:
-        logger.warning(f'Anonymous user attempted to stream a station: {user}')
         raise ClientError('access_denied',
                           'You must be signed in to stream music')
 
     if station_id is None:
-        logger.warning(f'Client did not join the station')
         raise ClientError('bad_request', 'You must join a station first')
 
     try:
@@ -463,13 +485,10 @@ def get_station_or_error(station_id: Optional[int], user):
 @database_sync_to_async
 def get_listener_or_error(station_id: Optional[int], user):
     if user.is_anonymous:
-        logger.warning(
-            f'Anonymous user ({user}) attempted to stream a station')
         raise ClientError('access_denied',
                           'You must be signed in to stream music')
 
     if station_id is None:
-        logger.warning(f'{user} did not join the station')
         raise ClientError('bad_request', 'You must join a station first')
 
     try:
@@ -478,6 +497,16 @@ def get_listener_or_error(station_id: Optional[int], user):
         raise ClientError('forbidden', 'This station is not available')
 
     return listener
+
+
+@database_sync_to_async
+def get_listeners(station_id):
+    return Listener.objects.filter(station_id=station_id)
+
+
+@database_sync_to_async
+def get_pending_listeners(station_id):
+    return PendingListener.objects.filter(room_id=station_id)
 
 
 @database_sync_to_async
