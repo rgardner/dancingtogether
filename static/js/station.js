@@ -474,26 +474,24 @@ class StationListenerView {
 
 class StationDJView {
     constructor(userIsDJ, musicPlayer) {
-        this.isEnabled = userIsDJ;
+        this.state = {
+            isEnabled: userIsDJ,
+            isReady: false,
+            playbackState: null,
+        };
         this.musicPlayer = musicPlayer;
-
-        if (this.isEnabled) {
-            this.bindSpotifyActions();
-            this.bindUIActions();
-        } else {
-            $('#dj-controls').hide();
-        }
+        this.bindSpotifyActions();
+        this.bindUIActions();
+        this.render();
     }
 
     bindSpotifyActions() {
         this.musicPlayer.on('ready', () => {
-            if (this.isEnabled) {
-                $('#dj-controls :button').prop('disabled', false);
-            }
+            this.setState(() => ({ isReady: true}));
         });
 
         this.musicPlayer.on('player_state_changed', state => {
-            this.update(state);
+            this.setState(() => ({ playbackState: state }));
         });
     }
 
@@ -511,29 +509,45 @@ class StationDJView {
         });
     }
 
+    render() {
+        if (this.state.isEnabled) {
+            $('#dj-controls').show();
+        } else {
+            $('#dj-controls').hide();
+            return;
+        }
+
+        if (this.state.playbackState) {
+            $('#dj-controls :button').prop('disabled', !this.state.isReady);
+            if (this.state.playbackState.paused) {
+                $('#play-pause-button').html('<i class="fas fa-play"></i>');
+            } else {
+                $('#play-pause-button').html('<i class="fas fa-pause"></i>');
+            }
+        }
+    }
+
+    setState(updater) {
+        // Merge previous state and new state
+        this.state = Object.assign({}, this.state, updater(this.state));
+        this.render();
+    }
+
     playPause() {
-        if (this.isEnabled && this.musicPlayer.isReady) {
+        if (this.state.isEnabled && this.state.isReady) {
             this.musicPlayer.player.togglePlay();
         }
     }
 
     previousTrack() {
-        if (this.isEnabled && this.musicPlayer.isReady) {
+        if (this.state.isEnabled && this.state.isReady) {
             this.musicPlayer.player.previousTrack();
         }
     }
 
     nextTrack() {
-        if (this.isEnabled && this.musicPlayer.isReady) {
+        if (this.state.isEnabled && this.state.isReady) {
             this.musicPlayer.player.nextTrack();
-        }
-    }
-
-    update(playbackState) {
-        if (playbackState.paused) {
-            $('#play-pause-button').html('<i class="fas fa-play"></i>');
-        } else {
-            $('#play-pause-button').html('<i class="fas fa-pause"></i>');
         }
     }
 }
@@ -631,7 +645,6 @@ class StationAdminView {
     setState(updater) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
-
         this.render();
     }
 
