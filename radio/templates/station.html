@@ -15,7 +15,7 @@
         <div id="album-art"></div>
         <span id="playback-track-title"></span><br>
         <span id="playback-track-artist"></span><br>
-        <span id="playback-current-position"></span>/<span id="playback-duration"></span>
+        <span id="playback-current-position">0:00</span>/<span id="playback-duration">0:00</span>
     </div>
 
     <div id="listener-controls">
@@ -43,32 +43,32 @@
 <div id="admin-view" class="col">
     <div>
         <h2>Listeners</h2>
-        <table class="table table-striped">
+        <table id="listeners-table" class="table table-striped">
             <tr>
                 <td>boppers327@gmail.com</td>
-                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+                <td><button type="submit" class="btn btn-warning btn-sm" disabled="true">Remove</button></td>
             </tr>
             <tr>
                 <td>nicoleansbacher@gmail.com</td>
-                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+                <td><button type="submit" class="btn btn-warning btn-sm" disabled="true">Remove</button></td>
             </tr>
         </table>
     </div>
     <div>
         <h3>Invite listeners</h3>
         <form id="invite-listener-form" class="form-inline">
-            <input type="email" class="form-control form-control-sm" id="invite-listener-email" placeholder="name@example.com">
-            <button type="submit" class="btn btn-primary btn-sm">Send invite</button>
+            <input type="email" class="form-control form-control-sm" id="invite-listener-email" placeholder="name@example.com" disabled="true">
+            <button type="submit" class="btn btn-primary btn-sm" disabled="true">Send invite</button>
         </form>
         <span id="admin-invite-sent"></span>
-        <table class="table table-striped">
+        <table id="invited-listeners-table" class="table table-striped">
             <tr>
                 <td>test@gmail.com</td>
-                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+                <td><button type="submit" class="btn btn-warning btn-sm" disabled="true">Remove</button></td>
             </tr>
             <tr>
                 <td>test2@gmail.com</td>
-                <td><button type="submit" class="btn btn-warning btn-sm">Remove</button></td>
+                <td><button type="submit" class="btn btn-warning btn-sm" disabled="true">Remove</button></td>
             </tr>
         </table>
     </div>
@@ -85,10 +85,10 @@
 <script src="{% static "js/station.js" %}"></script>
 <script>
     'use strict';
-    const user_is_dj = {{ is_dj|yesno:"true,false" }};
-    const user_is_admin = {{ is_admin|yesno:"true,false" }};
-    const access_token = "{{ access_token }}";
-    const station_id = {{ station_id }};
-    this.app = new StationApp(user_is_dj, user_is_admin, access_token, station_id);
+    const userIsDJ = {{ is_dj|yesno:"true,false" }};
+    const userIsAdmin = {{ is_admin|yesno:"true,false" }};
+    const accessToken = "{{ access_token }}";
+    const stationId = {{ station_id }};
+    this.app = new StationApp(userIsDJ, userIsAdmin, accessToken, stationId);
 </script>
 {% endblock %}{# extra_script #}

@@ -7,15 +7,15 @@ const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
 class StationApp { // eslint-disable-line no-unused-vars
-    constructor(user_is_dj, user_is_admin, access_token, station_id) {
-        this.musicPlayer = new StationMusicPlayer('Dancing Together', access_token);
-        this.stationServer = new StationServer(station_id, this.musicPlayer);
-        this.view = new StationView(user_is_dj, user_is_admin, this.musicPlayer, this.stationServer);
+    constructor(userIsDJ, userIsAdmin, accessToken, stationId) {
+        this.musicPlayer = new StationMusicPlayer('Dancing Together', accessToken);
+        this.stationServer = new StationServer(stationId, this.musicPlayer);
+        this.view = new StationView(userIsDJ, userIsAdmin, this.musicPlayer, this.stationServer);
     }
 }
 
 class StationMusicPlayer {
-    constructor(client_name, access_token) {
+    constructor(client_name, accessToken) {
         this.isReady = false;
         this.player = null;
         this.deviceId = null;
@@ -24,7 +24,7 @@ class StationMusicPlayer {
         window.onSpotifyWebPlaybackSDKReady = () => {
             this.player = new Spotify.Player({
                 name: client_name,
-                getOAuthToken: cb => { cb(access_token); },
+                getOAuthToken: cb => { cb(accessToken); },
                 volume: MusicVolume.getCachedVolume(),
             });
 
@@ -257,13 +257,13 @@ class StationServer {
 // View Management
 
 class StationView {
-    constructor(user_is_dj, user_is_admin, musicPlayer, stationServer) {
+    constructor(userIsDJ, userIsAdmin, musicPlayer, stationServer) {
         this.musicPlayer = musicPlayer;
         this.bindSpotifyActions();
         this.musicPositionView = new MusicPositionView(musicPlayer);
         this.listenerView = new StationListenerView(musicPlayer);
-        this.djView = new StationDJView(user_is_dj, musicPlayer);
-        this.adminView = new StationAdminView(user_is_admin, stationServer);
+        this.djView = new StationDJView(userIsDJ, musicPlayer);
+        this.adminView = new StationAdminView(userIsAdmin, stationServer);
     }
 
     bindSpotifyActions() {
@@ -490,10 +490,11 @@ class StationDJView {
     constructor(userIsDJ, musicPlayer) {
         this.isEnabled = userIsDJ;
         this.musicPlayer = musicPlayer;
-        this.bindSpotifyActions();
-        this.bindUIActions();
 
-        if (!this.isEnabled) {
+        if (this.isEnabled) {
+            this.bindSpotifyActions();
+            this.bindUIActions();
+        } else {
             $('#dj-controls').hide();
         }
     }
@@ -552,8 +553,8 @@ class StationDJView {
 }
 
 class StationAdminView {
-    constructor(user_is_admin, stationServer) {
-        this.isEnabled = user_is_admin;
+    constructor(userIsAdmin, stationServer) {
+        this.isEnabled = userIsAdmin;
         this.stationServer = stationServer;
         this.bindUIActions();
 
@@ -567,28 +568,73 @@ class StationAdminView {
             // Stop form from submitting normally
             e.preventDefault();
 
-            this.inviteListener();
+            if (this.isEnabled) {
+                this.sendListenerInvite();
+            }
         });
     }
 
     bindServerActions() {
-        this.stationServer.on('invite_sent', () => {
-            this.finishSendingInvite();
+        this.stationServer.on('ready', () => {
+            if (this.isEnabled) {
+                this.enableUI();
+                this.loadListeners();
+            }
+        });
+
+        this.stationServer.on('listeners_change', listeners => {
+            if (this.isEnabled) {
+                this.displayListeners(listeners);
+            }
         });
     }
 
-    inviteListener() {
-        const listenerEmail = $('#invite-listener-email').val();
-        this.stationServer.sendListenerInvite(listenerEmail);
+    enableUI() {
+        $('#admin-view :button').prop('disabled', false);
     }
 
-    finishSendingInvite() {
-        $('#admin-invite-sent').html('Invite sent!');
-        setTimeout(() => {
-            $('#admin-invite-sent').hide();
-        }, 5000);
+    loadListeners() {
+        this.stationServer.getListeners().then(listeners => {
+            this.displayListeners(listeners);
+        });
+    }
 
-        $('#invite-listener-email').val('');
+    displayListeners(listeners) {
+        $('#listeners-table tr').remove();
+        $('#invited-listeners-table tr').remove();
+
+        listeners.forEach(({ username, email, isPending }) => {
+            var $row = $('<tr>');
+            $('<td>').html(username).appendTo($row);
+            $('<td>').html(email).appendTo($row);
+            $('<button>', {
+                type: 'submit',
+                class: 'btn btn-warning btn-sm',
+                value: email,
+            }).html('Remove').appendTo($row);
+
+            if (isPending) {
+                $row.appendTo('#invited-listeners-table');
+            } else {
+                $row.appendTo('#listeners-table');
+            }
+        });
+    }
+
+    sendListenerInvite() {
+        const listenerEmail = $('#invite-listener-email').val();
+        if (listenerEmail.length === 0) {
+            return;
+        }
+
+        this.stationServer.sendListenerInvite(listenerEmail).then(() => {
+            $('#admin-invite-sent').html('Invite sent!');
+            setTimeout(() => {
+                $('#admin-invite-sent').hide();
+            }, 5000);
+
+            $('#invite-listener-email').val('');
+        });
     }
 }
 
