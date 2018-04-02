@@ -245,17 +245,19 @@ class StationServer {
 
 class StationView {
     constructor(userIsDJ, userIsAdmin, musicPlayer, stationServer) {
+        this.state = { playbackState: null };
         this.musicPlayer = musicPlayer;
-        this.bindSpotifyActions();
         this.musicPositionView = new MusicPositionView(musicPlayer);
         this.listenerView = new StationListenerView(musicPlayer);
         this.djView = new StationDJView(userIsDJ, musicPlayer);
         this.adminView = new StationAdminView(userIsAdmin, stationServer);
+        this.bindSpotifyActions();
+        this.render();
     }
 
     bindSpotifyActions() {
         this.musicPlayer.on('player_state_changed', state => {
-            this.update(state);
+            this.setState(() => ({ playbackState: state }));
         });
     }
 
@@ -276,61 +278,65 @@ class StationView {
         }
     }
 
-    update(playbackState) {
+    render() {
         // Update album art
         $('#album-art').empty();
         $('<img/>', {
-            src: playbackState.track_window.current_track.album.images[0].url,
-            alt: playbackState.track_window.current_track.album.name
+            src: this.state.playbackState.track_window.current_track.album.images[0].url,
+            alt: this.state.playbackState.track_window.current_track.album.name
         }).appendTo('#album-art');
 
         // Update track title and track artist
-        $('#playback-track-title').html(playbackState.track_window.current_track.name);
-        $('#playback-track-artist').html(playbackState.track_window.current_track.artists[0].name);
+        $('#playback-track-title').html(this.state.playbackState.track_window.current_track.name);
+        $('#playback-track-artist').html(this.state.playbackState.track_window.current_track.artists[0].name);
 
         // Update duration, current position is handled in MusicPositionView
-        $('#playback-duration').html(msToTimeString(playbackState.duration));
+        $('#playback-duration').html(msToTimeString(this.state.playbackState.duration));
     }
 
-    updateVolumeControls(volume) {
-        this.listenerView.updateVolumeControls(volume);
+    setState(updater) {
+        // Merge previous state and new state
+        this.state = Object.assign({}, this.state, updater(this.state));
+        this.render();
     }
 }
 
 class MusicPositionView {
     constructor(musicPlayer) {
+        this.state = { positionMS: 0.0 };
         this.musicPlayer = musicPlayer;
-        this.bindSpotifyActions();
         this.refreshTimeoutId = null;
-        this.positionMS = 0.0;
+        this.bindSpotifyActions();
+        this.render();
     }
 
     bindSpotifyActions() {
         this.musicPlayer.on('player_state_changed', state => {
-            this.update(state);
+            this.setState(() => ({ positionMS: state.position }));
+
+            if (state.paused) {
+                this.ensureDisableRefresh();
+            } else {
+                this.ensureEnableRefresh();
+            }
         });
     }
 
-    update(playbackState) {
-        this.positionMS = playbackState.position;
-        this.draw();
-
-        if (playbackState.paused) {
-            this.ensureDisableRefresh();
-        } else {
-            this.ensureEnableRefresh();
-        }
+    render() {
+        $('#playback-current-position').html(msToTimeString(this.state.positionMS));
     }
 
-    draw() {
-        $('#playback-current-position').html(msToTimeString(this.positionMS));
+    setState(updater) {
+        // Merge previous state and new state
+        this.state = Object.assign({}, this.state, updater(this.state));
+        this.render();
     }
 
     ensureEnableRefresh() {
         if (this.refreshTimeoutId === null) {
             this.refreshTimeoutId = window.setInterval(() => {
-                this.draw();
-                this.positionMS += 1000;
+                this.render();
+                this.state.positionMS += MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS;
             }, MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS);
         }
     }
@@ -415,22 +421,27 @@ class MusicVolume {
 
 class StationListenerView {
     constructor(musicPlayer) {
+        this.state = {
+            isReady: false,
+            volume: MusicVolume.getCachedVolume(),
+        };
         this.musicPlayer = musicPlayer;
-        this.bindSpotifyActions();
         this.musicVolume = new MusicVolume(musicPlayer);
+        this.bindSpotifyActions();
         this.bindUIActions();
-        this.updateVolumeControls(MusicVolume.getCachedVolume());
+        this.render();
     }
 
     bindSpotifyActions() {
         this.musicPlayer.on('ready', () => {
-            this.initVolumeControls();
+            this.setState(() => ({ isReady: true }));
+            this.getVolume();
         });
     }
 
     bindUIActions() {
         $('#mute-button').on('click', () => {
-            this.muteUnmuteStation();
+            this.muteUnmuteVolume();
         });
 
         $('#volume-slider').change(() => {
@@ -438,17 +449,28 @@ class StationListenerView {
         });
     }
 
-    initVolumeControls() {
-        this.musicVolume.getVolume().then((volume) => {
-            this.updateVolumeControls(volume);
-        });
+    render() {
+        $('#listener-controls :button').prop('disabled', !this.state.isReady);
+        if (this.state.volume !== null) {
+            if (this.state.volume === 0.0) {
+                $('#mute-button').html('<i class="fas fa-volume-off"></i>');
+            } else {
+                $('#mute-button').html('<i class="fas fa-volume-up"></i>');
+            }
 
-        $('#listener-controls :button').prop('disabled', false);
+            $('#volume-slider').val(this.state.volume);
+        }
     }
 
-    muteUnmuteStation() {
-        this.musicVolume.mute().then(newVolume => {
-            this.updateVolumeControls(newVolume);
+    setState(updater) {
+        // Merge previous state and new state
+        this.state = Object.assign({}, this.state, updater(this.state));
+        this.render();
+    }
+
+    getVolume() {
+        this.musicVolume.getVolume().then((volume) => {
+            this.setState(() => ({ volume: volume }));
         });
     }
 
@@ -456,19 +478,15 @@ class StationListenerView {
         if (this.musicPlayer) {
             const newVolume = parseFloat($('#volume-slider').val());
             this.musicVolume.setVolume(newVolume).then(() => {
-                this.updateVolumeControls(newVolume);
+                this.setState(() => ({ volume: newVolume }));
             });
         }
     }
 
-    updateVolumeControls(volume) {
-        if (volume === 0.0) {
-            $('#mute-button').html('<i class="fas fa-volume-off"></i>');
-        } else {
-            $('#mute-button').html('<i class="fas fa-volume-up"></i>');
-        }
-
-        $('#volume-slider').val(volume);
+    muteUnmuteVolume() {
+        this.musicVolume.mute().then(newVolume => {
+            this.setState(() => ({ volume: newVolume }));
+        });
     }
 }
 
