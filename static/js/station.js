@@ -279,6 +279,10 @@ class StationView {
     }
 
     render() {
+        if (this.state.playbackState === null) {
+            return;
+        }
+
         // Update album art
         $('#album-art').empty();
         $('<img/>', {
