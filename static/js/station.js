@@ -95,7 +95,7 @@ class StationMusicPlayer {
     }
 }
 
-// Events
+// Public Events
 // 'ready' -> Server is now ready to accept requests
 // 'listener_change' -> The station's listeners have changed
 class StationServer {
@@ -106,8 +106,9 @@ class StationServer {
         this.socket = null;
         this.observers = {
             'ready': $.Callbacks(),
-            'get_listeners_result': $.Callbacks(),
             'listener_change': $.Callbacks(),
+            'get_listeners_result': $.Callbacks(),
+            'send_listener_invite_result': $.Callbacks(),
         };
         this.heartbeatIntervalId = null;
         this.requestId = 0;
@@ -115,6 +116,10 @@ class StationServer {
 
     on(eventName, cb) {
         this.observers[eventName].add(cb);
+    }
+
+    removeListener(eventName, cb) {
+        this.observers[eventName].remove(cb);
     }
 
     bindSpotifyActions() {
@@ -200,10 +205,12 @@ class StationServer {
             } else if (data.change_type === 'seek_current_track') {
                 this.musicPlayer.player.seek(data.position_ms);
             }
-        } else if (data.type === 'get_listeners_result') {
-            this.observers['get_listeners_result'].fire(data.request_id, data.listeners, data.pending_listeners);
         } else if (data.type === 'listener_change') {
             this.observers['listener_change'].fire(data.listener_change_type, data.listener);
+        } else if (data.type === 'get_listeners_result') {
+            this.observers[data.type].fire(data.request_id, data.listeners, data.pending_listeners);
+        } else if (data.type === 'send_listener_invite_result') {
+            this.observers[data.type].fire(data.request_id, data.result, data.is_new_user);
         } else {
             console.error('Unknown message from server: ', data);
         }
@@ -218,24 +225,38 @@ class StationServer {
         }));
     }
 
-    sendListenerInvite(listenerEmail) {
-        return new Promise((resolve, reject) => {
+    getListeners() {
+        return new Promise((resolve) => {
+            const thisRequestId = ++this.requestId;
+            const onGetListenersResult = (requestId, listeners, pendingListeners) => {
+                if (requestId === thisRequestId) {
+                    this.removeListener('get_listeners_result', onGetListenersResult);
+                    resolve({listeners, pendingListeners});
+                }
+            };
+            this.on('get_listeners_result', onGetListenersResult);
             this.socket.send(JSON.stringify({
+                'command': 'get_listeners',
+                'request_id': thisRequestId,
             }));
         });
     }
 
-    getListeners() {
+    sendListenerInvite(listenerEmail) {
         return new Promise((resolve) => {
             const thisRequestId = ++this.requestId;
-            this.on('get_listeners_result', (requestId, listeners, pendingListeners) => {
-                if (thisRequestId === requestId) {
-                    resolve({listeners, pendingListeners});
+            const onSendInviteResult = (requestId, result, isNewUser) => {
+                if (requestId === thisRequestId) {
+                    this.removeListener('send_listener_invite_result', onSendInviteResult);
+                    resolve({result, isNewUser});
                 }
-            });
+            };
+
+            this.on('send_listener_invite_result', onSendInviteResult);
             this.socket.send(JSON.stringify({
-                'command': 'get_listeners',
+                'command': 'send_listener_invite',
                 'request_id': thisRequestId,
+                'listener_email': listenerEmail,
             }));
         });
     }
@@ -590,10 +611,15 @@ class StationAdminView {
     }
 
     bindUIActions() {
-        $('#invite-listener-form').submit(e => {
-            // Stop form from submitting normally
-            e.preventDefault();
+        $('#invite-listener-email').keyup(e => {
+            // Also submit form if the user hits the enter key
+            if (e.keyCode === 13) {
+                $('#invite-listener-form').submit();
+            }
+        });
 
+        $('#invite-listener-form').submit(e => {
+            e.preventDefault();
             if (this.state.isEnabled) {
                 this.sendListenerInvite();
             }
@@ -687,12 +713,20 @@ class StationAdminView {
             return;
         }
 
-        this.stationServer.sendListenerInvite(listenerEmail).then(() => {
-            $('#admin-invite-sent').html('Invite sent!');
+        this.stationServer.sendListenerInvite(listenerEmail).then((result, isNewUser) => {
+            let message;
+            if (result === 'ok') {
+                message = (isNewUser ? 'Invite sent to new user!' : 'Invite sent!');
+            } else if (result === 'err_user_exists') {
+                message = `Error: ${listenerEmail} is already a listener`;
+            } else {
+                message = `An error occurred while inviting ${listenerEmail}`;
+            }
+
+            $('#admin-invite-sent').html(message);
             setTimeout(() => {
                 $('#admin-invite-sent').hide();
-            }, 5000);
-
+            }, 10000);
             $('#invite-listener-email').val('');
         });
     }

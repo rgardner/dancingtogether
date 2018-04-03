@@ -27,80 +27,30 @@ class StationState(enum.Enum):
     Disconnecting = enum.auto()
 
 
-class PlaybackState:
-    def __init__(self, context_uri, current_track_uri, paused, position_ms,
-                 sample_time):
-        self._context_uri = context_uri
-        self._current_track_uri = current_track_uri
-        self._paused = paused
-        self._position_ms = position_ms
-        self._sample_time = sample_time
+# Station Decorators
 
-    @property
-    def context_uri(self):
-        return self._context_uri
 
-    @property
-    def current_track_uri(self):
-        return self._current_track_uri
-
-    @property
-    def paused(self):
-        return self._paused
-
-    @property
-    def position_ms(self):
-        if self.paused:
-            return self._position_ms
+def station_join_required(func):
+    def wrap(self, *args, **kwargs):
+        if self.state != StationState.Connected:
+            raise ClientError('bad_request',
+                              'user has not connected to station')
         else:
-            # Assume music has been playing continuously and adjust based on
-            # elapsed time since sample was taken
-            elapsed_time = datetime.now(
-                self.sample_time.tzinfo) - self.sample_time
-            millis = (elapsed_time.seconds * 1000) + (
-                elapsed_time.microseconds / 1000)
-            return self._position_ms + millis
+            return func(self, *args, **kwargs)
 
-    @property
-    def sample_time(self):
-        return self._sample_time
-
-    @staticmethod
-    def from_client_state(state_time, state):
-        context_uri = state['context']['uri']
-        current_track_uri = state['track_window']['current_track']['uri']
-        paused = state['paused']
-
-        # If the track is not paused, account for message latency and adjust
-        # to the expected current position.
-        position = state['position']
-        sample_time = dateutil.parser.parse(state_time)
-
-        return PlaybackState(context_uri, current_track_uri, paused, position,
-                             sample_time)
-
-    @staticmethod
-    def from_station_state(station_state: models.PlaybackState):
-        return PlaybackState(station_state.context_uri,
-                             station_state.current_track_uri,
-                             station_state.paused, station_state.position_ms,
-                             station_state.last_updated_time)
+    return wrap
 
 
-def needs_paused(old_state, new_state):
-    # The DJ play/pause the current track
-    return old_state.paused != new_state.paused
+def station_admin_required(func):
+    def wrap(self, *args, **kwargs):
+        if not self.is_admin:
+            raise ClientError(
+                'forbidden',
+                'user does not have permission to request listeners')
+        else:
+            return func(self, *args, **kwargs)
 
-
-def needs_seek(old_state, new_state, threshold_ms=DEFAULT_SEEK_THRESHOLD_MS):
-    # The DJ seeked in the current track
-    return abs(new_state.position_ms - old_state.position_ms) > threshold_ms
-
-
-def needs_start_playback(old_state, new_state):
-    # The DJ set a new playlist or switched tracks
-    return ((old_state.context_uri != new_state.context_uri)
-            or (old_state.current_track_uri != new_state.current_track_uri))
+    return wrap
 
 
 class StationConsumer(AsyncJsonWebsocketConsumer):
@@ -137,9 +87,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             elif command == 'leave':
                 await self.leave_station(content['station'])
 
-            elif command == 'get_listeners':
-                await self.get_listeners(content['request_id'])
-
             elif command == 'player_state_change':
                 listener = await get_listener_or_error(self.station_id,
                                                        self.scope['user'])
@@ -150,6 +97,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     await self.update_listener_state(content['state_time'],
                                                      content['state'])
 
+            elif command == 'get_listeners':
+                await self.get_listeners(content['request_id'])
+
+            elif command == 'send_listener_invite':
+                await self.send_listener_invite(content['request_id'],
+                                                content['listener_email'])
+
         except ClientError as e:
             logger.error(f'Station client error: {e.code}: {e.message}')
             await self.send_json({'error': e.code, 'message': e.message})
@@ -157,9 +111,10 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, code):
         """Called when the WebSocket closes for any reason."""
         try:
-            await self.leave_station(self.station_id)
+            if self.state != StationState.NotConnected:
+                await self.leave_station(self.station_id)
         except ClientError:
-            pass
+            logger.error(f'Station client error: {e.code}: {e.message}')
 
     # Command helper methods called by receive_json
 
@@ -205,6 +160,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'join': station.title})
         self.state = StationState.Connected
 
+    @station_join_required
     async def leave_station(self, station_id):
         self.state = StationState.Disconnecting
         station = await get_station_or_error(station_id, self.scope['user'])
@@ -228,34 +184,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # Reply to client to finish tearing down station
         await self.send_json({'leave': station_id})
 
-    async def get_listeners(self, request_id):
-        if self.state != StationState.Connected:
-            raise ClientError('bad_request',
-                              'user has not connected to station')
-
-        if not self.is_admin:
-            raise ClientError(
-                'forbidden',
-                'user does not have permission to request listeners')
-
-        listeners = await get_listeners(self.station_id)
-        pending_listeners = await get_pending_listeners(self.station_id)
-        filter_user = lambda user: { 'id': user.id, 'username': user.username, 'email': user.email }
-        await self.send_json({
-            'type':
-            'get_listeners_result',
-            'request_id':
-            request_id,
-            'listeners': [filter_user(l.user) for l in listeners],
-            'pending_listeners':
-            [filter_user(l.user) for l in pending_listeners],
-        })
-
+    @station_join_required
     async def update_dj_state(self, state_time, state):
-        if self.state != StationState.Connected:
-            raise ClientError('bad_request',
-                              'user has not connected to station')
-
         user = self.scope['user']
         logger.debug(f'DJ {user} is updating station state...')
         station = await get_station_or_error(self.station_id, user)
@@ -310,11 +240,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         await update_station_state(station_state, state)
 
+    @station_join_required
     async def update_listener_state(self, state_time, state):
-        if self.state != StationState.Connected:
-            raise ClientError('bad_request',
-                              'user has not connected to station')
-
         user = self.scope['user']
         station = await get_station_or_error(self.station_id, user)
         if hasattr(station, 'playbackstate'):
@@ -332,6 +259,32 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
             elif needs_seek(state, station_state):
                 await self.seek_current_track(station_state.position_ms)
+
+    @station_join_required
+    @station_admin_required
+    async def get_listeners(self, request_id):
+        listeners = await get_listeners(self.station_id)
+        pending_listeners = await get_pending_listeners(self.station_id)
+        filter_user = lambda user: { 'id': user.id, 'username': user.username, 'email': user.email }
+        await self.send_json({
+            'type':
+            'get_listeners_result',
+            'request_id':
+            request_id,
+            'listeners': [filter_user(l.user) for l in listeners],
+            'pending_listeners':
+            [filter_user(l.user) for l in pending_listeners],
+        })
+
+    @station_join_required
+    @station_admin_required
+    async def send_listener_invite(self, request_id, listener_email):
+        await self.send_json({
+            'type': 'send_listener_invite_result',
+            'request_id': request_id,
+            'result': 'not_implemented',
+            'is_new_user': False,
+        })
 
     # Sending group messages
 
@@ -464,15 +417,90 @@ class SpotifyConsumer(JsonWebsocketConsumer):
         self.spotify_client.player_play(user_id, device_id, context_uri, uri)
 
 
-@database_sync_to_async
-def get_station_or_error(station_id: Optional[int], user):
-    """Fetch station for user and check permissions."""
-    if user.is_anonymous:
-        raise ClientError('access_denied',
-                          'You must be signed in to stream music')
+class PlaybackState:
+    def __init__(self, context_uri, current_track_uri, paused, position_ms,
+                 sample_time):
+        self._context_uri = context_uri
+        self._current_track_uri = current_track_uri
+        self._paused = paused
+        self._position_ms = position_ms
+        self._sample_time = sample_time
 
-    if station_id is None:
-        raise ClientError('bad_request', 'You must join a station first')
+    @property
+    def context_uri(self):
+        return self._context_uri
+
+    @property
+    def current_track_uri(self):
+        return self._current_track_uri
+
+    @property
+    def paused(self):
+        return self._paused
+
+    @property
+    def position_ms(self):
+        if self.paused:
+            return self._position_ms
+        else:
+            # Assume music has been playing continuously and adjust based on
+            # elapsed time since sample was taken
+            elapsed_time = datetime.now(
+                self.sample_time.tzinfo) - self.sample_time
+            millis = (elapsed_time.seconds * 1000) + (
+                elapsed_time.microseconds / 1000)
+            return self._position_ms + millis
+
+    @property
+    def sample_time(self):
+        return self._sample_time
+
+    @staticmethod
+    def from_client_state(state_time, state):
+        context_uri = state['context']['uri']
+        current_track_uri = state['track_window']['current_track']['uri']
+        paused = state['paused']
+
+        # If the track is not paused, account for message latency and adjust
+        # to the expected current position.
+        position = state['position']
+        sample_time = dateutil.parser.parse(state_time)
+
+        return PlaybackState(context_uri, current_track_uri, paused, position,
+                             sample_time)
+
+    @staticmethod
+    def from_station_state(station_state: models.PlaybackState):
+        return PlaybackState(station_state.context_uri,
+                             station_state.current_track_uri,
+                             station_state.paused, station_state.position_ms,
+                             station_state.last_updated_time)
+
+
+def needs_paused(old_state, new_state):
+    # The DJ play/pause the current track
+    return old_state.paused != new_state.paused
+
+
+def needs_seek(old_state, new_state, threshold_ms=DEFAULT_SEEK_THRESHOLD_MS):
+    # The DJ seeked in the current track
+    return abs(new_state.position_ms - old_state.position_ms) > threshold_ms
+
+
+def needs_start_playback(old_state, new_state):
+    # The DJ set a new playlist or switched tracks
+    return ((old_state.context_uri != new_state.context_uri)
+            or (old_state.current_track_uri != new_state.current_track_uri))
+
+
+# Database
+
+
+@database_sync_to_async
+def get_station_or_error(station_id, user):
+    """Fetch station for user and check permissions."""
+    assert not user.is_anonymous, 'Anonymous users cannot connect to station'
+    assert station_id is not None
 
     try:
         station = Station.objects.get(pk=station_id)
@@ -483,13 +511,9 @@ def get_station_or_error(station_id: Optional[int], user):
 
 
 @database_sync_to_async
-def get_listener_or_error(station_id: Optional[int], user):
-    if user.is_anonymous:
-        raise ClientError('access_denied',
-                          'You must be signed in to stream music')
-
-    if station_id is None:
-        raise ClientError('bad_request', 'You must join a station first')
+def get_listener_or_error(station_id, user):
+    assert not user.is_anonymous, 'Anonymous users cannot connect to station'
+    assert station_id is not None
 
     try:
         listener = Listener.objects.get(user_id=user.id, station_id=station_id)
