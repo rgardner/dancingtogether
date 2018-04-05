@@ -118,6 +118,16 @@ class StationServer {
         this.observers[eventName].add(cb);
     }
 
+    onOnce(eventName, thisRequestId, cb) {
+        const cbWrapper = (requestId, ...args) => {
+            if (requestId === thisRequestId) {
+                this.removeListener(eventName, cbWrapper);
+                cb(...args);
+            }
+        };
+        this.on(eventName, cbWrapper);
+    }
+
     removeListener(eventName, cb) {
         this.observers[eventName].remove(cb);
     }
@@ -228,13 +238,10 @@ class StationServer {
     getListeners() {
         return new Promise((resolve) => {
             const thisRequestId = ++this.requestId;
-            const onGetListenersResult = (requestId, listeners, pendingListeners) => {
-                if (requestId === thisRequestId) {
-                    this.removeListener('get_listeners_result', onGetListenersResult);
-                    resolve({listeners, pendingListeners});
-                }
-            };
-            this.on('get_listeners_result', onGetListenersResult);
+            this.onOnce('get_listeners_result', thisRequestId, (listeners, pendingListeners) => {
+                resolve({listeners, pendingListeners});
+            });
+
             this.socket.send(JSON.stringify({
                 'command': 'get_listeners',
                 'request_id': thisRequestId,
@@ -245,14 +252,10 @@ class StationServer {
     sendListenerInvite(listenerEmail) {
         return new Promise((resolve) => {
             const thisRequestId = ++this.requestId;
-            const onSendInviteResult = (requestId, result, isNewUser) => {
-                if (requestId === thisRequestId) {
-                    this.removeListener('send_listener_invite_result', onSendInviteResult);
-                    resolve({result, isNewUser});
-                }
-            };
+            this.onOnce('send_listener_invite_result', thisRequestId, (result, isNewUser) => {
+                resolve({result, isNewUser});
+            });
 
-            this.on('send_listener_invite_result', onSendInviteResult);
             this.socket.send(JSON.stringify({
                 'command': 'send_listener_invite',
                 'request_id': thisRequestId,
