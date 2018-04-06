@@ -1,7 +1,7 @@
 'use strict';
 
 /*global Spotify*/
-/*global ReconnectingWebSocket*/
+/*global channels*/
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
@@ -103,7 +103,7 @@ class StationServer {
         this.stationId = stationId;
         this.musicPlayer = musicPlayer;
         this.bindSpotifyActions();
-        this.socket = null;
+        this.webSocketBridge = null;
         this.observers = {
             'ready': $.Callbacks(),
             'listener_change': $.Callbacks(),
@@ -148,19 +148,19 @@ class StationServer {
         });
     }
 
-    bindSocketActions() {
-        // Use arrow functions to capture this
-        this.socket.onopen = () => { this.onOpen(); };
-        this.socket.onclose = () => { this.onClose(); };
-        this.socket.onmessage = message => { this.onMessage(message); };
+    bindWebSocketBridgeActions() {
+        this.webSocketBridge.socket.onopen = () => { this.onOpen(); };
+        this.webSocketBridge.socket.onclose = () => { this.onClose(); };
+        this.webSocketBridge.listen((action, stream) => { this.onMessage(action, stream); });
     }
 
     connect() {
         // Correctly decide between ws:// and wss://
-        const ws_scheme = window.location.protocol == 'https:' ? 'wss' : 'ws';
-        const ws_path = ws_scheme + '://' + window.location.host + '/station/stream/';
-        this.socket = new ReconnectingWebSocket(ws_path);
-        this.bindSocketActions();
+        const wsScheme = window.location.protocol == 'https:' ? 'wss' : 'ws';
+        const wsPath = wsScheme + '://' + window.location.host + '/station/stream/';
+        this.webSocketBridge = new channels.WebSocketBridge();
+        this.webSocketBridge.connect(wsPath);
+        this.bindWebSocketBridgeActions();
     }
 
     enableHeartbeat() {
@@ -182,57 +182,56 @@ class StationServer {
 
     onOpen() {
         StationView.displayConnectionStatusMessage(true /*isConnected*/);
-        this.socket.send(JSON.stringify({
+        this.webSocketBridge.send({
             'command': 'join',
             'station': this.stationId,
             'device_id': this.musicPlayer.deviceId
-        }));
+        });
     }
 
     onClose() {
         StationView.displayConnectionStatusMessage(false /*isConnected*/);
     }
 
-    onMessage(message) {
-        const data = JSON.parse(message.data);
-        if (data.error) {
-            console.error(data.error);
+    onMessage(action) {
+        if (action.error) {
+            console.error(action.error);
             return;
         }
 
-        if (data.join) {
-            $('#station-name').html(data.join);
+        if (action.join) {
+            $('#station-name').html(action.join);
             this.enableHeartbeat();
             this.observers['ready'].fire();
-        } else if (data.leave) {
+        } else if (action.leave) {
             $('#station-name').html('');
             this.disableHeartbeat();
-        } else if (data.type === 'dj_state_change') {
-            if (data.change_type === 'set_paused') {
+        } else if (action.type === 'dj_state_change') {
+            if (action.change_type === 'set_paused') {
                 this.musicPlayer.player.pause();
-            } else if (data.change_type === 'set_resumed') {
+            } else if (action.change_type === 'set_resumed') {
                 this.musicPlayer.player.resume();
-            } else if (data.change_type === 'seek_current_track') {
-                this.musicPlayer.player.seek(data.position_ms);
+            } else if (action.change_type === 'seek_current_track') {
+                this.musicPlayer.player.seek(action.position_ms);
             }
-        } else if (data.type === 'listener_change') {
-            this.observers['listener_change'].fire(data.listener_change_type, data.listener);
-        } else if (data.type === 'get_listeners_result') {
-            this.observers[data.type].fire(data.request_id, data.listeners, data.pending_listeners);
-        } else if (data.type === 'send_listener_invite_result') {
-            this.observers[data.type].fire(data.request_id, data.result, data.is_new_user);
+        } else if (action.type === 'listener_change') {
+            this.observers['listener_change'].fire(action.listener_change_type, action.listener);
+        } else if (action.type === 'get_listeners_result') {
+            this.observers[action.type].fire(action.request_id, action.listeners, action.pending_listeners);
+        } else if (action.type === 'send_listener_invite_result') {
+            this.observers[action.type].fire(action.request_id, action.result, action.is_new_user);
         } else {
-            console.error('Unknown message from server: ', data);
+            console.error('Unknown message from server: ', action);
         }
     }
 
     sendPlayerState(state) {
         state['current_time'] = new Date();
-        this.socket.send(JSON.stringify({
+        this.webSocketBridge.send({
             'command': 'player_state_change',
             'state_time': new Date(),
             'state': state,
-        }));
+        });
     }
 
     getListeners() {
@@ -242,10 +241,10 @@ class StationServer {
                 resolve({listeners, pendingListeners});
             });
 
-            this.socket.send(JSON.stringify({
+            this.webSocketBridge.send({
                 'command': 'get_listeners',
                 'request_id': thisRequestId,
-            }));
+            });
         });
     }
 
@@ -256,11 +255,11 @@ class StationServer {
                 resolve({result, isNewUser});
             });
 
-            this.socket.send(JSON.stringify({
+            this.webSocketBridge.send({
                 'command': 'send_listener_invite',
                 'request_id': thisRequestId,
                 'listener_email': listenerEmail,
-            }));
+            });
         });
     }
 }
