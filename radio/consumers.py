@@ -423,23 +423,11 @@ class SpotifyConsumer(JsonWebsocketConsumer):
 class PlaybackState:
     def __init__(self, context_uri, current_track_uri, paused, position_ms,
                  sample_time):
-        self._context_uri = context_uri
-        self._current_track_uri = current_track_uri
-        self._paused = paused
+        self.context_uri = context_uri
+        self.current_track_uri = current_track_uri
+        self.paused = paused
         self._position_ms = position_ms
-        self._sample_time = sample_time
-
-    @property
-    def context_uri(self):
-        return self._context_uri
-
-    @property
-    def current_track_uri(self):
-        return self._current_track_uri
-
-    @property
-    def paused(self):
-        return self._paused
+        self.sample_time = sample_time
 
     @property
     def position_ms(self):
@@ -453,10 +441,6 @@ class PlaybackState:
             millis = (elapsed_time.seconds * 1000) + (
                 elapsed_time.microseconds / 1000)
             return self._position_ms + millis
-
-    @property
-    def sample_time(self):
-        return self._sample_time
 
     @staticmethod
     def from_client_state(state_time, state):
