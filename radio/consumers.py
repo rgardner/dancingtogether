@@ -113,7 +113,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         try:
             if self.state != StationState.NotConnected:
                 await self.leave_station(self.station_id)
-        except ClientError:
+        except ClientError as e:
             logger.error(f'Station client error: {e.code}: {e.message}')
 
     # Command helper methods called by receive_json
