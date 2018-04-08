@@ -67,7 +67,8 @@
         },
         "channels": {
             "editable": true,
-            "git": "https://github.com/django/channels.git"
+            "git": "https://github.com/django/channels.git",
+            "ref": "1f280758ebf2520856ffbd59260f1268eff19396"
         },
         "channels-redis": {
             "hashes": [
