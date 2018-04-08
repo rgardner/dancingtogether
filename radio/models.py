@@ -1,14 +1,14 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
-
-from accounts.models import User
 
 
 class SpotifyCredentials(models.Model):
     class Meta:
         verbose_name_plural = "spotify credentials"
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     refresh_token = models.CharField(max_length=256)
     access_token = models.CharField(max_length=256)
     access_token_expiration_time = models.DateTimeField()
@@ -18,9 +18,11 @@ class Station(models.Model):
     title = models.CharField(max_length=256)
 
     members = models.ManyToManyField(
-        User, related_name='stations', through='Listener')
+        settings.AUTH_USER_MODEL, related_name='stations', through='Listener')
     pending_members = models.ManyToManyField(
-        User, related_name='pending_stations', through='PendingListener')
+        settings.AUTH_USER_MODEL,
+        related_name='pending_stations',
+        through='PendingListener')
 
     def __str__(self):
         return self.title
@@ -35,7 +37,8 @@ class Station(models.Model):
 
 
 class Listener(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     station = models.ForeignKey(Station, on_delete=models.CASCADE)
 
     is_admin = models.BooleanField()
@@ -43,7 +46,8 @@ class Listener(models.Model):
 
 
 class PendingListener(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     room = models.ForeignKey(Station, on_delete=models.CASCADE)
 
 

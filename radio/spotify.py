@@ -5,11 +5,11 @@ import time
 from typing import Tuple
 import urllib.parse
 
+from django.conf import settings
 from django.shortcuts import redirect
 from django.utils import timezone
 import requests
 
-from dancingtogether import settings
 from .models import SpotifyCredentials
 
 logger = logging.getLogger(__name__)
