@@ -11,6 +11,7 @@ channels-redis = "*"
 "django-bootstrap4" = "*"
 python-dateutil = "*"
 django-heroku = { git = "https://github.com/rgardner/django-heroku.git", editable = true }
+async-generator = "*"
 
 [requires]
 python_version = "3.6"
