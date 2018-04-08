@@ -4,10 +4,10 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-Django = "*"
+django = "*"
 requests = "*"
-channels = "*"
-channels_redis = "*"
+channels = { git = "https://github.com/django/channels.git", editable = true }
+channels-redis = "*"
 "django-bootstrap4" = "*"
 python-dateutil = "*"
 django-heroku = { git = "https://github.com/rgardner/django-heroku.git", editable = true }
@@ -20,3 +20,5 @@ pycodestyle = "*"
 mypy = "*"
 yapf = "*"
 pylint = "*"
+pytest-django = "*"
+pytest-asyncio = "*"

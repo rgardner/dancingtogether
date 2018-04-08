@@ -174,6 +174,10 @@ LOGGING = {
     },
 }
 
+# Test
+
+TEST_RUNNER = 'dancingtogether.runner.PytestTestRunner'
+
 # Channels-specific settings
 
 if 'REDIS_URL' in os.environ:

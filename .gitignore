@@ -2,8 +2,11 @@
 *pyc
 .mypy_cache
 
-# Django
+## Django
 staticfiles
+
+## Pytest
+.pytest_cache
 
 # Node
 node_modules

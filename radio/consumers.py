@@ -127,17 +127,21 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         self.is_dj = listener.is_admin
 
         station = await get_station_or_error(station_id, self.scope['user'])
+        logger.debug('Group send')
         await self.channel_layer.group_add(station.group_name,
                                            self.channel_name)
+        logger.debug('Did Group send')
 
         if self.is_admin:
             await self.channel_layer.group_add(station.admin_group_name,
                                                self.channel_name)
 
         # Message admins that a user has joined the station
+        logger.debug('About to message admins')
         await self.admin_group_send_join(station.admin_group_name,
                                          self.scope['user'].username,
                                          self.scope['user'].email)
+        logger.debug('Messaged admins')
 
         # Catch up to current playback state. The current solution is sub-
         # optimal. The context and track need to be loaded first. Otherwise,
