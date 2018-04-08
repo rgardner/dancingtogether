@@ -8,11 +8,19 @@ import pytest
 from .consumers import StationConsumer
 from .models import Listener, Station
 
+NON_USER_EMAIL = 'nonuser@example.com'
+
 
 @pytest.fixture
 def user1():
     return get_user_model().objects.create(
-        username='bob', email='bob@example.com')
+        username='testuser1', email='testuser1@example.com')
+
+
+@pytest.fixture
+def user2():
+    return get_user_model().objects.create(
+        username='testuser2', email='testuser2@example.com')
 
 
 @pytest.fixture
@@ -65,12 +73,19 @@ class StationCommunicator(WebsocketCommunicator):
             'request_id': request_id,
         })
 
+    async def send_listener_invite(self, request_id, listener_email):
+        await self.send_json_to({
+            'command': 'send_listener_invite',
+            'request_id': request_id,
+            'listener_email': listener_email,
+        })
+
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_simple_join_leave(user1, station1):
     """
-    Assert that a single user can join and leave a station.
+    Assert a single user can join and leave a station.
     """
     await create_listener(user1, station1)
 
@@ -93,7 +108,10 @@ async def test_simple_join_leave(user1, station1):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_non_admin_get_listeners(user1, station1):
+async def test_admin_commands_require_admin(user1, station1):
+    """
+    Assert admin commands require the user to be an admin of the station.
+    """
     await create_listener(user1, station1, is_admin=False)
 
     with override_settings(
@@ -113,12 +131,18 @@ async def test_non_admin_get_listeners(user1, station1):
             response = await communicator.receive_json_from()
             assert response['error'] == 'forbidden'
 
+            request_id = 2
+            await communicator.send_listener_invite(
+                request_id, listener_email='')
+            response = await communicator.receive_json_from()
+            assert response['error'] == 'forbidden'
+
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_get_listeners(user1, station1):
     """
-    Assert that a single user can join and leave a station.
+    Assert get_listeners works as expected.
     """
     await create_listener(user1, station1, is_admin=True)
 
@@ -136,7 +160,6 @@ async def test_get_listeners(user1, station1):
 
             request_id = 1
             await communicator.get_listeners(request_id)
-
             response = await communicator.receive_json_from()
             assert response == {
                 'type':
@@ -150,3 +173,71 @@ async def test_get_listeners(user1, station1):
                 }],
                 'pending_listeners': [],
             }
+
+
+@pytest.mark.skip(reason='not implemented')
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_send_listener_invite(user1, user2, station1):
+    """
+    Assert send_listener_invite works as expected.
+    """
+    await create_listener(user1, station1, is_admin=True)
+
+    with override_settings(
+            CHANNEL_LAYERS={
+                "default": {
+                    "BACKEND": "channels.layers.InMemoryChannelLayer",
+                    "TEST_CONFIG": {
+                        "expiry": 100500,
+                    },
+                },
+            }):
+        async with disconnecting(StationCommunicator(user1)) as communicator:
+            await communicator.test_join(station1)
+
+            request_id = 1
+            await communicator.send_listener_invite(request_id, user2.email)
+            response = await communicator.receive_json_from()
+            assert response == {
+                'type': 'send_listener_invite_result',
+                'request_id': request_id,
+                'result': 'success',
+                'is_new_user': False,
+            }
+
+            request_id = 2
+            await communicator.send_listener_invite(request_id, NON_USER_EMAIL)
+            response = await communicator.receive_json_from()
+            assert response == {
+                'type': 'send_listener_invite_result',
+                'request_id': request_id,
+                'result': 'success',
+                'is_new_user': True,
+            }
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_simple_playback(user1, user2, station1):
+    await create_listener(user1, station1, is_dj=True)
+    await create_listener(user2, station1, is_dj=False)
+    dj = user1
+    listener = user2
+
+    with override_settings(
+            CHANNEL_LAYERS={
+                "default": {
+                    "BACKEND": "channels.layers.InMemoryChannelLayer",
+                    "TEST_CONFIG": {
+                        "expiry": 100500,
+                    },
+                },
+            }):
+        async with disconnecting(StationCommunicator(dj)) as dj_communicator:
+            await dj_communicator.test_join(station1)
+            async with disconnecting(
+                    StationCommunicator(listener)) as listener_communicator:
+                await listener_communicator.test_join(station1)
+                # DJ changes playback
+                # DJ
