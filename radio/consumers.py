@@ -127,21 +127,17 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         self.is_dj = listener.is_admin
 
         station = await get_station_or_error(station_id, self.scope['user'])
-        logger.debug('Group send')
         await self.channel_layer.group_add(station.group_name,
                                            self.channel_name)
-        logger.debug('Did Group send')
 
         if self.is_admin:
             await self.channel_layer.group_add(station.admin_group_name,
                                                self.channel_name)
 
         # Message admins that a user has joined the station
-        logger.debug('About to message admins')
         await self.admin_group_send_join(station.admin_group_name,
                                          self.scope['user'].username,
                                          self.scope['user'].email)
-        logger.debug('Messaged admins')
 
         # Catch up to current playback state. The current solution is sub-
         # optimal. The context and track need to be loaded first. Otherwise,
@@ -203,7 +199,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     f'DJ {user} caused {station.group_name} to change context or track'
                 )
                 await self.group_send_start_resume_playback(
-                    station.group_name, user.id, state.context_uri,
+                    station.group_name, state.context_uri,
                     state.current_track_uri)
 
             elif needs_paused(previous_state, state):
@@ -211,7 +207,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 logger.debug(
                     f'DJ {user} caused {station.group_name} to {pause_resume}')
                 await self.group_send_toggle_play_pause(
-                    station.group_name, user.id, state.paused)
+                    station.group_name, state.paused)
 
             elif needs_seek(previous_state, state):
                 seek_change = state.position_ms - station_state.position_ms
@@ -219,7 +215,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     f'DJ {user} caused {station.group_name} to seek {seek_change}'
                 )
                 await self.group_send_seek_current_track(
-                    station.group_name, user.id, state.position_ms)
+                    station.group_name, state.position_ms)
 
         else:
             # Copied from join
@@ -233,12 +229,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             # by the time it receives pause and seek events.
 
             await self.group_send_start_resume_playback(
-                station.group_name, user.id, state.context_uri,
-                state.current_track_uri)
+                station.group_name, state.context_uri, state.current_track_uri)
             await self.group_send_toggle_play_pause(station.group_name,
-                                                    user.id, state.paused)
-            await self.group_send_seek_current_track(
-                station.group_name, user.id, state.position_ms)
+                                                    state.paused)
+            await self.group_send_seek_current_track(station.group_name,
+                                                     state.position_ms)
 
             station_state = models.PlaybackState(station_id=station.id)
 
@@ -293,43 +288,46 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     # Sending group messages
 
     async def admin_group_send_join(self, group_name, username, email):
-        await self.channel_layer.group_send(group_name, {
-            'type': 'station.join',
-            'username': username,
-            'email': email,
-        })
+        await self.channel_layer.group_send(
+            group_name, {
+                'type': 'station.join',
+                'sender_user_id': self.scope['user'].id,
+                'username': username,
+                'email': email,
+            })
 
     async def admin_group_send_leave(self, group_name, username, email):
-        await self.channel_layer.group_send(group_name, {
-            'type': 'station.leave',
-            'username': username,
-            'email': email,
-        })
+        await self.channel_layer.group_send(
+            group_name, {
+                'type': 'station.leave',
+                'sender_user_id': self.scope['user'].id,
+                'username': username,
+                'email': email,
+            })
 
-    async def group_send_start_resume_playback(self, group_name, user_id,
-                                               context_uri, current_track_uri):
+    async def group_send_start_resume_playback(self, group_name, context_uri,
+                                               current_track_uri):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.start_resume_playback',
-                'sender_user_id': user_id,
+                'sender_user_id': self.scope['user'].id,
                 'context_uri': context_uri,
                 'current_track_uri': current_track_uri,
             })
 
-    async def group_send_toggle_play_pause(self, group_name, user_id, paused):
+    async def group_send_toggle_play_pause(self, group_name, paused):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.toggle_play_pause',
-                'sender_user_id': user_id,
+                'sender_user_id': self.scope['user'].id,
                 'paused': paused,
             })
 
-    async def group_send_seek_current_track(self, group_name, user_id,
-                                            position_ms):
+    async def group_send_seek_current_track(self, group_name, position_ms):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.seek_current_track',
-                'sender_user_id': user_id,
+                'sender_user_id': self.scope['user'].id,
                 'position_ms': position_ms,
             })
 
@@ -337,25 +335,29 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def station_join(self, event):
         """Called when someone has joined our station."""
-        await self.send_json({
-            'type': 'listener_change',
-            'listener_change_type': 'join',
-            'listener': {
-                'username': event['username'],
-                'email': event['email'],
-            }
-        })
+        sender_user_id = event['sender_user_id']
+        if sender_user_id != self.scope['user'].id:
+            await self.send_json({
+                'type': 'listener_change',
+                'listener_change_type': 'join',
+                'listener': {
+                    'username': event['username'],
+                    'email': event['email'],
+                }
+            })
 
     async def station_leave(self, event):
         """Called when someone has left our station."""
-        await self.send_json({
-            'type': 'listener_change',
-            'listener_change_type': 'leave',
-            'listener': {
-                'username': event['username'],
-                'email': event['email'],
-            }
-        })
+        sender_user_id = event['sender_user_id']
+        if sender_user_id != self.scope['user'].id:
+            await self.send_json({
+                'type': 'listener_change',
+                'listener_change_type': 'leave',
+                'listener': {
+                    'username': event['username'],
+                    'email': event['email'],
+                }
+            })
 
     async def station_toggle_play_pause(self, event):
         sender_user_id = event['sender_user_id']
