@@ -16,6 +16,7 @@ class StationApp { // eslint-disable-line no-unused-vars
 
 class StationMusicPlayer {
     constructor(client_name, accessToken) {
+        this.accessToken = accessToken;
         this.isReady = false;
         this.player = null;
         this.deviceId = null;
@@ -24,7 +25,7 @@ class StationMusicPlayer {
         window.onSpotifyWebPlaybackSDKReady = () => {
             this.player = new Spotify.Player({
                 name: client_name,
-                getOAuthToken: cb => { cb(accessToken); },
+                getOAuthToken: cb => { cb(this.getAccessToken()); },
                 volume: MusicVolume.getCachedVolume(),
             });
 
@@ -47,51 +48,29 @@ class StationMusicPlayer {
         });
 
         this.player.on('ready', ({ device_id }) => {
-            this.onReady(device_id);
+            this.deviceId = device_id;
+            this.isReady = true;
         });
 
-        // Error handling
-
-        this.player.on('initialization_error', ({ message }) => {
-            this.onInitializationError(message);
+        this.player.on('initialization_error', () => {
+            this.isReady = false;
         });
 
-        this.player.on('authentication_error', ({ message }) => {
-            this.onAuthenticationError(message);
+        this.player.on('authentication_error', () => {
+            this.isReady = false;
         });
 
-        this.player.on('account_error', ({ message }) => {
-            this.onAccountError(message);
-        });
-
-        this.player.on('playback_error', ({ message }) => {
-            this.onPlaybackError(message);
+        this.player.on('account_error', () => {
+            this.isReady = false;
         });
     }
 
-    onReady(deviceId) {
-        this.deviceId = deviceId;
-        this.isReady = true;
+    getAccessToken() {
+        return this.accessToken;
     }
 
-    onInitializationError(message) {
-        console.error('Failed to initialize', message);
-        StationView.displayConnectionStatusMessage(false, 'Failed to initialize Spotify player.');
-    }
-
-    onAuthenticationError(message) {
-        console.error('Failed to authenticate', message);
-        StationView.displayConnectionStatusMessage(false, 'Invalid access token, please refresh the page.');
-    }
-
-    onAccountError(message) {
-        console.error('Failed to validate Spotify account', message);
-        StationView.displayConnectionStatusMessage(false,  'Dancing Together requires a Spotify Premium account.');
-    }
-
-    onPlaybackError(message) {
-        console.error('Failed to perform playback', message);
-        StationView.displayConnectionStatusMessage(true, 'Failed to play the current song.');
+    setAccessToken(accessToken) {
+        this.accessToken = accessToken;
     }
 }
 
@@ -146,11 +125,14 @@ class StationServer {
                 this.sendPlayerState(state);
             }
         });
+
+        this.musicPlayer.on('authentication_error', () => {
+            this.refreshAccessToken();
+        });
     }
 
     bindWebSocketBridgeActions() {
         this.webSocketBridge.socket.onopen = () => { this.onOpen(); };
-        this.webSocketBridge.socket.onclose = () => { this.onClose(); };
         this.webSocketBridge.listen((action, stream) => { this.onMessage(action, stream); });
     }
 
@@ -181,16 +163,11 @@ class StationServer {
     // Socket Callbacks
 
     onOpen() {
-        StationView.displayConnectionStatusMessage(true /*isConnected*/);
         this.webSocketBridge.send({
             'command': 'join',
             'station': this.stationId,
             'device_id': this.musicPlayer.deviceId
         });
-    }
-
-    onClose() {
-        StationView.displayConnectionStatusMessage(false /*isConnected*/);
     }
 
     onMessage(action) {
@@ -214,6 +191,8 @@ class StationServer {
             } else if (action.change_type === 'seek_current_track') {
                 this.musicPlayer.player.seek(action.position_ms);
             }
+        } else if (action.type === 'access_token_change') {
+            this.musicPlayer.setAccessToken(action.accessToken);
         } else if (action.type === 'listener_change') {
             this.observers['listener_change'].fire(action.listener_change_type, action.listener);
         } else if (action.type === 'get_listeners_result') {
@@ -231,6 +210,12 @@ class StationServer {
             'command': 'player_state_change',
             'state_time': new Date(),
             'state': state,
+        });
+    }
+
+    refreshAccessToken() {
+        this.webSocketBridge.send({
+            'command': 'refresh_access_token'
         });
     }
 
@@ -268,7 +253,11 @@ class StationServer {
 
 class StationView {
     constructor(userIsDJ, userIsAdmin, musicPlayer, stationServer) {
-        this.state = { playbackState: null };
+        this.state = {
+            playbackState: null,
+            isConnectedToMusicPlayer: false,
+            errorMessage: null
+        };
         this.musicPlayer = musicPlayer;
         this.musicPositionView = new MusicPositionView(musicPlayer);
         this.listenerView = new StationListenerView(musicPlayer);
@@ -279,46 +268,54 @@ class StationView {
     }
 
     bindSpotifyActions() {
+        this.musicPlayer.on('ready', () => {
+            this.setState({ isConnected: true });
+        });
+
+        this.musicPlayer.on('initialization_error', ({ message }) => {
+            this.setState({ isConnected: false, 'errorMessage': message });
+        });
+
+        this.musicPlayer.on('account_error', ({ message }) => {
+            this.setState({ isConnected: false, 'errorMessage': message });
+        });
+
         this.musicPlayer.on('player_state_changed', state => {
             this.setState(() => ({ playbackState: state }));
         });
     }
 
-    static displayConnectionStatusMessage(isConnected, errorMessage = '') {
+    render() {
         $('#connection-status').removeClass().empty();
         $('#connection-status-error').empty();
 
-        if (isConnected) {
+        if (this.state.isConnected) {
             $('#connection-status').addClass('bg-success').html('Connected');
-        } else if (errorMessage) {
+        } else if (this.state.errorMessage) {
             $('#connection-status').addClass('bg-danger').html('Not Connected');
         } else {
             $('#connection-status').addClass('bg-info').html('Not Connected');
         }
 
-        if (errorMessage) {
-            $('#connection-status-error').html(errorMessage);
-        }
-    }
-
-    render() {
-        if (this.state.playbackState === null) {
-            return;
+        if (this.state.errorMessage) {
+            $('#connection-status-error').html(this.state.errorMessage);
         }
 
-        // Update album art
-        $('#album-art').empty();
-        $('<img/>', {
-            src: this.state.playbackState.track_window.current_track.album.images[0].url,
-            alt: this.state.playbackState.track_window.current_track.album.name
-        }).appendTo('#album-art');
+        if (this.state.playbackState !== null) {
+            // Update album art
+            $('#album-art').empty();
+            $('<img/>', {
+                src: this.state.playbackState.track_window.current_track.album.images[0].url,
+                alt: this.state.playbackState.track_window.current_track.album.name
+            }).appendTo('#album-art');
 
-        // Update track title and track artist
-        $('#playback-track-title').html(this.state.playbackState.track_window.current_track.name);
-        $('#playback-track-artist').html(this.state.playbackState.track_window.current_track.artists[0].name);
+            // Update track title and track artist
+            $('#playback-track-title').html(this.state.playbackState.track_window.current_track.name);
+            $('#playback-track-artist').html(this.state.playbackState.track_window.current_track.artists[0].name);
 
-        // Update duration, current position is handled in MusicPositionView
-        $('#playback-duration').html(msToTimeString(this.state.playbackState.duration));
+            // Update duration, current position is handled in MusicPositionView
+            $('#playback-duration').html(msToTimeString(this.state.playbackState.duration));
+        }
     }
 
     setState(updater) {

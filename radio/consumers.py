@@ -4,12 +4,14 @@ import enum
 import logging
 from typing import Optional
 
+from asgiref.sync import async_to_sync
 import channels.auth
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
 import dateutil.parser
 
 from . import models
+from . import spotify
 from .exceptions import ClientError
 from .models import Listener, PendingListener, Station
 from .spotify import SpotifyWebAPIClient
@@ -97,6 +99,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     await self.update_listener_state(content['state_time'],
                                                      content['state'])
 
+            elif command == 'refresh_access_token':
+                await self.refresh_access_token()
+
             elif command == 'get_listeners':
                 await self.get_listeners(content['request_id'])
 
@@ -105,7 +110,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                                 content['listener_email'])
 
         except ClientError as e:
-            logger.error(f'Station client error: {e.code}: {e.message}')
             await self.send_json({'error': e.code, 'message': e.message})
 
     async def disconnect(self, code):
@@ -255,6 +259,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
             elif needs_seek(state, station_state):
                 await self.seek_current_track(station_state.position_ms)
+
+    async def refresh_access_token(self):
+        access_token = await refresh_access_token(self.scope['user'].id)
+        await self.send_json({
+            'type': 'access_token_change',
+            'access_token': access_token,
+        })
 
     @station_join_required
     @station_admin_required
@@ -417,7 +428,14 @@ class SpotifyConsumer(JsonWebsocketConsumer):
         context_uri = event['context_uri']
         uri = event['uri']
         logger.debug(f'{user_id} starting {context_uri}: {uri}')
-        self.spotify_client.player_play(user_id, device_id, context_uri, uri)
+        try:
+            self.spotify_client.player_play(user_id, device_id, context_uri, uri)
+        except AccessTokenExpired:
+            pass
+
+    def notify_access_token_change(self):
+        async_to_sync(channel_layer.send)('')
+        pass
 
 
 class PlaybackState:
@@ -527,3 +545,10 @@ def update_station_state(station_state, state: PlaybackState):
     station_state.paused = state.paused
     station_state.position_ms = state.position_ms
     station_state.save()
+
+
+@database_sync_to_async
+def refresh_access_token(user_id):
+    access_token = spotify.load_access_token(user_id)
+    access_token.refresh()
+    return access_token.token

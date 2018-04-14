@@ -10,6 +10,8 @@ from django.shortcuts import redirect
 from django.utils import timezone
 import requests
 
+from .exceptions import (AccessTokenExpired, SpotifyAccountNotPremium,
+                         SpotifyDeviceNotFound)
 from .models import SpotifyCredentials
 
 logger = logging.getLogger(__name__)
@@ -84,18 +86,10 @@ def build_request_authorization_url(request):
 class AccessToken:
     def __init__(self, user, refresh_token, access_token,
                  access_token_expiration_time):
-        self._user = user
-        self._refresh_token = refresh_token
+        self.user = user
+        self.refresh_token = refresh_token
         self._access_token = access_token
         self._access_token_expiration_time = access_token_expiration_time
-
-    @property
-    def user(self):
-        return self._user
-
-    @property
-    def refresh_token(self):
-        return self._refresh_token
 
     @property
     def token(self):
@@ -106,14 +100,13 @@ class AccessToken:
         return self._access_token_expiration_time
 
     def is_valid(self):
-        return ((self._access_token is not None)
-                and (self._access_token_expiration_time is not None))
+        return ((self.token is not None)
+                and (self.token_expiration_time is not None))
 
     def has_expired(self):
-        return timezone.now() > self._access_token_expiration_time
+        return timezone.now() > self.token_expiration_time
 
     def refresh(self):
-        url = 'https://accounts.spotify.com/api/token'
         data = {
             'grant_type': 'refresh_token',
             'refresh_token': self.refresh_token,
@@ -121,17 +114,16 @@ class AccessToken:
             'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
 
-        r = requests.post(url, data)
+        r = requests.post(settings.SPOTIFY_TOKEN_API_URL, data)
         response_data = r.json()
         self._access_token = response_data['access_token']
         expires_in = int(response_data['expires_in'])
         expires_in = timedelta(seconds=expires_in)
-        self._access_token_expiration_time = datetime.utcnow() + expires_in
+        self._access_token_expiration_time = timezone.now() + expires_in
         save_access_token(self)
 
     @staticmethod
     def request_refresh_and_access_token(code, user):
-        url = 'https://accounts.spotify.com/api/token'
         data = {
             'grant_type': 'authorization_code',
             'code': code,
@@ -140,12 +132,12 @@ class AccessToken:
             'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
 
-        r = requests.post(url, data)
+        r = requests.post(settings.SPOTIFY_TOKEN_API_URL, data)
 
         response_data = r.json()
         expires_in = int(response_data['expires_in'])
         expires_in = timedelta(seconds=expires_in)
-        expiration_time = datetime.utcnow() + expires_in
+        expiration_time = timezone.now() + expires_in
         access_token = AccessToken(user, response_data['refresh_token'],
                                    response_data['access_token'],
                                    expiration_time)
@@ -196,31 +188,23 @@ class SpotifyWebAPIClient:
             # retries
             for r in range(5):
                 time.sleep(5)
-                r = requests.post(
+                r = requests.put(
                     url, headers=headers, params=query_params, json=data)
                 if r.status_code != requests.codes.accepted:
                     break
 
         if r.status_code == requests.codes.no_content:
             # successful request
-            # do nothing
-            pass
+            return
         elif r.status_code == requests.codes.unauthorized:
-            # Access token is stale and needs to be refreshed
-            access_token = load_access_token(user_id)
-            access_token.refresh()
-            self.player_play(user_id, device_id, context_uri, uri)
+            raise AccessTokenExpired()
         elif r.status_code == requests.codes.forbidden:
-            # the user making the request is non-premium
-            # TODO: alert user and prevent them from using the site
-            pass
+            raise SpotifyAccountNotPremium()
         elif r.status_code == requests.codes.not_found:
-            # device is not found
-            # TODO: refetch device id from user
-            pass
+            raise SpotifyDeviceNotFound()
         elif r.status_code == requests.codes.too_many_requests:
             # API rate limit exceeded. This applies to all web playback calls
-            self._start_throttling(int(r.headers['Retry-After']))
+            self.start_throttling(int(r.headers['Retry-After']))
         else:
             logger.error(
                 f'user-{user_id} received unexpected Spotify Web API response {r.text}'
@@ -255,7 +239,7 @@ class SpotifyWebAPIClient:
             return
 
     @classmethod
-    def _start_throttling(cls, retry_after_seconds: int):
+    def start_throttling(cls, retry_after_seconds: int):
         logger.warning('Spotify Web API throttle is now in effect')
         retry_after = timedelta(seconds=retry_after_seconds)
         cls.throttled_until = datetime.now() + retry_after

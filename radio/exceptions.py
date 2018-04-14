@@ -4,3 +4,18 @@ class ClientError(Exception):
     def __init__(self, code, message):
         self.code = code
         self.message = message
+
+
+# Spotify Errors
+
+
+class AccessTokenExpired(Exception):
+    pass
+
+
+class SpotifyAccountNotPremium(Exception):
+    pass
+
+
+class SpotifyDeviceNotFound(Exception):
+    pass
