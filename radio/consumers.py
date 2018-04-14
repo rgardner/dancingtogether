@@ -4,6 +4,7 @@ import enum
 import logging
 from typing import Optional
 
+import channels.auth
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
 import dateutil.parser
@@ -59,11 +60,12 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         """Called during initial websocket handshaking."""
-        logger.debug(f'{self.scope["user"]} connected to StationConsumer')
-        if self.scope['user'].is_anonymous:
-            logger.warning(
-                f'anonymous user ({self.scope["user"]}) attempted to connect to station'
-            )
+        try:
+            self.user = await channels.auth.get_user(self.scope)
+        except:
+            self.user = self.scope['user']
+
+        if self.user.is_anonymous:
             await self.close()
         else:
             await self.accept()
@@ -77,8 +79,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content):
         """Called when we get a text frame."""
         command = content.get('command', None)
-        logger.debug(f'received command ({command}) from {self.scope["user"]}')
-
         try:
             if command == 'join':
                 await self.join_station(content['station'],
@@ -89,7 +89,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
             elif command == 'player_state_change':
                 listener = await get_listener_or_error(self.station_id,
-                                                       self.scope['user'])
+                                                       self.user)
                 if listener.is_dj:
                     await self.update_dj_state(content['state_time'],
                                                content['state'])
@@ -120,13 +120,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def join_station(self, station_id, device_id):
         self.state = StationState.Connecting
-        listener = await get_listener_or_error(station_id, self.scope['user'])
+        listener = await get_listener_or_error(station_id, self.user)
         self.station_id = station_id
         self.device_id = device_id
         self.is_admin = listener.is_admin
         self.is_dj = listener.is_admin
 
-        station = await get_station_or_error(station_id, self.scope['user'])
+        station = await get_station_or_error(station_id, self.user)
         await self.channel_layer.group_add(station.group_name,
                                            self.channel_name)
 
@@ -136,8 +136,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         # Message admins that a user has joined the station
         await self.admin_group_send_join(station.admin_group_name,
-                                         self.scope['user'].username,
-                                         self.scope['user'].email)
+                                         self.user.username, self.user.email)
 
         # Catch up to current playback state. The current solution is sub-
         # optimal. The context and track need to be loaded first. Otherwise,
@@ -149,9 +148,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         if hasattr(station, 'playbackstate'):
             station_state = station.playbackstate
-            await self.start_resume_playback(
-                self.scope['user'].id, self.device_id,
-                station_state.context_uri, station_state.current_track_uri)
+            await self.start_resume_playback(self.user.id, self.device_id,
+                                             station_state.context_uri,
+                                             station_state.current_track_uri)
             await asyncio.sleep(1)
             await self.toggle_play_pause(station_state.paused)
             await self.seek_current_track(station_state.position_ms)
@@ -163,10 +162,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     @station_join_required
     async def leave_station(self, station_id):
         self.state = StationState.Disconnecting
-        station = await get_station_or_error(station_id, self.scope['user'])
+        station = await get_station_or_error(station_id, self.user)
         await self.admin_group_send_leave(station.admin_group_name,
-                                          self.scope['user'].username,
-                                          self.scope['user'].email)
+                                          self.user.username, self.user.email)
 
         await self.channel_layer.group_discard(station.group_name,
                                                self.channel_name)
@@ -186,8 +184,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     @station_join_required
     async def update_dj_state(self, state_time, state):
-        user = self.scope['user']
-        logger.debug(f'DJ {user} is updating station state...')
+        user = self.user
         station = await get_station_or_error(self.station_id, user)
         state = PlaybackState.from_client_state(state_time, state)
         if hasattr(station, 'playbackstate'):
@@ -241,7 +238,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     @station_join_required
     async def update_listener_state(self, state_time, state):
-        user = self.scope['user']
+        user = self.user
         station = await get_station_or_error(self.station_id, user)
         if hasattr(station, 'playbackstate'):
             station_state = station.playbackstate
@@ -291,7 +288,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.join',
-                'sender_user_id': self.scope['user'].id,
+                'sender_user_id': self.user.id,
                 'username': username,
                 'email': email,
             })
@@ -300,7 +297,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.leave',
-                'sender_user_id': self.scope['user'].id,
+                'sender_user_id': self.user.id,
                 'username': username,
                 'email': email,
             })
@@ -310,7 +307,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.start_resume_playback',
-                'sender_user_id': self.scope['user'].id,
+                'sender_user_id': self.user.id,
                 'context_uri': context_uri,
                 'current_track_uri': current_track_uri,
             })
@@ -319,7 +316,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.toggle_play_pause',
-                'sender_user_id': self.scope['user'].id,
+                'sender_user_id': self.user.id,
                 'paused': paused,
             })
 
@@ -327,7 +324,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.seek_current_track',
-                'sender_user_id': self.scope['user'].id,
+                'sender_user_id': self.user.id,
                 'position_ms': position_ms,
             })
 
@@ -336,7 +333,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def station_join(self, event):
         """Called when someone has joined our station."""
         sender_user_id = event['sender_user_id']
-        if sender_user_id != self.scope['user'].id:
+        if sender_user_id != self.user.id:
             await self.send_json({
                 'type': 'listener_change',
                 'listener_change_type': 'join',
@@ -349,7 +346,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def station_leave(self, event):
         """Called when someone has left our station."""
         sender_user_id = event['sender_user_id']
-        if sender_user_id != self.scope['user'].id:
+        if sender_user_id != self.user.id:
             await self.send_json({
                 'type': 'listener_change',
                 'listener_change_type': 'leave',
@@ -361,25 +358,25 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def station_toggle_play_pause(self, event):
         sender_user_id = event['sender_user_id']
-        if sender_user_id != self.scope['user'].id:
+        if sender_user_id != self.user.id:
             await self.toggle_play_pause(event['paused'])
 
     async def station_seek_current_track(self, event):
         sender_user_id = event['sender_user_id']
-        if sender_user_id != self.scope['user'].id:
+        if sender_user_id != self.user.id:
             await self.seek_current_track(event['position_ms'])
 
     async def station_start_resume_playback(self, event):
         sender_user_id = event['sender_user_id']
-        if sender_user_id != self.scope['user'].id:
-            await self.start_resume_playback(
-                self.scope['user'].id, self.device_id, event['context_uri'],
-                event['current_track_uri'])
+        if sender_user_id != self.user.id:
+            await self.start_resume_playback(self.user.id, self.device_id,
+                                             event['context_uri'],
+                                             event['current_track_uri'])
 
     # Utils
 
     async def toggle_play_pause(self, paused):
-        logger.debug(f'{self.scope["user"]} pausing or resuming...')
+        logger.debug(f'{self.user} pausing or resuming...')
         change_type = 'set_paused' if paused else 'set_resumed'
         await self.send_json({
             'type': 'dj_state_change',
@@ -387,7 +384,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         })
 
     async def seek_current_track(self, position_ms):
-        logger.debug(f'{self.scope["user"]} seeking...')
+        logger.debug(f'{self.user} seeking...')
         await self.send_json({
             'type': 'dj_state_change',
             'change_type': 'seek_current_track',
@@ -396,7 +393,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def start_resume_playback(self, user_id, device_id, context_uri,
                                     uri):
-        logger.debug(f'{self.scope["user"]} starting playback...')
+        logger.debug(f'{self.user} starting playback...')
         await self.channel_layer.send(
             'spotify-dispatcher', {
                 'type': 'spotify.start_resume_playback',

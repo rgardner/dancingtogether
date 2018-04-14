@@ -209,8 +209,7 @@ class SpotifyWebAPIClient:
             # Access token is stale and needs to be refreshed
             access_token = load_access_token(user_id)
             access_token.refresh()
-            self.player_play(access_token.token, device_id, context_uri, uri,
-                             user_id)
+            self.player_play(user_id, device_id, context_uri, uri)
         elif r.status_code == requests.codes.forbidden:
             # the user making the request is non-premium
             # TODO: alert user and prevent them from using the site
