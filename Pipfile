@@ -4,14 +4,14 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-django = "*"
+Django = "*"
 requests = "*"
 channels = { git = "https://github.com/django/channels.git", editable = true }
-channels-redis = "*"
+channels_redis = "*"
 "django-bootstrap4" = "*"
 python-dateutil = "*"
-django-heroku = { git = "https://github.com/rgardner/django-heroku.git", editable = true }
-async-generator = "*"
+async_generator = "*"
+django-heroku = "*"
 
 [requires]
 python_version = "3.6"

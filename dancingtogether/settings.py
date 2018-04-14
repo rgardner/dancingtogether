@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 
 import os
+
+import dj_database_url
 import django_heroku
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -201,7 +203,10 @@ CHANNEL_LAYERS = {
 
 LOGIN_REDIRECT_URL = '/stations'
 
-django_heroku.settings(locals(), db_ssl_require=False, logging=False)
+django_heroku.settings(locals(), logging=False)
+if 'DATABASE_URL' in os.environ:
+    locals()['DATABASES']['default'] = dj_database_url.config(
+        conn_max_age=django_heroku.MAX_CONN_AGE, ssl_require=False)
 
 SITE_URL = os.environ.get('DT_SITE_URL')
 SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
