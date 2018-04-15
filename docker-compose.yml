@@ -14,6 +14,7 @@ services:
     command: python3 manage.py runserver 0.0.0.0:8000
     environment:
       - DATABASE_URL=postgres://postgres@db:5432/postgres
+      - REDIS_URL=redis://redis@redis:6379
     env_file:
       - .env
     volumes:
@@ -30,6 +31,7 @@ services:
     command: python3 manage.py runworker spotify-dispatcher
     environment:
       - DATABASE_URL=postgres://postgres@db:5432/postgres
+      - REDIS_URL=redis://redis@redis:6379
     env_file:
       - .env
     volumes:

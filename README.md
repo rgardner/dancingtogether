@@ -26,13 +26,21 @@ $ vim .env
 ### Docker Usage
 
 ```sh
+$ # (Re)build the docker containers after updating dependencies
+$ make build
+$ # Run database migrations on containers
+$ make migrate
 $ # Start the docker containers
-$ ./manage.py docker --start
+$ make run
 $ # Attach to running containers to enable easy debugging with `pdb`
-$ ./manage.py docker --attach-web
-$ ./manage.py docker --attach-worker
-$ # Rebuild the docker containers after updating the dependencies
-$ ./manage.py docker --build
+$ make attach-web
+$ make attach-worker
+```
+
+### Testing
+
+```sh
+$ make test
 ```
 
 

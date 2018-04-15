@@ -11,12 +11,13 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 
 import os
+from pathlib import Path
 
 import dj_database_url
 import django_heroku
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = Path(os.path.abspath(__file__)).parent.parent.parent
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.0/howto/deployment/checklist/
@@ -88,12 +89,7 @@ if SECURE_SSL_REDIRECT:
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
-    }
-}
+# database is configured by django_heroku.settings()
 
 # Password validation
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators
@@ -176,25 +172,15 @@ LOGGING = {
     },
 }
 
-# Test
-
-TEST_RUNNER = 'dancingtogether.runner.PytestTestRunner'
-
-# Channels-specific settings
-
-if 'REDIS_URL' in os.environ:
-    redis_hosts_value = os.environ['REDIS_URL']
-else:
-    redis_hosts_value = (os.environ.get('REDIS_HOST', 'localhost'), 6379)
-
 # Channel layer definitions
+
 # http://channels.readthedocs.io/en/latest/topics/channel_layers.html
 CHANNEL_LAYERS = {
     'default': {
         # This example app uses the Redis channel layer implementation channels_redis
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [redis_hosts_value],
+            'hosts': [os.environ['REDIS_URL']],
         },
     },
 }
