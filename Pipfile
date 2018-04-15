@@ -6,12 +6,12 @@ name = "pypi"
 [packages]
 Django = "*"
 requests = "*"
-channels = { git = "https://github.com/django/channels.git", editable = true }
 channels_redis = "*"
 "django-bootstrap4" = "*"
 python-dateutil = "*"
 async_generator = "*"
 django-heroku = "*"
+channels = "*"
 
 [requires]
 python_version = "3.6"
