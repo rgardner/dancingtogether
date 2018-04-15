@@ -2,7 +2,6 @@ from async_generator import asynccontextmanager
 from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
-from django.test import override_settings
 import pytest
 
 from .consumers import StationConsumer
@@ -89,21 +88,12 @@ async def test_simple_join_leave(user1, station1):
     """
     await create_listener(user1, station1)
 
-    with override_settings(
-            CHANNEL_LAYERS={
-                "default": {
-                    "BACKEND": "channels.layers.InMemoryChannelLayer",
-                    "TEST_CONFIG": {
-                        "expiry": 100500,
-                    },
-                },
-            }):
-        async with disconnecting(StationCommunicator(user1)) as communicator:
-            await communicator.test_join(station1)
+    async with disconnecting(StationCommunicator(user1)) as communicator:
+        await communicator.test_join(station1)
 
-            await communicator.leave(station1.id)
-            response = await communicator.receive_json_from()
-            assert response == {'leave': station1.id}
+        await communicator.leave(station1.id)
+        response = await communicator.receive_json_from()
+        assert response == {'leave': station1.id}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -114,28 +104,18 @@ async def test_admin_commands_require_admin(user1, station1):
     """
     await create_listener(user1, station1, is_admin=False)
 
-    with override_settings(
-            CHANNEL_LAYERS={
-                "default": {
-                    "BACKEND": "channels.layers.InMemoryChannelLayer",
-                    "TEST_CONFIG": {
-                        "expiry": 100500,
-                    },
-                },
-            }):
-        async with disconnecting(StationCommunicator(user1)) as communicator:
-            await communicator.test_join(station1)
+    async with disconnecting(StationCommunicator(user1)) as communicator:
+        await communicator.test_join(station1)
 
-            request_id = 1
-            await communicator.get_listeners(request_id)
-            response = await communicator.receive_json_from()
-            assert response['error'] == 'forbidden'
+        request_id = 1
+        await communicator.get_listeners(request_id)
+        response = await communicator.receive_json_from()
+        assert response['error'] == 'forbidden'
 
-            request_id = 2
-            await communicator.send_listener_invite(
-                request_id, listener_email='')
-            response = await communicator.receive_json_from()
-            assert response['error'] == 'forbidden'
+        request_id = 2
+        await communicator.send_listener_invite(request_id, listener_email='')
+        response = await communicator.receive_json_from()
+        assert response['error'] == 'forbidden'
 
 
 @pytest.mark.django_db(transaction=True)
@@ -146,33 +126,24 @@ async def test_get_listeners(user1, station1):
     """
     await create_listener(user1, station1, is_admin=True)
 
-    with override_settings(
-            CHANNEL_LAYERS={
-                "default": {
-                    "BACKEND": "channels.layers.InMemoryChannelLayer",
-                    "TEST_CONFIG": {
-                        "expiry": 100500,
-                    },
-                },
-            }):
-        async with disconnecting(StationCommunicator(user1)) as communicator:
-            await communicator.test_join(station1)
+    async with disconnecting(StationCommunicator(user1)) as communicator:
+        await communicator.test_join(station1)
 
-            request_id = 1
-            await communicator.get_listeners(request_id)
-            response = await communicator.receive_json_from()
-            assert response == {
-                'type':
-                'get_listeners_result',
-                'request_id':
-                request_id,
-                'listeners': [{
-                    'id': user1.id,
-                    'username': user1.username,
-                    'email': user1.email
-                }],
-                'pending_listeners': [],
-            }
+        request_id = 1
+        await communicator.get_listeners(request_id)
+        response = await communicator.receive_json_from()
+        assert response == {
+            'type':
+            'get_listeners_result',
+            'request_id':
+            request_id,
+            'listeners': [{
+                'id': user1.id,
+                'username': user1.username,
+                'email': user1.email
+            }],
+            'pending_listeners': [],
+        }
 
 
 @pytest.mark.skip(reason='not implemented')
@@ -184,37 +155,28 @@ async def test_send_listener_invite(user1, user2, station1):
     """
     await create_listener(user1, station1, is_admin=True)
 
-    with override_settings(
-            CHANNEL_LAYERS={
-                "default": {
-                    "BACKEND": "channels.layers.InMemoryChannelLayer",
-                    "TEST_CONFIG": {
-                        "expiry": 100500,
-                    },
-                },
-            }):
-        async with disconnecting(StationCommunicator(user1)) as communicator:
-            await communicator.test_join(station1)
+    async with disconnecting(StationCommunicator(user1)) as communicator:
+        await communicator.test_join(station1)
 
-            request_id = 1
-            await communicator.send_listener_invite(request_id, user2.email)
-            response = await communicator.receive_json_from()
-            assert response == {
-                'type': 'send_listener_invite_result',
-                'request_id': request_id,
-                'result': 'success',
-                'is_new_user': False,
-            }
+        request_id = 1
+        await communicator.send_listener_invite(request_id, user2.email)
+        response = await communicator.receive_json_from()
+        assert response == {
+            'type': 'send_listener_invite_result',
+            'request_id': request_id,
+            'result': 'success',
+            'is_new_user': False,
+        }
 
-            request_id = 2
-            await communicator.send_listener_invite(request_id, NON_USER_EMAIL)
-            response = await communicator.receive_json_from()
-            assert response == {
-                'type': 'send_listener_invite_result',
-                'request_id': request_id,
-                'result': 'success',
-                'is_new_user': True,
-            }
+        request_id = 2
+        await communicator.send_listener_invite(request_id, NON_USER_EMAIL)
+        response = await communicator.receive_json_from()
+        assert response == {
+            'type': 'send_listener_invite_result',
+            'request_id': request_id,
+            'result': 'success',
+            'is_new_user': True,
+        }
 
 
 @pytest.mark.django_db(transaction=True)
@@ -225,19 +187,10 @@ async def test_simple_playback(user1, user2, station1):
     dj = user1
     listener = user2
 
-    with override_settings(
-            CHANNEL_LAYERS={
-                "default": {
-                    "BACKEND": "channels.layers.InMemoryChannelLayer",
-                    "TEST_CONFIG": {
-                        "expiry": 100500,
-                    },
-                },
-            }):
-        async with disconnecting(StationCommunicator(dj)) as dj_communicator:
-            await dj_communicator.test_join(station1)
-            async with disconnecting(
-                    StationCommunicator(listener)) as listener_communicator:
-                await listener_communicator.test_join(station1)
-                # DJ changes playback
-                # DJ
+    async with disconnecting(StationCommunicator(dj)) as dj_communicator:
+        await dj_communicator.test_join(station1)
+        async with disconnecting(
+                StationCommunicator(listener)) as listener_communicator:
+            await listener_communicator.test_join(station1)
+            # DJ changes playback
+            # DJ
