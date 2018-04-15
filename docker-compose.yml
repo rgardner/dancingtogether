@@ -1,29 +1,41 @@
-version: "2"
+version: '3'
 
 services:
+  db:
+    image: postgres:latest
+    ports:
+      - "5432:5432"
   redis:
     image: redis:latest
+    ports:
+      - "6379:6379"
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python3 manage.py runserver 0.0.0.0:8000
+    environment:
+      - DATABASE_URL=postgres://postgres@db:5432/postgres
     env_file:
       - .env
     volumes:
-      - .:/code
+      - .:/app
     ports:
       - "8000:8000"
     stdin_open: true
     tty: true
-    links:
+    depends_on:
+      - db
       - redis
   worker:
     build: .
-    command: python manage.py runworker spotify-dispatcher
+    command: python3 manage.py runworker spotify-dispatcher
+    environment:
+      - DATABASE_URL=postgres://postgres@db:5432/postgres
     env_file:
       - .env
     volumes:
-      - .:/code
+      - .:/app
     stdin_open: true
     tty: true
-    links:
+    depends_on:
+      - db
       - redis
