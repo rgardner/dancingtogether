@@ -76,7 +76,6 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'dancingtogether.wsgi.application'
 ASGI_APPLICATION = 'dancingtogether.routing.application'
 
 # SSL/HTTPS
