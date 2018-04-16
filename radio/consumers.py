@@ -209,7 +209,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             elif needs_seek(previous_state, state):
                 seek_change = state.position_ms - station_state.position_ms
                 logger.debug(
-                    f'DJ {user} caused {station.group_name} to seek {seek_change}'
+                    f'DJ {user} caused {station.group_name} to seek {seek_change}ms'
                 )
                 await self.group_send_seek_current_track(
                     station.group_name, state.position_ms)
