@@ -269,15 +269,15 @@ class StationView {
 
     bindSpotifyActions() {
         this.musicPlayer.on('ready', () => {
-            this.setState({ isConnected: true });
+            this.setState(() => ({ isConnected: true }));
         });
 
         this.musicPlayer.on('initialization_error', ({ message }) => {
-            this.setState({ isConnected: false, 'errorMessage': message });
+            this.setState(() => ({ isConnected: false, errorMessage: message }));
         });
 
         this.musicPlayer.on('account_error', ({ message }) => {
-            this.setState({ isConnected: false, 'errorMessage': message });
+            this.setState(() => ({ isConnected: false, errorMessage: message }));
         });
 
         this.musicPlayer.on('player_state_changed', state => {

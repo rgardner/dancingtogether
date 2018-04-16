@@ -26,18 +26,3 @@ services:
     depends_on:
       - db
       - redis
-  worker:
-    build: .
-    command: python3 manage.py runworker spotify-dispatcher
-    environment:
-      - DATABASE_URL=postgres://postgres@db:5432/postgres
-      - REDIS_URL=redis://redis@redis:6379
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    stdin_open: true
-    tty: true
-    depends_on:
-      - db
-      - redis

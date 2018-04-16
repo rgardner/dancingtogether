@@ -4,6 +4,7 @@ import enum
 import logging
 from typing import Optional
 
+import aiohttp
 from asgiref.sync import async_to_sync
 import channels.auth
 from channels.db import database_sync_to_async
@@ -57,6 +58,9 @@ def station_admin_required(func):
 
 
 class StationConsumer(AsyncJsonWebsocketConsumer):
+    def __init__(self, scope):
+        super().__init__(scope)
+        self.spotify_client = SpotifyWebAPIClient()
 
     # WebSocket event handlers
 
@@ -405,37 +409,10 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
     async def start_resume_playback(self, user_id, device_id, context_uri,
                                     uri):
         logger.debug(f'{self.user} starting playback...')
-        await self.channel_layer.send(
-            'spotify-dispatcher', {
-                'type': 'spotify.start_resume_playback',
-                'user_id': user_id,
-                'device_id': device_id,
-                'context_uri': context_uri,
-                'uri': uri,
-            })
-
-
-class SpotifyConsumer(JsonWebsocketConsumer):
-    """Background worker to send requests to the Spotify Web API."""
-
-    def __init__(self, scope):
-        super().__init__(scope)
-        self.spotify_client = SpotifyWebAPIClient()
-
-    def spotify_start_resume_playback(self, event):
-        user_id = event['user_id']
-        device_id = event['device_id']
-        context_uri = event['context_uri']
-        uri = event['uri']
-        logger.debug(f'{user_id} starting {context_uri}: {uri}')
-        try:
-            self.spotify_client.player_play(user_id, device_id, context_uri, uri)
-        except AccessTokenExpired:
-            pass
-
-    def notify_access_token_change(self):
-        async_to_sync(channel_layer.send)('')
-        pass
+        access_token = await get_access_token(user_id)
+        async with aiohttp.ClientSession() as session:
+            await self.spotify_client.player_play(
+                session, user_id, access_token, device_id, context_uri, uri)
 
 
 class PlaybackState:
@@ -545,6 +522,11 @@ def update_station_state(station_state, state: PlaybackState):
     station_state.paused = state.paused
     station_state.position_ms = state.position_ms
     station_state.save()
+
+
+@database_sync_to_async
+def get_access_token(user_id):
+    return spotify.load_access_token(user_id)
 
 
 @database_sync_to_async

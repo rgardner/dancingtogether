@@ -138,7 +138,8 @@ async def test_refresh_access_token(user1, station1):
     port = mocks.get_free_port()
     mocks.start_mock_spotify_server(port)
 
-    with override_settings(SPOTIFY_TOKEN_API_URL=f'http://localhost:{port}/api/token'):
+    with override_settings(
+            SPOTIFY_TOKEN_API_URL=f'http://localhost:{port}/api/token'):
         async with disconnecting(StationCommunicator(user1)) as communicator:
             await communicator.refresh_access_token()
 

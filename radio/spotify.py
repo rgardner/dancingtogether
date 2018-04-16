@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 import hashlib
 import logging
@@ -91,6 +92,9 @@ class AccessToken:
         self._access_token = access_token
         self._access_token_expiration_time = access_token_expiration_time
 
+    def __str__(self):
+        return self.token
+
     @property
     def token(self):
         return self._access_token
@@ -168,47 +172,46 @@ def load_access_token(user_id) -> AccessToken:
 class SpotifyWebAPIClient:
     throttled_until = None
 
-    def player_play(self, user_id, device_id, context_uri, uri):
+    async def player_play(self, session, user_id, access_token, device_id,
+                          context_uri, uri):
         """
         https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
         """
-        if self.is_throttled():
-            return
-
-        access_token = load_access_token(user_id).token
-
         url = 'https://api.spotify.com/v1/me/player/play'
         headers = {'Authorization': f'Bearer {access_token}'}
         query_params = {'device_id': device_id}
         data = {'context_uri': context_uri, 'offset': {'uri': uri}}
 
-        r = requests.put(url, headers=headers, params=query_params, json=data)
-        if r.status_code == requests.codes.accepted:
-            # device is temporarily unavailable, retry after 5 seconds, up to 5
-            # retries
-            for r in range(5):
-                time.sleep(5)
-                r = requests.put(
-                    url, headers=headers, params=query_params, json=data)
-                if r.status_code != requests.codes.accepted:
-                    break
+        for _ in range(5):
+            if self.is_throttled():
+                return
 
-        if r.status_code == requests.codes.no_content:
-            # successful request
-            return
-        elif r.status_code == requests.codes.unauthorized:
-            raise AccessTokenExpired()
-        elif r.status_code == requests.codes.forbidden:
-            raise SpotifyAccountNotPremium()
-        elif r.status_code == requests.codes.not_found:
-            raise SpotifyDeviceNotFound()
-        elif r.status_code == requests.codes.too_many_requests:
-            # API rate limit exceeded. This applies to all web playback calls
-            self.start_throttling(int(r.headers['Retry-After']))
-        else:
-            logger.error(
-                f'user-{user_id} received unexpected Spotify Web API response {r.text}'
-            )
+            async with session.put(
+                    url, headers=headers, params=query_params,
+                    json=data) as resp:
+                if resp.status == requests.codes.accepted:
+                    # device is temporarily unavailable
+                    await asyncio.sleep(5)  # seconds
+                    continue
+                elif resp.status == requests.codes.no_content:
+                    # successful request
+                    return
+                elif resp.status == requests.codes.unauthorized:
+                    raise AccessTokenExpired()
+                elif resp.status == requests.codes.forbidden:
+                    raise SpotifyAccountNotPremium()
+                elif resp.status == requests.codes.not_found:
+                    raise SpotifyDeviceNotFound()
+                elif resp.status == requests.codes.too_many_requests:
+                    # API rate limit exceeded. This applies to all web playback calls
+                    self.start_throttling(int(resp.headers['Retry-After']))
+                    return
+                else:
+                    text = await resp.text()
+                    logger.error(
+                        f'user-{user_id} received unexpected Spotify Web API response {text}'
+                    )
+                    return
 
     def player_pause(self):
         """

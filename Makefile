@@ -10,10 +10,6 @@ build:
 attach-web:
 	docker attach dancingtogether_web_1
 
-.PHONY: attach-worker
-attach-worker:
-	docker attach dancingtogether_worker_1
-
 .PHONY: migrate
 migrate:
 	docker-compose run web python3 manage.py migrate

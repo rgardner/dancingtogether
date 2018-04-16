@@ -34,7 +34,6 @@ $ # Start the docker containers
 $ make run
 $ # Attach to running containers to enable easy debugging with `pdb`
 $ make attach-web
-$ make attach-worker
 ```
 
 ### Testing

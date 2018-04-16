@@ -24,8 +24,4 @@ application = ProtocolTypeRouter({
             # URLRouter just takes standard Django path() or url() entries.
             path('station/stream/', radio.consumers.StationConsumer),
         ])),
-    'channel':
-    ChannelNameRouter({
-        'spotify-dispatcher': radio.consumers.SpotifyConsumer,
-    }),
 })

@@ -12,6 +12,7 @@ python-dateutil = "*"
 async_generator = "*"
 django-heroku = "*"
 channels = "*"
+aiohttp = "*"
 
 [requires]
 python_version = "3.6"
