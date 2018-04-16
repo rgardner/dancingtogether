@@ -12,15 +12,16 @@ enjoy it!
 
 ### Installation and First Time Setup
 
-Want to run it locally? Simply run `dev_setup.sh` to install dependencies, set
-up heroku deployment, and run the initial database migrations. Then create the
-superuser and set the values in `.env`.
-
 ```sh
+$ # Install dependencies
 $ ./scripts/dev_setup.sh
-$ ./manage.py createsuperuser
+$ # Add required environment variables
 $ cp .env.example .env
 $ vim .env
+$ # Build containers and run database migrations
+$ make build && make migrate
+$ # Create a superuser account to administrate the site
+$ docker-compose run web python3 manage.py createsuperuser
 ```
 
 ### Docker Usage
@@ -33,7 +34,7 @@ $ make migrate
 $ # Start the docker containers
 $ make run
 $ # Attach to running containers to enable easy debugging with `pdb`
-$ make attach-web
+$ make attach
 ```
 
 ### Testing
@@ -42,14 +43,19 @@ $ make attach-web
 $ make test
 ```
 
+### Deployment
+
+```sh
+$ make deploy
+```
+
 
 ### Code Map
 
 - Dockerfile
 - Pipfile: specifies project dependencies
 - Pipfile.lock: pins dependency versions to ensure deterministic builds
-- Procfile: specifies how to start the app, use for macOS/Ubuntu
-- Procfile.windows: specifies how to start the app, use for Windows
+- Procfile: specifies how to start the app on Heroku
 - README.md: this file
 - accounts: Django app for managing user accounts
 - app.json: specifies configuration for Heroku
