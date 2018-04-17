@@ -265,10 +265,12 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 await self.seek_current_track(station_state.position_ms)
 
     async def refresh_access_token(self) -> AccessToken:
-        access_token = await refresh_access_token(self.scope['user'].id)
+        access_token = await get_access_token(self.user.id)
+        async with aiohttp.ClientSession() as session:
+            await access_token.refresh(session)
         await self.send_json({
             'type': 'access_token_change',
-            'access_token': access_token,
+            'access_token': access_token.token,
         })
         return access_token
 
@@ -535,10 +537,3 @@ def update_station_state(station_state, state: PlaybackState):
 @database_sync_to_async
 def get_access_token(user_id):
     return spotify.load_access_token(user_id)
-
-
-@database_sync_to_async
-def refresh_access_token(user_id):
-    access_token = spotify.load_access_token(user_id)
-    access_token.refresh()
-    return access_token.token

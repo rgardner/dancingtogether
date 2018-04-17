@@ -6,6 +6,8 @@ import time
 from typing import Tuple
 import urllib.parse
 
+import aiohttp
+from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -36,7 +38,7 @@ def fresh_access_token_required(view_func):
     def _wrapped_view_func(request, *args, **kwargs):
         access_token = load_access_token(request.user)
         if access_token.has_expired():
-            access_token.refresh()
+            async_to_sync(access_token.refresh)()
 
         request.session['access_token'] = access_token.token
         return view_func(request, *args, **kwargs)
@@ -110,21 +112,31 @@ class AccessToken:
     def has_expired(self):
         return timezone.now() > self.token_expiration_time
 
-    def refresh(self):
+    async def refresh(self, session=None):
+        if session is None:
+            async with aiohttp.ClientSession() as this_session:
+                await self._refresh(this_session)
+        else:
+            await self._refresh(session)
+
+    async def _refresh(self, session):
         data = {
             'grant_type': 'refresh_token',
             'refresh_token': self.refresh_token,
             'client_id': settings.SPOTIFY_CLIENT_ID,
             'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
-
-        r = requests.post(settings.SPOTIFY_TOKEN_API_URL, data)
-        response_data = r.json()
-        self._access_token = response_data['access_token']
-        expires_in = int(response_data['expires_in'])
-        expires_in = timedelta(seconds=expires_in)
-        self._access_token_expiration_time = timezone.now() + expires_in
-        save_access_token(self)
+        async with session.post(
+                settings.SPOTIFY_TOKEN_API_URL, json=data) as resp:
+            if resp.status == requests.codes.ok:
+                resp_data = await resp.json()
+                self._access_token = resp_data['access_token']
+                expires_in = int(resp_data['expires_in'])
+                expires_in = timedelta(seconds=expires_in)
+                self._access_token_expiration_time = timezone.now() + expires_in
+                save_access_token(self)
+            else:
+                logger.error(await resp.text())
 
     @staticmethod
     def request_refresh_and_access_token(code, user):
