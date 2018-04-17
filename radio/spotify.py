@@ -127,7 +127,7 @@ class AccessToken:
             'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
         async with session.post(
-                settings.SPOTIFY_TOKEN_API_URL, json=data) as resp:
+                settings.SPOTIFY_TOKEN_API_URL, data=data) as resp:
             if resp.status == requests.codes.ok:
                 resp_data = await resp.json()
                 self._access_token = resp_data['access_token']
