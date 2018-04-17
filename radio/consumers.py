@@ -13,9 +13,9 @@ import dateutil.parser
 
 from . import models
 from . import spotify
-from .exceptions import ClientError
+from .exceptions import AccessTokenExpired, ClientError
 from .models import Listener, PendingListener, Station
-from .spotify import SpotifyWebAPIClient
+from .spotify import AccessToken, SpotifyWebAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -264,12 +264,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             elif needs_seek(state, station_state):
                 await self.seek_current_track(station_state.position_ms)
 
-    async def refresh_access_token(self):
+    async def refresh_access_token(self) -> AccessToken:
         access_token = await refresh_access_token(self.scope['user'].id)
         await self.send_json({
             'type': 'access_token_change',
             'access_token': access_token,
         })
+        return access_token
 
     @station_join_required
     @station_admin_required
@@ -411,8 +412,15 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         logger.debug(f'{self.user} starting playback...')
         access_token = await get_access_token(user_id)
         async with aiohttp.ClientSession() as session:
-            await self.spotify_client.player_play(
-                session, user_id, access_token, device_id, context_uri, uri)
+            try:
+                await self.spotify_client.player_play(session, user_id,
+                                                      access_token, device_id,
+                                                      context_uri, uri)
+            except AccessTokenExpired:
+                access_token = await self.refresh_access_token()
+                await self.spotify_client.player_play(session, user_id,
+                                                      access_token, device_id,
+                                                      context_uri, uri)
 
 
 class PlaybackState:
