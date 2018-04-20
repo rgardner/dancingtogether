@@ -273,10 +273,8 @@ class StationServer {
                 }
 
                 if (serverState.paused) {
-                    let work = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
-                    work.then(() => {
-                        return this.musicPlayer.player.seek(serverState.position);
-                    });
+                    const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
+                    pauseIfNeeded.then(this.musicPlayer.player.seek(serverState.position));
                 } else {
                     const localPosition = state.position;
                     const serverPosition = this.getAdjustedPlaybackPosition(serverState);
@@ -472,20 +470,18 @@ class MusicVolume {
     }
 
     setVolume(volume) {
-        return new Promise((resolve, reject) => {
+        return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
                 this.musicPlayer.player.setVolume(volume).then(() => {
                     MusicVolume.setCachedVolume(volume);
                     resolve();
                 });
-            } else {
-                reject();
             }
         });
     }
 
     mute() {
-        return new Promise((resolve, reject) => {
+        return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
                 this.getVolume().then(volume => {
                     // BUG: Spotify API returns null instead of 0.0.
@@ -503,8 +499,6 @@ class MusicVolume {
 
                     this.setVolume(newVolume).then(() => resolve(newVolume));
                 });
-            } else {
-                reject();
             }
         });
     }
@@ -790,9 +784,8 @@ class StationAdminView {
             }
 
             $('#admin-invite-sent').html(message);
-            setTimeout(() => {
-                $('#admin-invite-sent').hide();
-            }, 10000);
+            wait(10000).then(() => $('#admin-invite-sent').hide());
+        
             $('#invite-listener-email').val('');
         });
     }
