@@ -1,3 +1,5 @@
+all: run
+
 .PHONY: build
 build:
 	docker-compose build
@@ -8,6 +10,10 @@ migrate:
 
 .PHONY: run
 run:
+	docker-compose up
+
+.PHONY: rund
+rund:
 	docker-compose up -d
 
 .PHONY: attach

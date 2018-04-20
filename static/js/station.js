@@ -5,6 +5,7 @@
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
+const MAX_SEEK_ERROR_MS = 2000;
 
 class StationApp { // eslint-disable-line no-unused-vars
     constructor(userIsDJ, userIsAdmin, accessToken, stationId) {
@@ -72,6 +73,10 @@ class StationMusicPlayer {
     setAccessToken(accessToken) {
         this.accessToken = accessToken;
     }
+
+    freeze(duration) {
+        this.player.pause().then(wait(duration)).then(this.player.resume());
+    }
 }
 
 // Public Events
@@ -89,6 +94,7 @@ class StationServer {
             'get_listeners_result': $.Callbacks(),
             'send_listener_invite_result': $.Callbacks(),
         };
+        this.serverPings = new CircularArray(5);
         this.heartbeatIntervalId = null;
         this.requestId = 0;
     }
@@ -147,6 +153,7 @@ class StationServer {
 
     enableHeartbeat() {
         this.heartbeatIntervalId = window.setInterval(() => {
+            this.sendPing();
             this.musicPlayer.player.getCurrentState().then(state => {
                 if (state) {
                     this.sendPlayerState(state);
@@ -183,14 +190,10 @@ class StationServer {
         } else if (action.leave) {
             $('#station-name').html('');
             this.disableHeartbeat();
-        } else if (action.type === 'dj_state_change') {
-            if (action.change_type === 'set_paused') {
-                this.musicPlayer.player.pause();
-            } else if (action.change_type === 'set_resumed') {
-                this.musicPlayer.player.resume();
-            } else if (action.change_type === 'seek_current_track') {
-                this.musicPlayer.player.seek(action.position_ms);
-            }
+        } else if (action.type === 'pong') {
+            this.serverPings.push((new Date()) - new Date(action.start_time));
+        } else if (action.type === 'ensure_playback_state') {
+            this.ensurePlaybackState(action.state);
         } else if (action.type === 'access_token_change') {
             this.musicPlayer.setAccessToken(action.accessToken);
         } else if (action.type === 'listener_change') {
@@ -202,6 +205,13 @@ class StationServer {
         } else {
             console.error('Unknown message from server: ', action);
         }
+    }
+
+    sendPing() {
+        this.webSocketBridge.send({
+            'command': 'ping',
+            'start_time': new Date(),
+        });
     }
 
     sendPlayerState(state) {
@@ -246,6 +256,63 @@ class StationServer {
                 'listener_email': listenerEmail,
             });
         });
+    }
+
+    ensurePlaybackState(serverState) {
+        const currentTrackReady = () => this.musicPlayer.player.getCurrentState().then(state => {
+            if (state) {
+                return state.track_window.current_track.uri === serverState.current_track_uri;
+            } else {
+                return false;
+            }
+        });
+        Promise.race([retry(currentTrackReady), timeout(5000)]).then(() => {
+            this.musicPlayer.player.getCurrentState().then(state => {
+                if (!state) {
+                    return;
+                }
+
+                if (serverState.paused) {
+                    let work = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
+                    work.then(() => {
+                        return this.musicPlayer.player.seek(serverState.position);
+                    });
+                } else {
+                    const localPosition = state.position;
+                    const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                    if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
+                        this.musicPlayer.player.seek(serverPosition + 2000).then(() => {
+                            this.musicPlayer.player.getCurrentState().then(state => {
+                                const localPosition = state.position;
+                                const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                                if (((localPosition > serverPosition) && (localPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
+                                    this.musicPlayer.freeze(localPosition - serverPosition);
+                                } else {
+                                    this.musicPlayer.player.resume();
+                                }
+                            });
+                        });
+                    } else if (state.paused) {
+                        this.musicPlayer.player.resume();
+                    }
+                }
+            });
+        });
+    }
+
+    getMedianServerOneWayTime() {
+        return median(this.serverPings.entries()) / 2;
+    }
+
+    getAdjustedPlaybackPosition(serverState) {
+        let position = serverState.raw_position_ms;
+        if (!serverState.paused) {
+            const sampleTime = new Date(serverState.sample_time);
+            const serverDelay = this.getMedianServerOneWayTime();
+            position += ((new Date()).getTime() - (sampleTime.getTime() + serverDelay));
+        }
+
+        return position;
     }
 }
 
@@ -336,12 +403,14 @@ class MusicPositionView {
 
     bindSpotifyActions() {
         this.musicPlayer.on('player_state_changed', state => {
-            this.setState(() => ({ positionMS: state.position }));
+            if (state) {
+                this.setState(() => ({ positionMS: state.position }));
 
-            if (state.paused) {
-                this.ensureDisableRefresh();
-            } else {
-                this.ensureEnableRefresh();
+                if (state.paused) {
+                    this.ensureDisableRefresh();
+                } else {
+                    this.ensureEnableRefresh();
+                }
             }
         });
     }
@@ -393,13 +462,11 @@ class MusicVolume {
     }
 
     getVolume() {
-        return new Promise((resolve, reject) => {
+        return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
                 this.musicPlayer.player.getVolume().then((volume) => {
                     resolve(volume);
                 });
-            } else {
-                reject();
             }
         });
     }
@@ -729,6 +796,40 @@ class StationAdminView {
             $('#invite-listener-email').val('');
         });
     }
+}
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// condition - () => Promise<boolean>
+function retry(condition) {
+    condition().then(b => (b ? Promise.resolve() : wait(250).then(retry(condition))));
+}
+
+function timeout(ms) {
+    return wait(ms).then(Promise.reject);
+}
+
+class CircularArray {
+    constructor(capacity) {
+        this.array = [];
+        this.position = 0;
+        this.capacity = capacity;
+    }
+
+    entries() {
+        return this.array;
+    }
+
+    push(e) {
+        this.array[this.position % this.capacity] = e;
+        this.position++;
+    }
+}
+
+function median(arr) {
+    return arr.concat().sort()[Math.floor(arr.length / 2)];
 }
 
 // milliseconds -> 'm:ss', rounding down, and left-padding seconds

@@ -1,6 +1,7 @@
 from django.contrib import admin
 
-from .models import SpotifyCredentials, Station, Listener, PendingListener
+from .models import (Listener, PendingListener, PlaybackState,
+                     SpotifyCredentials, Station)
 
 
 class ListenerInline(admin.TabularInline):
@@ -13,8 +14,12 @@ class PendingListenerInline(admin.TabularInline):
     extra = 1
 
 
+class PlaybackStateInline(admin.StackedInline):
+    model = PlaybackState
+
+
 class StationAdmin(admin.ModelAdmin):
-    inlines = (ListenerInline, PendingListenerInline)
+    inlines = (ListenerInline, PendingListenerInline, PlaybackStateInline)
 
 
 admin.site.register(SpotifyCredentials)
