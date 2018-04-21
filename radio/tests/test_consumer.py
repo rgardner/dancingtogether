@@ -33,6 +33,21 @@ async def test_simple_join_leave(user1, station1):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_ping_pong(user1, station1):
+    await create_listener(user1, station1)
+
+    async with disconnecting(StationCommunicator(user1)) as communicator:
+        await communicator.test_join(station1)
+
+        start_time = timezone.now().isoformat()
+        await communicator.ping(start_time)
+
+        response = await communicator.receive_json_from()
+        assert response == {'type': 'pong', 'start_time': start_time}
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_admin_commands_require_admin(user1, station1):
     """
     Assert admin commands require the user to be an admin of the station.
@@ -216,6 +231,12 @@ class StationCommunicator(WebsocketCommunicator):
         await self.send_json_to({
             'command': 'leave',
             'station': station_id,
+        })
+
+    async def ping(self, start_time):
+        await self.send_json_to({
+            'command': 'ping',
+            'start_time': start_time,
         })
 
     async def refresh_access_token(self):
