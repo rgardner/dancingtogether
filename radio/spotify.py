@@ -189,7 +189,6 @@ class SpotifyWebAPIClient:
         """
         https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
         """
-        url = 'https://api.spotify.com/v1/me/player/play'
         headers = {'Authorization': f'Bearer {access_token}'}
         query_params = {'device_id': device_id}
         data = {'context_uri': context_uri, 'offset': {'uri': uri}}
@@ -199,7 +198,9 @@ class SpotifyWebAPIClient:
                 return
 
             async with session.put(
-                    url, headers=headers, params=query_params,
+                    settings.SPOTIFY_PLAYER_PLAY_API_URL,
+                    headers=headers,
+                    params=query_params,
                     json=data) as resp:
                 if resp.status == requests.codes.accepted:
                     # device is temporarily unavailable

@@ -8,7 +8,7 @@ from django.test import override_settings
 from django.utils import timezone
 import pytest
 
-from ..consumers import StationConsumer
+from ..consumers import PlaybackState, StationConsumer
 from ..models import Listener, SpotifyCredentials, Station
 from . import mocks
 
@@ -134,14 +134,29 @@ async def test_send_listener_invite(user1, user2, station1):
 async def test_simple_playback(user1, user2, station1):
     await create_listener(user1, station1, is_dj=True)
     await create_listener(user2, station1, is_dj=False)
+    await create_spotify_credentials(user2)
     dj = user1
     listener = user2
 
-    async with disconnecting(StationCommunicator(dj)) as dj_communicator:
-        await dj_communicator.test_join(station1)
-        async with disconnecting(
-                StationCommunicator(listener)) as listener_communicator:
-            await listener_communicator.test_join(station1)
+    port = mocks.get_free_port()
+    mocks.start_mock_spotify_server(port)
+
+    with override_settings(
+            SPOTIFY_PLAYER_PLAY_API_URL=f'http://localhost:{port}/player/play'
+    ):
+        async with disconnecting(StationCommunicator(dj)) as dj_communicator:
+            await dj_communicator.test_join(station1)
+            async with disconnecting(
+                    StationCommunicator(listener)) as listener_communicator:
+                await listener_communicator.test_join(station1)
+
+                state = get_mock_client_state()
+                await dj_communicator.player_state_change(state)
+                await dj_communicator.receive_nothing()
+
+                response = await listener_communicator.receive_json_from()
+                assert response['type'] == 'ensure_playback_state'
+                assert PlaybackState(**response['state']) == state
 
 
 @pytest.mark.django_db(transaction=True)
@@ -200,6 +215,15 @@ def create_spotify_credentials(user):
         user=user, access_token_expiration_time=timezone.now())
 
 
+def get_mock_client_state() -> PlaybackState:
+    return PlaybackState(
+        'MockContextUri',
+        'MockCurrentTrackUri',
+        paused=True,
+        raw_position_ms=0,
+        sample_time=timezone.now())
+
+
 @asynccontextmanager
 async def disconnecting(communicator):
     try:
@@ -237,6 +261,12 @@ class StationCommunicator(WebsocketCommunicator):
         await self.send_json_to({
             'command': 'ping',
             'start_time': start_time,
+        })
+
+    async def player_state_change(self, state):
+        await self.send_json_to({
+            'command': 'player_state_change',
+            **(state.as_dict()),
         })
 
     async def refresh_access_token(self):

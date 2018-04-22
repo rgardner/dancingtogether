@@ -215,11 +215,13 @@ class StationServer {
     }
 
     sendPlayerState(state) {
-        state['current_time'] = new Date();
         this.webSocketBridge.send({
             'command': 'player_state_change',
-            'state_time': new Date(),
-            'state': state,
+            'context_uri': state['context']['uri'],
+            'current_track_uri': state['track_window']['current_track']['uri'],
+            'paused': state['paused'],
+            'raw_position_ms': state['position'],
+            'sample_time': new Date(),
         });
     }
 

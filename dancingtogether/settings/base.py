@@ -185,3 +185,4 @@ SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.environ.get('DT_SPOTIFY_CLIENT_SECRET')
 
 SPOTIFY_TOKEN_API_URL = 'https://accounts.spotify.com/api/token'
+SPOTIFY_PLAYER_PLAY_API_URL = 'https://api.spotify.com/v1/me/player/play'
