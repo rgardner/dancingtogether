@@ -15,7 +15,7 @@ import dateutil.parser
 
 from . import models
 from . import spotify
-from .exceptions import AccessTokenExpired, ClientError
+from .exceptions import AccessTokenExpired, ClientError, SpotifyServerError
 from .models import Listener, PendingListener, Station
 from .spotify import AccessToken, SpotifyWebAPIClient
 
@@ -39,6 +39,9 @@ class PlaybackState:
     sample_time: datetime
 
     def __post_init__(self):
+        if type(self.sample_time) is str:
+            self.sample_time = dateutil.parser.parse(self.sample_time)
+
         if self.paused:
             self.position_ms = self.raw_position_ms
         else:
@@ -49,9 +52,6 @@ class PlaybackState:
             millis = (elapsed_time.seconds * 1000) + (
                 elapsed_time.microseconds / 1000)
             self.position_ms = self.raw_position_ms + millis
-
-        if type(self.sample_time) is str:
-            self.sample_time = dateutil.parser.parse(self.sample_time)
 
     @staticmethod
     def from_station_state(station_state: models.PlaybackState):
@@ -165,6 +165,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         except ClientError as e:
             await self.send_json({'error': e.code, 'message': e.message})
+        except SpotifyServerError:
+            await self.send_json({
+                'error':
+                'spotify_error',
+                'message':
+                'Spotify is experiencing issues, the stream quality may be affected'
+            })
 
     async def disconnect(self, code):
         """Called when the WebSocket closes for any reason."""
@@ -196,13 +203,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.admin_group_send_join(station.admin_group_name,
                                          self.user.username, self.user.email)
 
-        # Catch up to current playback state. The current solution is sub-
-        # optimal. The context and track need to be loaded first. Otherwise,
-        # there's nothing to pause or seek! The user will experience a brief
-        # moment of music playing before the seek and paused events are
-        # processed. The call to sleep below is necessary because without it,
-        # the client won't have processed the start_resume_playback event yet
-        # by the time it receives pause and seek events.
+        # Reply to client to finish setting up station
+        await self.send_json({'join': station.title})
+        self.state = StationState.Connected
 
         if hasattr(station, 'playbackstate'):
             station_state = PlaybackState.from_station_state(
@@ -211,10 +214,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                              station_state.context_uri,
                                              station_state.current_track_uri)
             await self.ensure_playback_state(station_state.as_dict())
-
-        # Reply to client to finish setting up station
-        await self.send_json({'join': station.title})
-        self.state = StationState.Connected
 
     @station_join_required
     async def leave_station(self, station_id):

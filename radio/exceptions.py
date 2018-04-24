@@ -1,4 +1,8 @@
-class ClientError(Exception):
+class Error(Exception):
+    ...
+
+
+class ClientError(Error):
     """Caught by WebSocket receive() handler and returned to client."""
 
     def __init__(self, code, message):
@@ -9,13 +13,21 @@ class ClientError(Exception):
 # Spotify Errors
 
 
-class AccessTokenExpired(Exception):
-    pass
+class SpotifyError(Error):
+    ...
 
 
-class SpotifyAccountNotPremium(Exception):
-    pass
+class AccessTokenExpired(SpotifyError):
+    ...
 
 
-class SpotifyDeviceNotFound(Exception):
-    pass
+class SpotifyAccountNotPremium(SpotifyError):
+    ...
+
+
+class SpotifyDeviceNotFound(SpotifyError):
+    ...
+
+
+class SpotifyServerError(SpotifyError):
+    ...

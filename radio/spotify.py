@@ -14,7 +14,7 @@ from django.utils import timezone
 import requests
 
 from .exceptions import (AccessTokenExpired, SpotifyAccountNotPremium,
-                         SpotifyDeviceNotFound)
+                         SpotifyDeviceNotFound, SpotifyServerError)
 from .models import SpotifyCredentials
 
 logger = logging.getLogger(__name__)
@@ -224,7 +224,7 @@ class SpotifyWebAPIClient:
                     logger.error(
                         f'user-{user_id} received unexpected Spotify Web API response {text}'
                     )
-                    return
+                    raise SpotifyServerError()
 
     def player_pause(self):
         """

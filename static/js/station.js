@@ -82,6 +82,7 @@ class StationMusicPlayer {
 // Public Events
 // 'ready' -> Server is now ready to accept requests
 // 'listener_change' -> The station's listeners have changed
+// 'error' -> An error occurred.
 class StationServer {
     constructor(stationId, musicPlayer) {
         this.stationId = stationId;
@@ -91,6 +92,8 @@ class StationServer {
         this.observers = {
             'ready': $.Callbacks(),
             'listener_change': $.Callbacks(),
+            'error': $.Callbacks(),
+            // Private observers
             'get_listeners_result': $.Callbacks(),
             'send_listener_invite_result': $.Callbacks(),
         };
@@ -179,11 +182,8 @@ class StationServer {
 
     onMessage(action) {
         if (action.error) {
-            console.error(action.error);
-            return;
-        }
-
-        if (action.join) {
+            this.observers['error'].fire(action.message);
+        } else if (action.join) {
             $('#station-name').html(action.join);
             this.enableHeartbeat();
             this.observers['ready'].fire();
@@ -326,6 +326,7 @@ class StationView {
             errorMessage: null
         };
         this.musicPlayer = musicPlayer;
+        this.stationServer = stationServer;
         this.musicPositionView = new MusicPositionView(musicPlayer);
         this.listenerView = new StationListenerView(musicPlayer);
         this.djView = new StationDJView(userIsDJ, musicPlayer);
@@ -350,12 +351,14 @@ class StationView {
         this.musicPlayer.on('player_state_changed', state => {
             this.setState(() => ({ playbackState: state }));
         });
+
+        this.stationServer.on('error', message => {
+            this.setState(() => ({ errorMessage: message }));
+        });
     }
 
     render() {
         $('#connection-status').removeClass().empty();
-        $('#connection-status-error').empty();
-
         if (this.state.isConnected) {
             $('#connection-status').addClass('bg-success').html('Connected');
         } else if (this.state.errorMessage) {
@@ -364,6 +367,7 @@ class StationView {
             $('#connection-status').addClass('bg-info').html('Not Connected');
         }
 
+        $('#connection-status-error').empty();
         if (this.state.errorMessage) {
             $('#connection-status-error').html(this.state.errorMessage);
         }

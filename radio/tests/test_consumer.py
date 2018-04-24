@@ -8,6 +8,7 @@ from django.test import override_settings
 from django.utils import timezone
 import pytest
 
+from .. import models
 from ..consumers import PlaybackState, StationConsumer
 from ..models import Listener, SpotifyCredentials, Station
 from . import mocks
@@ -161,6 +162,25 @@ async def test_simple_playback(user1, user2, station1):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_playback_error(user1, station1):
+    await create_listener(user1, station1)
+    await create_playback_state(station1)
+    await create_spotify_credentials(user1)
+
+    port = mocks.get_free_port()
+    mocks.start_mock_spotify_server(port, mocks.MockSpotifyServerErrorHandler)
+
+    with override_settings(
+            SPOTIFY_PLAYER_PLAY_API_URL=f'http://localhost:{port}/player/play'
+    ):
+        async with disconnecting(StationCommunicator(user1)) as communicator:
+            await communicator.test_join(station1)
+            response = await communicator.receive_json_from()
+            assert response['error'] == 'spotify_error'
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_refresh_access_token(user1, station1):
     await create_listener(user1, station1)
     await create_spotify_credentials(user1)
@@ -207,6 +227,11 @@ def station1():
 def create_listener(user, station, *, is_admin=False, is_dj=False):
     return Listener.objects.create(
         user=user, station=station, is_admin=is_admin, is_dj=is_dj)
+
+
+@database_sync_to_async
+def create_playback_state(station):
+    return models.PlaybackState.objects.create(station=station, position_ms=0)
 
 
 @database_sync_to_async

@@ -38,6 +38,17 @@ class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 
+class MockSpotifyServerErrorHandler(BaseHTTPRequestHandler):
+    PLAYER_PLAY_PATERN = re.compile(r'player/play')
+
+    # BaseHTTPRequestHandler
+
+    def do_PUT(self):
+        if re.search(self.PLAYER_PLAY_PATERN, self.path):
+            self.send_response(requests.codes.service_unavailable)
+            self.end_headers()
+
+
 def get_free_port():
     with closing(socket.socket(socket.AF_INET, type=socket.SOCK_STREAM)) as s:
         s.bind(('localhost', 0))
@@ -45,8 +56,8 @@ def get_free_port():
         return port
 
 
-def start_mock_spotify_server(port):
-    mock_server = HTTPServer(('localhost', port), MockSpotifyRequestHandler)
+def start_mock_spotify_server(port, handler=MockSpotifyRequestHandler):
+    mock_server = HTTPServer(('localhost', port), handler)
     mock_server_thread = Thread(target=mock_server.serve_forever)
     mock_server_thread.setDaemon(True)
     mock_server_thread.start()
