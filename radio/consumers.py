@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import enum
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional, Dict
 
 import aiohttp
 from asgiref.sync import async_to_sync
@@ -37,6 +37,7 @@ class PlaybackState:
     raw_position_ms: int
     position_ms: int = dataclasses.field(init=False)
     sample_time: datetime
+    etag: str
 
     def __post_init__(self):
         if type(self.sample_time) is str:
@@ -54,11 +55,19 @@ class PlaybackState:
             self.position_ms = self.raw_position_ms + millis
 
     @staticmethod
+    def from_client_message(message):
+        return PlaybackState(message['context_uri'],
+                             message['current_track_uri'], message['paused'],
+                             message['raw_position_ms'],
+                             message['sample_time'], message['etag'])
+
+    @staticmethod
     def from_station_state(station_state: models.PlaybackState):
         return PlaybackState(station_state.context_uri,
                              station_state.current_track_uri,
                              station_state.paused, station_state.position_ms,
-                             station_state.last_updated_time)
+                             station_state.last_updated_time,
+                             station_state.last_updated_time.isoformat())
 
     def as_dict(self):
         return {
@@ -67,6 +76,7 @@ class PlaybackState:
             'paused': self.paused,
             'raw_position_ms': self.raw_position_ms,
             'sample_time': self.sample_time.isoformat(),
+            'etag': self.etag,
         }
 
 
@@ -142,16 +152,17 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 await self.send_pong(content['start_time'])
 
             elif command == 'player_state_change':
-                playback_state = PlaybackState(
-                    content['context_uri'], content['current_track_uri'],
-                    content['paused'], content['raw_position_ms'],
-                    dateutil.parser.parse(content['sample_time']))
+                playback_state = PlaybackState.from_client_message(content)
                 listener = await get_listener_or_error(self.station_id,
                                                        self.user)
                 if listener.is_dj:
                     await self.update_dj_state(playback_state)
                 else:
-                    await self.update_listener_state(playback_state)
+                    await self.sync_listener_state(playback_state)
+
+            elif command == 'get_playback_state':
+                playback_state = PlaybackState.from_client_message(content)
+                await self.sync_listener_state(playback_state)
 
             elif command == 'refresh_access_token':
                 await self.refresh_access_token()
@@ -170,7 +181,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 'error':
                 'spotify_error',
                 'message':
-                'Spotify is experiencing issues, the stream quality may be affected'
+                'Spotify is experiencing issues, stream quality may be affected'
             })
 
     async def disconnect(self, code):
@@ -207,13 +218,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'join': station.title})
         self.state = StationState.Connected
 
-        if hasattr(station, 'playbackstate'):
-            station_state = PlaybackState.from_station_state(
-                station.playbackstate)
-            await self.start_resume_playback(self.user.id, self.device_id,
-                                             station_state.context_uri,
-                                             station_state.current_track_uri)
-            await self.ensure_playback_state(station_state.as_dict())
+        await self.sync_listener_state(None)
 
     @station_join_required
     async def leave_station(self, station_id):
@@ -248,40 +253,59 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         station_state = getattr(station, 'playbackstate', None)
         if station_state is None:
             station_state = models.PlaybackState(station_id=station.id)
+            await update_station_state(station_state, state)
+            new_state = dataclasses.replace(
+                state, etag=station_state.last_updated_time.isoformat())
             await self.group_send_start_resume_playback(
-                station.group_name, state.context_uri, state.current_track_uri)
+                station.group_name, new_state.context_uri,
+                new_state.current_track_uri)
             await self.group_send_ensure_playback_state(
-                station.group_name, state)
+                station.group_name, new_state)
 
         else:
             previous_state = PlaybackState.from_station_state(station_state)
-            if needs_start_playback(previous_state, state):
-                logger.debug(
-                    f'DJ {user} caused {station.group_name} to change context or track'
-                )
-                await self.group_send_start_resume_playback(
-                    station.group_name, state.context_uri,
-                    state.current_track_uri)
+            await update_station_state(station_state, state)
+            if state.etag != previous_state.etag:
+                # TODO: raise an error to the client so they can re-sync
+                logger.debug(f'DJ {user} is out of sync, rejecting request.')
+                raise ClientError('precondition_failed',
+                                  'Playback state is stale')
+            else:
+                logger.debug(f'DJ {user} is in sync, updating state...')
+                new_state = dataclasses.replace(
+                    state, etag=station_state.last_updated_time.isoformat())
+                if needs_start_playback(previous_state, new_state):
+                    logger.debug(
+                        f'DJ {user} caused {station.group_name} to change context or track'
+                    )
+                    await self.group_send_start_resume_playback(
+                        station.group_name, state.context_uri,
+                        new_state.current_track_uri)
 
-            await self.group_send_ensure_playback_state(
-                station.group_name, state)
-
-        await update_station_state(station_state, state)
+                await self.group_send_ensure_playback_state(
+                    station.group_name, new_state)
 
     @station_join_required
-    async def update_listener_state(self, state):
+    async def sync_listener_state(self, state: Optional[PlaybackState]):
         user = self.user
         station = await get_station_or_error(self.station_id, user)
         if hasattr(station, 'playbackstate'):
             station_state = PlaybackState.from_station_state(
                 station.playbackstate)
-            if needs_start_playback(state, station_state):
+
+            if (state is None) or not state.etag:
+                logger.debug(f'{user} requested full sync')
+            elif state.etag != station_state.etag:
+                logger.debug(f'{user} is out of sync.')
+                raise ClientError('precondition_failed',
+                                  'Playback state is stale')
+
+            if (state is None) or needs_start_playback(state, station_state):
                 await self.start_resume_playback(
                     user.id, self.device_id, station_state.context_uri,
                     station_state.current_track_uri)
 
-            await self.group_send_ensure_playback_state(
-                station.group_name, station_state)
+            await self.ensure_playback_state(station_state.as_dict())
 
     async def refresh_access_token(self) -> AccessToken:
         access_token = await get_access_token(self.user.id)
@@ -393,10 +417,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                              event['context_uri'],
                                              event['current_track_uri'])
 
-    async def station_ensure_playback_state(self, event):
-        sender_user_id = event['sender_user_id']
-        if sender_user_id != self.user.id:
-            await self.ensure_playback_state(event['state'])
+    async def station_ensure_playback_state(self, event: Dict[str, Any]):
+        await self.ensure_playback_state(event['state'])
 
     # Utils
 

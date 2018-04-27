@@ -195,6 +195,9 @@ class SpotifyWebAPIClient:
 
         for _ in range(5):
             if self.is_throttled():
+                logger.warning(
+                    f'Spotify Web API request throttled until {self.throttled_until}'
+                )
                 return
 
             async with session.put(
@@ -221,40 +224,14 @@ class SpotifyWebAPIClient:
                         timedelta(seconds=int(resp.headers['Retry-After'])))
                     return
                 else:
-                    self.start_throttling(timedelta(minutes=5))
+                    if requests.codes.server_error <= resp.status <= requests.codes.service_unavailable:
+                        self.start_throttling(timedelta(minutes=5))
+
                     text = await resp.text()
                     logger.error(
                         f'user-{user_id} received unexpected Spotify Web API response {text}'
                     )
                     raise SpotifyServerError()
-
-    def player_pause(self):
-        """
-        https://beta.developer.spotify.com/documentation/web-api/reference/player/pause-a-users-playback/
-        """
-        if self.is_throttled():
-            return
-
-    def player_seek(self):
-        """
-        https://beta.developer.spotify.com/documentation/web-api/reference/player/seek-to-position-in-currently-playing-track/
-        """
-        if self.is_throttled():
-            return
-
-    def player_next(self):
-        """
-        https://beta.developer.spotify.com/documentation/web-api/reference/player/skip-users-playback-to-next-track/
-        """
-        if self.is_throttled():
-            return
-
-    def player_previous(self):
-        """
-        https://beta.developer.spotify.com/documentation/web-api/reference/player/skip-users-playback-to-previous-track/
-        """
-        if self.is_throttled():
-            return
 
     @classmethod
     def start_throttling(cls, retry_after: timedelta):
@@ -264,5 +241,5 @@ class SpotifyWebAPIClient:
 
     @classmethod
     def is_throttled(cls) -> bool:
-        return (cls.throttled_until is not None
+        return ((cls.throttled_until is not None)
                 and (datetime.now() < cls.throttled_until))

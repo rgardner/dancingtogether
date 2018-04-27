@@ -100,6 +100,8 @@ class StationServer {
         this.serverPings = new CircularArray(5);
         this.heartbeatIntervalId = null;
         this.requestId = 0;
+        this.clientPlaybackStateUpdateInProgress;
+        this.etag = '';
     }
 
     on(eventName, cb) {
@@ -126,10 +128,6 @@ class StationServer {
         });
 
         this.musicPlayer.on('player_state_changed', state => {
-            // Let the server determine what to do. Potential perf optimization
-            // for both client and server is to only send this event if:
-            // 1) the user is a dj (this can change during the stream)
-            // 2) if this is a legitimate change and not just a random update
             if (state) {
                 this.sendPlayerState(state);
             }
@@ -156,12 +154,14 @@ class StationServer {
 
     enableHeartbeat() {
         this.heartbeatIntervalId = window.setInterval(() => {
-            this.sendPing();
-            this.musicPlayer.player.getCurrentState().then(state => {
-                if (state) {
-                    this.sendPlayerState(state);
-                }
-            });
+            if (!this.clientPlaybackStateUpdateInProgress) {
+                this.sendPing();
+                this.musicPlayer.player.getCurrentState().then(state => {
+                    if (state) {
+                        this.sendPlayerState(state);
+                    }
+                });
+            }
         }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
@@ -182,11 +182,11 @@ class StationServer {
 
     onMessage(action) {
         if (action.error) {
-            this.observers['error'].fire(action.message);
+            this.syncPlaybackState();
+            this.observers['error'].fire(action.error, action.message);
         } else if (action.join) {
-            $('#station-name').html(action.join);
             this.enableHeartbeat();
-            this.observers['ready'].fire();
+            this.observers['ready'].fire(action.join);
         } else if (action.leave) {
             $('#station-name').html('');
             this.disableHeartbeat();
@@ -222,7 +222,31 @@ class StationServer {
             'paused': state['paused'],
             'raw_position_ms': state['position'],
             'sample_time': new Date(),
+            'etag': this.etag,
         });
+    }
+
+    syncPlaybackState() {
+        if (this.clientPlaybackStateUpdateInProgress) {
+            return;
+        }
+
+        this.musicPlayer.player.getCurrentState()
+            .then(state => {
+                if (!state) {
+                    return;
+                }
+
+                this.webSocketBridge.send({
+                    'command': 'get_playback_state',
+                    'context_uri': state['context']['uri'],
+                    'current_track_uri': state['track_window']['current_track']['uri'],
+                    'paused': state['paused'],
+                    'raw_position_ms': state['position'],
+                    'sample_time': new Date(),
+                    'etag': '',
+                });
+            });
     }
 
     refreshAccessToken() {
@@ -261,6 +285,11 @@ class StationServer {
     }
 
     ensurePlaybackState(serverState) {
+        if (this.clientPlaybackStateUpdateInProgress) {
+            return;
+        }
+
+        this.clientPlaybackStateUpdateInProgress = true;
         const currentTrackReady = () => this.musicPlayer.player.getCurrentState().then(state => {
             if (state) {
                 return state.track_window.current_track.uri === serverState.current_track_uri;
@@ -268,36 +297,45 @@ class StationServer {
                 return false;
             }
         });
-        Promise.race([retry(currentTrackReady), timeout(5000)]).then(() => {
-            this.musicPlayer.player.getCurrentState().then(state => {
+        Promise.race([retry(currentTrackReady), timeout(5000)])
+            .then(() => this.musicPlayer.player.getCurrentState())
+            .then(state => {
                 if (!state) {
-                    return;
+                    return Promise.reject('Spotify not ready');
                 }
 
                 if (serverState.paused) {
                     const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
-                    pauseIfNeeded.then(this.musicPlayer.player.seek(serverState.position));
+                    return pauseIfNeeded.then(() => this.musicPlayer.player.seek(serverState.position));
                 } else {
                     const localPosition = state.position;
                     const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                     if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
-                        this.musicPlayer.player.seek(serverPosition + 2000).then(() => {
-                            this.musicPlayer.player.getCurrentState().then(state => {
+                        return this.musicPlayer.player.seek(serverPosition + 2000)
+                            .then(() => this.musicPlayer.player.getCurrentState())
+                            .then(state => {
                                 const localPosition = state.position;
                                 const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                                 if (((localPosition > serverPosition) && (localPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
-                                    this.musicPlayer.freeze(localPosition - serverPosition);
+                                    return this.musicPlayer.freeze(localPosition - serverPosition);
                                 } else {
-                                    this.musicPlayer.player.resume();
+                                    return this.musicPlayer.player.resume();
                                 }
                             });
-                        });
                     } else if (state.paused) {
-                        this.musicPlayer.player.resume();
+                        return this.musicPlayer.player.resume();
+                    } else {
+                        return Promise.resolve();
                     }
                 }
+            })
+            .then(() => {
+                this.etag = serverState.etag;
+            })
+            .catch(console.error)
+            .finally(() => {
+                this.clientPlaybackStateUpdateInProgress = false;
             });
-        });
     }
 
     getMedianServerOneWayTime() {
@@ -352,8 +390,10 @@ class StationView {
             this.setState(() => ({ playbackState: state }));
         });
 
-        this.stationServer.on('error', message => {
-            this.setState(() => ({ errorMessage: message }));
+        this.stationServer.on('error', (error, message) => {
+            if (error != 'precondition_failed') {
+                this.setState(() => ({ errorMessage: message }));
+            }
         });
     }
 
@@ -468,9 +508,10 @@ class MusicVolume {
     getVolume() {
         return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
-                this.musicPlayer.player.getVolume().then((volume) => {
-                    resolve(volume);
-                });
+                this.musicPlayer.player.getVolume()
+                    .then((volume) => {
+                        resolve(volume);
+                    });
             }
         });
     }
@@ -478,10 +519,11 @@ class MusicVolume {
     setVolume(volume) {
         return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
-                this.musicPlayer.player.setVolume(volume).then(() => {
-                    MusicVolume.setCachedVolume(volume);
-                    resolve();
-                });
+                this.musicPlayer.player.setVolume(volume)
+                    .then(() => {
+                        MusicVolume.setCachedVolume(volume);
+                        resolve();
+                    });
             }
         });
     }
@@ -503,7 +545,11 @@ class MusicVolume {
                         newVolume = 0.0;
                     }
 
-                    this.setVolume(newVolume).then(() => resolve(newVolume));
+                    return newVolume;
+                }).then(newVolume => {
+                    return this.setVolume(newVolume).then(() => Promise.resolve(newVolume));
+                }).then(newVolume => {
+                    return resolve(newVolume);
                 });
             }
         });
