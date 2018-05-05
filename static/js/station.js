@@ -102,7 +102,8 @@ class StationServer {
         this.requestId = 0;
         this.clientPlaybackStateUpdateInProgress;
         this.clientEtag = null;
-        this.etag = '';
+        this.serverEtag = null;
+        this.initialStateReady = false;
     }
 
     on(eventName, cb) {
@@ -216,7 +217,7 @@ class StationServer {
     }
 
     sendPlayerState(state) {
-        if (this.clientPlaybackStateUpdateInProgress
+        if (!this.initialStateReady || this.clientPlaybackStateUpdateInProgress
             || (this.clientEtag !== null) && (new Date(state.timestamp) < this.clientEtag)) {
             return;
         }
@@ -224,12 +225,12 @@ class StationServer {
         this.webSocketBridge.send({
             'command': 'player_state_change',
             'state': PlaybackState.fromSpotify(state),
-            'etag': this.etag,
+            'etag': this.serverEtag || '',
         });
     }
 
     syncPlaybackState() {
-        if (this.clientPlaybackStateUpdateInProgress) {
+        if (!this.initialStateReady || this.clientPlaybackStateUpdateInProgress) {
             return;
         }
 
@@ -330,16 +331,19 @@ class StationServer {
             .then(() => this.musicPlayer.player.getCurrentState())
             .then(state => {
                 this.clientEtag = new Date(state.timestamp);
-                this.etag = serverState.etag;
-            })
-            .catch(console.error)
-            .finally(() => {
+                this.serverEtag = serverState.etag;
+                this.initialStateReady = true;
                 this.clientPlaybackStateUpdateInProgress = false;
+            })
+            .catch(e => {
+                console.error(e);
+                this.clientPlaybackStateUpdateInProgress = false;
+                return wait(100).then(() => this.ensurePlaybackState(serverState));
             });
     }
 
     getMedianServerOneWayTime() {
-        return median(this.serverPings.entries()) / 2;
+        return ((this.serverPings.length === 0) ? 30 : (median(this.serverPings.entries()) / 2));
     }
 
     getAdjustedPlaybackPosition(serverState) {
@@ -861,6 +865,10 @@ class CircularArray {
         this.array = [];
         this.position = 0;
         this.capacity = capacity;
+    }
+
+    get length() {
+        return this.array.length;
     }
 
     entries() {
