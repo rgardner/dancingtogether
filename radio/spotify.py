@@ -161,8 +161,9 @@ class AccessToken:
 
 
 def save_access_token(access_token: AccessToken):
-    creds = SpotifyCredentials.objects.get(user_id=access_token.user.id)
-    if creds is None:
+    try:
+        creds = SpotifyCredentials.objects.get(user_id=access_token.user.id)
+    except SpotifyCredentials.DoesNotExist:
         creds = SpotifyCredentials(
             user_id=access_token.user.id,
             refresh_token=access_token.refresh_token)
