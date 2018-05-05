@@ -101,6 +101,7 @@ class StationServer {
         this.heartbeatIntervalId = null;
         this.requestId = 0;
         this.clientPlaybackStateUpdateInProgress;
+        this.clientEtag = null;
         this.etag = '';
     }
 
@@ -215,7 +216,8 @@ class StationServer {
     }
 
     sendPlayerState(state) {
-        if (new Date(state.timestamp) < this.clientEtag) {
+        if (this.clientPlaybackStateUpdateInProgress
+            || (this.clientEtag !== null) && (new Date(state.timestamp) < this.clientEtag)) {
             return;
         }
 
@@ -301,7 +303,7 @@ class StationServer {
                 }
 
                 if (serverState.paused) {
-                    const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
+                    const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.player.pause());
                     return pauseIfNeeded.then(() => this.musicPlayer.player.seek(serverState.position));
                 } else {
                     const localPosition = state.position;
@@ -325,7 +327,7 @@ class StationServer {
                     }
                 }
             })
-            .then(() => this.musicPLayer.player.getCurrentState())
+            .then(() => this.musicPlayer.player.getCurrentState())
             .then(state => {
                 this.clientEtag = new Date(state.timestamp);
                 this.etag = serverState.etag;
