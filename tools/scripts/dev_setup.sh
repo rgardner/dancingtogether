@@ -33,10 +33,8 @@ elif is_ubuntu; then
   sudo apt-get install heroku || true
 fi
 
-pip3 install pipenv
-pipenv install
-
 git remote add heroku https://git.heroku.com/dancingtogether.git || true
-ln -s -f ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit
+ln -s -f "$repo_root"/tools/scripts/git-hooks/pre-commit .git/hooks/pre-commit
 
-python manage.py migrate
+pip3 install pipenv
+pipenv install --dev

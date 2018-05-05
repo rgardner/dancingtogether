@@ -14,7 +14,7 @@ enjoy it!
 
 ```sh
 $ # Install dependencies
-$ ./scripts/dev_setup.sh
+$ ./tools/scripts/dev_setup.sh
 $ # Add required environment variables
 $ cp .env.example .env
 $ vim .env
@@ -64,7 +64,7 @@ $ make deploy
 - main: Django app for site index and management commands
 - manage.py: Program for running management commands
 - radio: Django app for listening to music
-- scripts: small scripts for developers
+- tools/scripts: small scripts for developers
 - static: Contains the site's css and js files
 - templates: common templates for the entire project
   + base.html: the base template for every page
@@ -78,5 +78,8 @@ Dancing Together is a Django app running on Heroku.
 | ----------      | ------                                      | ----                                       |
 | Django          | URL routing, database                       | https://docs.djangoproject.com/en/2.0/     |
 | Requests        | Service-to-service calls (e.g. Spotify API) | http://docs.python-requests.org/en/master/ |
+| aiohttp         | Async service-to-service calls              | http://aiohttp.readthedocs.io/en/stable/   |
+| channels        | Django websockets                           | https://channels.readthedocs.io/en/latest/ |
+| django-heroku   | Simple Heroku-specific configuration        | https://github.com/heroku/django-heroku    |
 | python-dateutil | Parsing ISO 1601 date times                 | https://labix.org/python-dateutil          |
 | Pipenv          | Python packing tool                         | https://docs.pipenv.org/                   |
