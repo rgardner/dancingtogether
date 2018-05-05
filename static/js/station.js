@@ -215,13 +215,13 @@ class StationServer {
     }
 
     sendPlayerState(state) {
+        if (new Date(state.timestamp) < this.clientEtag) {
+            return;
+        }
+
         this.webSocketBridge.send({
             'command': 'player_state_change',
-            'context_uri': state['context']['uri'],
-            'current_track_uri': state['track_window']['current_track']['uri'],
-            'paused': state['paused'],
-            'raw_position_ms': state['position'],
-            'sample_time': new Date(),
+            'state': PlaybackState.fromSpotify(state),
             'etag': this.etag,
         });
     }
@@ -239,11 +239,7 @@ class StationServer {
 
                 this.webSocketBridge.send({
                     'command': 'get_playback_state',
-                    'context_uri': state['context']['uri'],
-                    'current_track_uri': state['track_window']['current_track']['uri'],
-                    'paused': state['paused'],
-                    'raw_position_ms': state['position'],
-                    'sample_time': new Date(),
+                    'state': PlaybackState.fromSpotify(state),
                     'etag': '',
                 });
             });
@@ -259,7 +255,7 @@ class StationServer {
         return new Promise((resolve) => {
             const thisRequestId = ++this.requestId;
             this.onOnce('get_listeners_result', thisRequestId, (listeners, pendingListeners) => {
-                resolve({listeners, pendingListeners});
+                resolve({ listeners, pendingListeners });
             });
 
             this.webSocketBridge.send({
@@ -273,7 +269,7 @@ class StationServer {
         return new Promise((resolve) => {
             const thisRequestId = ++this.requestId;
             this.onOnce('send_listener_invite_result', thisRequestId, (result, isNewUser) => {
-                resolve({result, isNewUser});
+                resolve({ result, isNewUser });
             });
 
             this.webSocketBridge.send({
@@ -329,7 +325,9 @@ class StationServer {
                     }
                 }
             })
-            .then(() => {
+            .then(() => this.musicPLayer.player.getCurrentState())
+            .then(state => {
+                this.clientEtag = new Date(state.timestamp);
                 this.etag = serverState.etag;
             })
             .catch(console.error)
@@ -642,7 +640,7 @@ class StationDJView {
 
     bindSpotifyActions() {
         this.musicPlayer.on('ready', () => {
-            this.setState(() => ({ isReady: true}));
+            this.setState(() => ({ isReady: true }));
         });
 
         this.musicPlayer.on('player_state_changed', state => {
@@ -810,7 +808,7 @@ class StationAdminView {
 
     loadListeners() {
         if (this.state.isEnabled) {
-            this.stationServer.getListeners().then(({listeners, pendingListeners}) => {
+            this.stationServer.getListeners().then(({ listeners, pendingListeners }) => {
                 this.setState(() => ({
                     listeners: listeners,
                     pendingListeners: pendingListeners,
@@ -837,7 +835,7 @@ class StationAdminView {
 
             $('#admin-invite-sent').html(message);
             wait(10000).then(() => $('#admin-invite-sent').hide());
-        
+
             $('#invite-listener-email').val('');
         });
     }
@@ -870,6 +868,34 @@ class CircularArray {
     push(e) {
         this.array[this.position % this.capacity] = e;
         this.position++;
+    }
+}
+
+class PlaybackState {
+    constructor(contextUri, currentTrackUri, paused, rawPositionMS, sampleTime) {
+        this.context_uri = contextUri;
+        this.current_track_uri = currentTrackUri;
+        this.paused = paused;
+        this.raw_position_ms = rawPositionMS;
+        this.sample_time = sampleTime;
+    }
+
+    static fromSpotify(state) {
+        return new PlaybackState(
+            state['context']['uri'],
+            state['track_window']['current_track']['uri'],
+            state['paused'],
+            state['position'],
+            new Date(state['timestamp']));
+    }
+
+    static fromServer(state) {
+        return new PlaybackState(
+            state.context_uri,
+            state.current_track_uri,
+            state.paused,
+            state.raw_position_ms,
+            new Date(state.sample_time));
     }
 }
 

@@ -1,5 +1,7 @@
+import dataclasses
 from datetime import timedelta
 
+from asgiref.sync import async_to_sync
 from async_generator import asynccontextmanager
 from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
@@ -8,7 +10,7 @@ from django.test import override_settings
 from django.utils import timezone
 import pytest
 
-from .. import models
+from .. import consumers, models
 from ..consumers import PlaybackState, StationConsumer
 from ..models import Listener, SpotifyCredentials, Station
 from . import mocks
@@ -152,19 +154,57 @@ async def test_simple_playback(user1, user2, station1):
                 await listener_communicator.test_join(station1)
 
                 state = get_mock_client_state()
-                await dj_communicator.player_state_change(state)
-                await dj_communicator.receive_nothing()
+                await dj_communicator.player_state_change(state, etag='')
+
+                response = await dj_communicator.receive_json_from()
+                assert response['type'] == 'ensure_playback_state'
+                server_state = PlaybackState(**response['state'])
+                assert_client_server_states_are_equal(state, server_state)
 
                 response = await listener_communicator.receive_json_from()
                 assert response['type'] == 'ensure_playback_state'
-                assert PlaybackState(**response['state']) == state
+                server_state2 = PlaybackState(**response['state'])
+                assert server_state2 == server_state
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_dj_playback_join_existing_station(user1, station1):
+    await create_listener(user1, station1, is_dj=True)
+    await create_spotify_credentials(user1)
+    initial_state = get_mock_client_state()
+    await create_db_playback_state(station1, initial_state)
+
+    port = mocks.get_free_port()
+    mocks.start_mock_spotify_server(port)
+
+    with override_settings(
+            SPOTIFY_PLAYER_PLAY_API_URL=f'http://localhost:{port}/player/play'
+    ):
+        async with disconnecting(StationCommunicator(user1)) as communicator:
+            await communicator.test_join(station1)
+            response = await communicator.receive_json_from()
+            server_state = PlaybackState(**response['state'])
+            assert_client_server_states_are_equal(initial_state, server_state)
+
+            state = get_mock_client_state()
+            await communicator.player_state_change(state, etag='')
+            response = await communicator.receive_json_from()
+            assert response['error'] == 'precondition_failed'
+
+            state = get_mock_client_state(raw_position_ms=100)
+            await communicator.player_state_change(
+                state, etag=server_state.etag)
+            response = await communicator.receive_json_from()
+            server_state = PlaybackState(**response['state'])
+            assert_client_server_states_are_equal(state, server_state)
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_playback_error(user1, station1):
     await create_listener(user1, station1)
-    await create_playback_state(station1)
+    await create_db_playback_state(station1)
     await create_spotify_credentials(user1)
 
     port = mocks.get_free_port()
@@ -230,8 +270,11 @@ def create_listener(user, station, *, is_admin=False, is_dj=False):
 
 
 @database_sync_to_async
-def create_playback_state(station):
-    return models.PlaybackState.objects.create(station=station, position_ms=0)
+def create_db_playback_state(station, state=None):
+    station_state = models.PlaybackState(station=station)
+    if state is None:
+        state = get_mock_client_state()
+    async_to_sync(consumers.update_station_state)(station_state, state)
 
 
 @database_sync_to_async
@@ -240,13 +283,21 @@ def create_spotify_credentials(user):
         user=user, access_token_expiration_time=timezone.now())
 
 
-def get_mock_client_state() -> PlaybackState:
+def get_mock_client_state(**kwargs) -> PlaybackState:
     return PlaybackState(
-        'MockContextUri',
-        'MockCurrentTrackUri',
+        context_uri=kwargs.get('context_uri', 'MockContextUri'),
+        current_track_uri='MockCurrentTrackUri',
         paused=True,
-        raw_position_ms=0,
-        sample_time=timezone.now())
+        raw_position_ms=kwargs.get('raw_position_ms', 0),
+        sample_time=timezone.now(),
+        etag=None)
+
+
+def assert_client_server_states_are_equal(client_state, server_state):
+    assert client_state.context_uri == server_state.context_uri
+    assert client_state.current_track_uri == server_state.current_track_uri
+    assert client_state.paused == server_state.paused
+    assert client_state.raw_position_ms == server_state.raw_position_ms
 
 
 @asynccontextmanager
@@ -288,10 +339,11 @@ class StationCommunicator(WebsocketCommunicator):
             'start_time': start_time,
         })
 
-    async def player_state_change(self, state):
+    async def player_state_change(self, state, etag):
         await self.send_json_to({
             'command': 'player_state_change',
-            **(state.as_dict()),
+            'state': state.as_dict(),
+            'etag': etag,
         })
 
     async def refresh_access_token(self):
