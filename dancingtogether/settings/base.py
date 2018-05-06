@@ -40,8 +40,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'channels',
     'bootstrap4',
+    'channels',
+    'compressor',
     # Project Apps
     'main',
     'radio',
@@ -134,6 +135,17 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
+
+STATICFILES_FINDERS = (
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+    # other finders..
+    'compressor.finders.CompressorFinder',
+)
+
+TSC_COMPILER = os.path.join(BASE_DIR, 'my-tsc')
+COMPRESS_PRECOMPILERS = (('text/typescript',
+                          '%s {infile} {outfile}' % (TSC_COMPILER)), )
 
 # Logging
 

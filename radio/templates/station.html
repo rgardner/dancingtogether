@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{% load compress %}
 {% load staticfiles %}
 
 {% block content %}
@@ -63,6 +64,18 @@
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static "channels/js/websocketbridge.js" %}"></script>
 <script src="{% static "js/station.js" %}"></script>
+
+{% compress js %}
+<script type="text/typescript" charset="utf-8">
+    const x = 3;
+    function greeter(person: string) {
+        return "Hello, " + person;
+    }
+    var user = "Jane User";
+    alert(greeter(user));
+</script>
+{% endcompress %}
+
 <script>
     'use strict';
     const userIsDJ = {{ is_dj|yesno:"true,false" }};
