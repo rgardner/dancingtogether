@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{% load compress %}
 {% load staticfiles %}
 
 {% block content %}
@@ -62,7 +63,10 @@
 {% block extra_script %}
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static "channels/js/websocketbridge.js" %}"></script>
-<script src="{% static "js/station.js" %}"></script>
+
+{% compress js %}
+<script type="text/typescript" src="{% static "js/station.ts" %}"></script>
+{% endcompress %}
 
 <script>
     'use strict';

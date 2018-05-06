@@ -1,21 +1,8 @@
 {% extends "base.html" %}
 
-{% load compress %}
-
 {% block content %}
 
 <h1>Station List</h1>
-
-{% compress js %}
-<script type="text/typescript" charset="utf-8">
-    const x = 3;
-    function greeter(person: string) {
-        return "Hello, " + person;
-    }
-    var user = "Jane User";
-    alert(greeter(user));
-</script>
-{% endcompress %}
 
 {% if pending_stations %}
     <h2>Pending Stations</h2>
