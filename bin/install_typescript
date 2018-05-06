@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-NODE_VERSION=9.9.0
+NODE_VERSION=8.11.1
 NODE_BASENAME=node-v${NODE_VERSION}-linux-x64
 NODE_ARCHIVE="http://nodejs.org/dist/v${NODE_VERSION}/${NODE_BASENAME}.tar.gz"
 
@@ -25,3 +25,5 @@ popd
 ln -s -f ../../vendor/node/bin/node .heroku/python/bin/node
 ln -s -f ../../vendor/node/bin/node-waf .heroku/python/bin/node-waf
 ln -s -f ../../vendor/node/bin/npm .heroku/python/bin/npm
+
+.heroku/python/bin/npm install -g typescript

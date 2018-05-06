@@ -143,6 +143,7 @@ STATICFILES_FINDERS = (
     'compressor.finders.CompressorFinder',
 )
 
+COMPRESS_OFFLINE = not DEBUG
 TSC_COMPILER = os.path.join(BASE_DIR, 'my-tsc')
 COMPRESS_PRECOMPILERS = (('text/typescript',
                           '%s {infile} {outfile}' % (TSC_COMPILER)), )
