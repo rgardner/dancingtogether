@@ -265,7 +265,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         else:
             previous_state = PlaybackState.from_station_state(station_state)
             if etag != previous_state.etag:
-                logger.debug(f'DJ {user} is out of sync, rejecting request.')
+                logger.debug(
+                    f'DJ {user} is out of sync, rejecting request. Latest Etag: {previous_state.etag}. Their etag: {etag}'
+                )
                 raise ClientError('precondition_failed',
                                   'Playback state is stale')
             else:
@@ -294,7 +296,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             if (state is None) or not etag:
                 logger.debug(f'{user} requested full sync')
             elif etag != station_state.etag:
-                logger.debug(f'{user} is out of sync.')
+                logger.debug(
+                    f'{user} is out of sync. Latest Etag: {station_state.etag}. Their etag: {etag}'
+                )
                 raise ClientError('precondition_failed',
                                   'Playback state is stale')
 

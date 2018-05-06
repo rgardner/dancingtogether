@@ -310,12 +310,19 @@ class StationServer {
                     const localPosition = state.position;
                     const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                     if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
-                        return this.musicPlayer.player.seek(serverPosition + 2000)
-                            .then(() => this.musicPlayer.player.getCurrentState())
-                            .then(state => {
-                                const localPosition = state.position;
+                        const newLocalPosition = serverPosition + 2000;
+                        const currentPositionReady = () => this.musicPlayer.player.getCurrentState().then(state => {
+                            if (state) {
+                                return state.position > newLocalPosition;
+                            } else {
+                                return false;
+                            }
+                        });
+                        return this.musicPlayer.player.seek(newLocalPosition)
+                            .then(() => Promise.race([retry(currentPositionReady), timeout(5000)]))
+                            .then(() => {
                                 const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                                if (((localPosition > serverPosition) && (localPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
+                                if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
                                     return this.musicPlayer.freeze(localPosition - serverPosition);
                                 } else {
                                     return this.musicPlayer.player.resume();
