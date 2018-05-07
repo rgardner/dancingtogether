@@ -1,7 +1,6 @@
 'use strict';
 
-/*global Spotify*/
-/*global channels*/
+declare var channels;
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
@@ -634,7 +633,8 @@ class StationListenerView {
 
     changeVolume() {
         if (this.musicPlayer) {
-            const newVolume = parseFloat($('#volume-slider').val());
+            $().val
+            const newVolume = parseFloat($('#volume-slider').val() as string);
             this.musicVolume.setVolume(newVolume).then(() => {
                 this.setState(() => ({ volume: newVolume }));
             });
@@ -812,14 +812,14 @@ class StationAdminView {
     }
 
     makeListenerTableRow(username, email) {
-        var $row = $('<tr>');
+        let $row = $('<tr>');
         $('<td>').html(username).appendTo($row);
         $('<td>').html(email).appendTo($row);
-        $('<td>').html($('<button>', {
+        $('<button', {
             type: 'submit',
             class: 'btn btn-warning btn-sm',
             value: email,
-        }).html('Remove')).appendTo($row);
+        }).html('Remove').appendTo($('<td>')).appendTo($row);
         return $row;
     }
 
@@ -841,7 +841,7 @@ class StationAdminView {
     }
 
     sendListenerInvite() {
-        const listenerEmail = $('#invite-listener-email').val();
+        const listenerEmail = $('#invite-listener-email').val() as string;
         if (listenerEmail.length === 0) {
             return;
         }
