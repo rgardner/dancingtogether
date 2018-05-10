@@ -20,7 +20,7 @@ class StationApp { // eslint-disable-line no-unused-vars
 
 class StationMusicPlayer {
     isReady: boolean = false;
-    player?: any = null;
+    player?: Spotify.SpotifyPlayer = null;
     deviceId?: string = null;
     storedSpotifyCallbacks: Array<[string, Function]> = [];
 
@@ -39,6 +39,7 @@ class StationMusicPlayer {
 
     on(eventName: string, cb: Function) {
         if (this.player) {
+            // @ts-ignore
             this.player.on(eventName, cb);
         } else {
             this.storedSpotifyCallbacks.push([eventName, cb]);
@@ -47,6 +48,7 @@ class StationMusicPlayer {
 
     bindSpotifyActions() {
         this.storedSpotifyCallbacks.forEach(nameCBPair => {
+            // @ts-ignore
             this.player.on(nameCBPair[0], nameCBPair[1]);
         });
 
@@ -76,9 +78,23 @@ class StationMusicPlayer {
         this.accessToken = accessToken;
     }
 
-    freeze(duration: number) {
-        this.player.pause().then(wait(duration)).then(this.player.resume());
+    getCurrentState(): Promise<Spotify.PlaybackState> { return this.player.getCurrentState(); }
+
+    getVolume(): Promise<number> { return this.player.getVolume(); }
+    setVolume(value: number) { return this.player.setVolume(value); }
+
+    pause(): Promise<void> { return this.player.pause(); }
+    resume(): Promise<void> { return this.player.resume(); }
+    togglePlay(): Promise<void> { return this.player.togglePlay(); }
+
+    freeze(duration: number): Promise<void> {
+        return this.player.pause().then(() => wait(duration)).then(() => this.player.resume());
     }
+
+    seek(positionMS): Promise<void> { return this.player.seek(positionMS); }
+
+    previousTrack(): Promise<void> { return this.player.previousTrack(); }
+    nextTrack(): Promise<void> { return this.player.nextTrack(); }
 }
 
 // Public Events
@@ -87,7 +103,7 @@ class StationMusicPlayer {
 // 'error' -> An error occurred.
 class StationServer {
     webSocketBridge?: any = null;
-    observers: Map<string, any>;
+    observers: Map<string, JQueryCallback>;
     serverPings: CircularArray = new CircularArray(5);
     heartbeatIntervalId?: number = null;
     requestId: number = 0;
@@ -236,7 +252,7 @@ class StationServer {
             return;
         }
 
-        this.musicPlayer.player.getCurrentState()
+        this.musicPlayer.getCurrentState()
             .then(state => {
                 if (!state) {
                     return;
@@ -257,7 +273,7 @@ class StationServer {
     }
 
     getListeners() {
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
             this.onOnce('get_listeners_result', thisRequestId, (listeners, pendingListeners) => {
                 resolve({ listeners, pendingListeners });
@@ -291,7 +307,7 @@ class StationServer {
         }
 
         this.clientPlaybackStateUpdateInProgress = true;
-        const currentTrackReady = () => this.musicPlayer.player.getCurrentState().then(state => {
+        const currentTrackReady = () => this.musicPlayer.getCurrentState().then(state => {
             if (state) {
                 return state.track_window.current_track.uri === serverState.current_track_uri;
             } else {
@@ -299,46 +315,47 @@ class StationServer {
             }
         });
         Promise.race([retry(currentTrackReady), timeout(5000)])
-            .then(() => this.musicPlayer.player.getCurrentState())
+            .then(() => this.musicPlayer.getCurrentState())
             .then(state => {
                 if (!state) {
                     return Promise.reject('Spotify not ready');
                 }
 
                 if (serverState.paused) {
-                    const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.player.pause());
-                    return pauseIfNeeded.then(() => this.musicPlayer.player.seek(serverState.position));
+                    const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
+                    return pauseIfNeeded.then(() => this.musicPlayer.seek(serverState.position));
                 } else {
                     const localPosition = state.position;
                     const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                     if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
                         const newLocalPosition = serverPosition + 2000;
-                        const currentPositionReady = () => this.musicPlayer.player.getCurrentState().then(state => {
+                        const currentPositionReady = () => this.musicPlayer.getCurrentState().then(state => {
                             if (state) {
                                 return state.position > newLocalPosition;
                             } else {
                                 return false;
                             }
                         });
-                        return this.musicPlayer.player.seek(newLocalPosition)
+                        return this.musicPlayer.seek(newLocalPosition)
                             .then(() => Promise.race([retry(currentPositionReady), timeout(5000)]))
                             .then(() => {
                                 const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                                 if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
                                     return this.musicPlayer.freeze(localPosition - serverPosition);
                                 } else {
-                                    return this.musicPlayer.player.resume();
+                                    return this.musicPlayer.resume();
                                 }
                             });
                     } else if (state.paused) {
-                        return this.musicPlayer.player.resume();
+                        return this.musicPlayer.resume();
                     } else {
                         return Promise.resolve();
                     }
                 }
             })
-            .then(() => this.musicPlayer.player.getCurrentState())
+            .then(() => this.musicPlayer.getCurrentState())
             .then(state => {
+                // @ts-ignore
                 this.clientEtag = new Date(state.timestamp);
                 this.serverEtag = serverState.etag;
                 this.initialStateReady = true;
@@ -371,7 +388,7 @@ class StationServer {
 
 class StationView {
     private state = new class {
-        playbackState?: any = null;
+        playbackState?: Spotify.PlaybackState = null;
         isConnected: boolean = false;
         errorMessage?: string = null;
     };
@@ -527,7 +544,7 @@ class MusicVolume {
     getVolume(): Promise<number> {
         return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
-                this.musicPlayer.player.getVolume()
+                this.musicPlayer.getVolume()
                     .then((volume) => {
                         resolve(volume);
                     });
@@ -538,7 +555,7 @@ class MusicVolume {
     setVolume(volume: number): Promise<void> {
         return new Promise(resolve => {
             if (this.musicPlayer.isReady) {
-                this.musicPlayer.player.setVolume(volume)
+                this.musicPlayer.setVolume(volume)
                     .then(() => {
                         MusicVolume.setCachedVolume(volume);
                         resolve();
@@ -633,7 +650,6 @@ class StationListenerView {
 
     changeVolume() {
         if (this.musicPlayer) {
-            $().val
             const newVolume = parseFloat($('#volume-slider').val() as string);
             this.musicVolume.setVolume(newVolume).then(() => {
                 this.setState(() => ({ volume: newVolume }));
@@ -711,19 +727,19 @@ class StationDJView {
 
     playPause() {
         if (this.state.isEnabled && this.state.isReady) {
-            this.musicPlayer.player.togglePlay();
+            this.musicPlayer.togglePlay();
         }
     }
 
     previousTrack() {
         if (this.state.isEnabled && this.state.isReady) {
-            this.musicPlayer.player.previousTrack();
+            this.musicPlayer.previousTrack();
         }
     }
 
     nextTrack() {
         if (this.state.isEnabled && this.state.isReady) {
-            this.musicPlayer.player.nextTrack();
+            this.musicPlayer.nextTrack();
         }
     }
 }
@@ -732,8 +748,8 @@ class StationAdminView {
     private state = new class {
         isEnabled: boolean;
         isReady: boolean = false;
-        listeners: Array<any> = [];
-        pendingListeners: Array<any> = [];
+        listeners: Array<Listener> = [];
+        pendingListeners: Array<Listener> = [];
     };
 
     constructor(userIsAdmin, readonly stationServer: StationServer) {
@@ -894,6 +910,12 @@ class CircularArray {
         this.array[this.position % this.capacity] = e;
         this.position++;
     }
+}
+
+interface Listener {
+    id: number;
+    username: string;
+    email: string;
 }
 
 class PlaybackState {
