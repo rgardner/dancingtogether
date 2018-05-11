@@ -1,5 +1,3 @@
-function sum(a, b) {
-    return a + b;
-}
+export function sum(a: number, b: number): number { return a + b; }
 
-module.exports = sum;
+export function product(a: number, b: number): number { return a * b; }
