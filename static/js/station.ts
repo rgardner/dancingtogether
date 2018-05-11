@@ -18,6 +18,32 @@ class StationApp { // eslint-disable-line no-unused-vars
     }
 }
 
+interface MusicPlayer {
+    getCurrentState(): Promise<Spotify.PlaybackState>;
+
+    getVolume(): Promise<number>;
+    setVolume(value: number): Promise<void>;
+
+    pause(): Promise<void>;
+    resume(): Promise<void>;
+    togglePlay(): Promise<void>;
+
+    seek(positionMS: number): Promise<void>;
+
+    previousTrack(): Promise<void>;
+    nextTrack(): Promise<void>;
+}
+
+interface ListenCallback {
+    (action, stream);
+}
+
+interface WebSocketBridge {
+    socket: WebSocket;
+    connect(path: string);
+    listen(callback: ListenCallback);
+}
+
 class StationMusicPlayer {
     isReady: boolean = false;
     player?: Spotify.SpotifyPlayer = null;
@@ -81,7 +107,7 @@ class StationMusicPlayer {
     getCurrentState(): Promise<Spotify.PlaybackState> { return this.player.getCurrentState(); }
 
     getVolume(): Promise<number> { return this.player.getVolume(); }
-    setVolume(value: number) { return this.player.setVolume(value); }
+    setVolume(value: number): Promise<void> { return this.player.setVolume(value); }
 
     pause(): Promise<void> { return this.player.pause(); }
     resume(): Promise<void> { return this.player.resume(); }
