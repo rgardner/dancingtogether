@@ -5,6 +5,7 @@ import {
 import * as $ from 'jquery';
 
 const MockStationId: number = 1;
+const MockStationName: string = 'MockStationName';
 const MockClientName: string = 'MockClientName';
 const MockAccessToken: string = 'MockAccessToken';
 const MockDeviceId: string = 'MockDeviceId';
@@ -66,8 +67,8 @@ class MockMusicPlayer implements MusicPlayer {
 }
 
 class MockWebSocketBridge implements WebSocketBridge {
-    callback: WebSocketListenCallback;
-    dataReceivedCallback: any;
+    callback?: WebSocketListenCallback = null;
+    receiveDataCallback?: Function = null;
 
     // WebSocketBridge
 
@@ -78,7 +79,8 @@ class MockWebSocketBridge implements WebSocketBridge {
     }
 
     send(data: any) {
-        this.dataReceivedCallback(data);
+        this.receiveDataCallback(data);
+        this.receiveDataCallback = null;
     }
 
     // Mock functions
@@ -86,33 +88,45 @@ class MockWebSocketBridge implements WebSocketBridge {
     fire(data) {
         this.callback(data, undefined);
     }
+
+    receiveData(): Promise<any> {
+        return new Promise(resolve => {
+            this.receiveDataCallback = resolve;
+        });
+    }
 }
 
-test('station manager initializes server and music player correctly', () => {
+test('station server can join a station', async () => {
+    expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let mockMusicPlayer = new MockMusicPlayer();
-    let _stationManager = new StationManager(
-        new StationServer2(MockStationId, mockWebSocketBridge),
-        new StationMusicPlayer2(MockClientName, MockAccessToken, mockMusicPlayer));
+    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
 
-    mockMusicPlayer.fire('ready', { device_id: MockDeviceId });
-    mockWebSocketBridge.dataReceivedCallback = data => {
+    mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual({
             'command': 'join',
             'station': MockStationId,
             'device_id': MockDeviceId,
         });
-    };
 
-    const mockEnsurePlaybackStateResponse = {
-        'type': 'ensure_playback_state',
-        'state': {
-            'context_uri': 'MockContextUri',
-            'current_track_uri': 'MockCurrentTrackUri',
-            'paused': true,
-            'raw_position_ms': 0,
-            'sample_time': new Date(),
-        },
-    };
-    mockWebSocketBridge.fire(mockEnsurePlaybackStateResponse);
+        mockWebSocketBridge.fire({ 'join': MockStationName });
+    });
+
+    await expect(stationServer.sendJoinRequest(MockDeviceId)).resolves.toEqual(MockStationName);
+});
+
+test('station server can send a ping', async () => {
+    expect.assertions(2);
+    let mockWebSocketBridge = new MockWebSocketBridge();
+    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+
+    mockWebSocketBridge.receiveData().then(data => {
+        expect(data).toEqual(expect.objectContaining({
+            'start_time': expect.any(Date),
+        }));
+        mockWebSocketBridge.fire({ 'type': 'pong', 'start_time': data.start_time });
+    });
+
+    await expect(stationServer.sendPingRequest()).resolves.toEqual(expect.objectContaining({
+        'startTime': expect.any(Date),
+    }));
 });

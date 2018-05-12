@@ -30,9 +30,12 @@ export interface WebSocketBridge {
     send(data: any);
 }
 
+interface JoinResponse {
+    stationName: string;
+}
+
 interface PongResponse {
-    start_time: Date;
-    server_time: Date;
+    startTime: Date;
 }
 
 export class PlaybackState2 {
@@ -62,6 +65,7 @@ export class PlaybackState2 {
 
 export class StationManager {
     taskExecutor: TaskExecutor = new TaskExecutor();
+    serverPings: CircularArray2<number> = new CircularArray2(5);
 
     constructor(private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
         this.bindMusicPlayerActions();
@@ -70,11 +74,12 @@ export class StationManager {
     bindMusicPlayerActions() {
         this.musicPlayer.on('ready', ({ device_id }) => {
             this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
+            this.taskExecutor.push(() => this.calculatePing());
         });
 
         this.musicPlayer.on('player_state_changed', state => {
             if (state) {
-                const clientState = PlaybackState.fromSpotify(state);
+                const clientState = PlaybackState2.fromSpotify(state);
                 this.taskExecutor.push(() => this.updateServerPlaybackState(clientState));
             }
         });
@@ -103,7 +108,7 @@ export class StationManager {
     calculatePing(): Promise<void> {
         return Promise.race([this.server.sendPingRequest(), timeout(5000)])
             .then((pong: PongResponse) => {
-                pong;
+                this.serverPings.push((new Date()).getTime() - pong.startTime.getTime());
             })
             .catch(console.error);
     }
@@ -114,6 +119,7 @@ export class StationManager {
 export class StationServer2 {
     observers: Map<string, JQueryCallback> = new Map([
         ['join', $.Callbacks()],
+        ['pong', $.Callbacks()],
         ['ensure_playback_state', $.Callbacks()],
     ]);
 
@@ -145,25 +151,32 @@ export class StationServer2 {
         this.observers.get(eventName).remove(cb);
     }
 
-    sendJoinRequest(deviceId): Promise<void> {
+    sendJoinRequest(deviceId): Promise<JoinResponse> {
         return new Promise(resolve => {
+            this.onOnce('join', stationName => {
+                resolve(stationName);
+            });
             this.webSocketBridge.send({
                 'command': 'join',
                 'station': this.stationId,
                 'device_id': deviceId,
             });
-
-            this.onOnce('join', () => {
-                return resolve();
-            });
         });
     }
 
     sendPingRequest(): Promise<PongResponse> {
-        return Promise.reject();
+        return new Promise(resolve => {
+            this.onOnce('pong', pongResponse => {
+                resolve(pongResponse);
+            });
+            this.webSocketBridge.send({
+                'command': 'ping',
+                'start_time': new Date(),
+            });
+        });
     }
 
-    sendPlaybackState(playbackState): Promise<PlaybackState2> {
+    sendPlaybackState(playbackState: PlaybackState2): Promise<PlaybackState2> {
         return Promise.reject();
     }
 
@@ -173,10 +186,12 @@ export class StationServer2 {
 
     onMessage(action) {
         if (action.join) {
-            this.observers.get('ready').fire(action.join);
+            this.observers.get('join').fire(action.join);
         } else if (action.type === 'ensure_playback_state') {
             const serverPlaybackState = PlaybackState2.fromServer(action.state);
             this.observers.get(action.type).fire(serverPlaybackState);
+        } else if (action.type === 'pong') {
+            this.observers.get(action.type).fire({ startTime: action.start_time });
         }
     }
 }
@@ -270,4 +285,33 @@ class TaskExecutor {
             this.tasksInFlight -= 1;
         })
     }
+}
+
+class CircularArray2<T> {
+    array: Array<T> = [];
+    position: number = 0;
+    constructor(readonly capacity: number) {
+    }
+
+    get length(): number {
+        return this.array.length;
+    }
+
+    entries(): Array<T> {
+        return this.array;
+    }
+
+    push(e: T) {
+        this.array[this.position % this.capacity] = e;
+        this.position++;
+    }
+}
+
+
+function wait(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function timeout(ms: number): Promise<void> {
+    return wait(ms).then(Promise.reject);
 }
