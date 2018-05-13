@@ -26,6 +26,7 @@ shell:
 
 .PHONY: test
 test:
+	npm test
 	DJANGO_SETTINGS_MODULE=dancingtogether.settings.test pipenv run python3 manage.py test
 
 .PHONY: deploy
