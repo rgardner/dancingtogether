@@ -1,5 +1,5 @@
 #!/bin/sh
 
 cp $1 $1.ts
-tsc $1 --out $2
+tsc $1 --target es2016 --module system --outFile $2
 rm $1.ts

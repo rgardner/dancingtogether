@@ -3,7 +3,7 @@ import {
     MusicPlayer, PlaybackState2, StationManager, StationMusicPlayer2,
     StationServer2, WebSocketBridge, WebSocketListenCallback
 } from '../static/js/station2'
-import * as $ from 'jquery';
+import $ from 'jquery';
 
 const MockStationId: number = 1;
 const MockStationName: string = 'MockStationName';
@@ -17,6 +17,10 @@ class MockMusicPlayer implements MusicPlayer {
     observers: Map<string, JQueryCallback> = new Map();
 
     // MusicPlayer
+
+    isAvailable(): boolean { return true; }
+    getAccessToken() { return ''; }
+    setAccessToken(_value: string) { }
 
     connect(): Promise<boolean> { return Promise.resolve(true); }
 

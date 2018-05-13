@@ -1,4 +1,4 @@
-import * as $ from 'jquery';
+import $ from 'jquery';
 
 declare var channels;
 
@@ -7,6 +7,10 @@ export const SEEK_OVERCORRECT_MS = 2000;
 export const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
 export interface MusicPlayer {
+    isAvailable(): boolean;
+    getAccessToken(): string;
+    setAccessToken(value: string);
+
     connect(): Promise<boolean>;
 
     on(eventName, cb);
@@ -91,7 +95,10 @@ class ChannelWebSocketBridge implements WebSocketBridge {
 }
 
 class SpotifyMusicPlayer implements MusicPlayer {
-    impl: Spotify.SpotifyPlayer;
+    impl?: Spotify.SpotifyPlayer = null;
+    observers: Map<string, JQueryCallback> = new Map([
+        ['available', $.Callbacks()]
+    ]);
 
     constructor(clientName: string, private accessToken: string) {
         window.onSpotifyWebPlaybackSDKReady = () => {
@@ -100,14 +107,24 @@ class SpotifyMusicPlayer implements MusicPlayer {
                 getOAuthToken: cb => { cb(this.getAccessToken()); },
                 volume: 0.8, // TODO: use cached volume
             });
+
+            this.observers['available'].fire();
         }
     }
 
-    connect(): Promise<boolean> { return this.impl.connect(); }
+    isAvailable() { return (this.impl !== null); }
     getAccessToken(): string { return this.accessToken; }
     setAccessToken(value: string) { this.accessToken = value; }
 
-    on(eventName, cb) { return this.impl.on(eventName, cb); }
+    connect(): Promise<boolean> { return this.impl.connect(); }
+
+    on(eventName, cb) {
+        if (eventName === 'available') {
+            this.observers.get('available').add(cb);
+        } else {
+            return this.impl.on(eventName, cb);
+        }
+    }
 
     getCurrentState(): Promise<PlaybackState2> {
         return this.impl.getCurrentState().then(state => {
@@ -372,12 +389,16 @@ export class StationMusicPlayer2 {
 
     constructor(private musicPlayer: MusicPlayer) {
         this.volumeBeforeMute = this.volume;
-        this.bindSpotifyActions();
-        this.musicPlayer.connect();
+        this.bindMusicPlayerAvailableActions();
+        if (this.musicPlayer.isAvailable()) {
+            // If already available, bind the music player actions immediately
+            this.bindMusicPlayerActions();
+            this.musicPlayer.connect();
+        }
     }
 
     on(eventName: string, cb: Function) {
-        if (this.musicPlayer) {
+        if (this.musicPlayer.isAvailable()) {
             // @ts-ignore
             this.musicPlayer.on(eventName, cb);
         } else {
@@ -385,7 +406,14 @@ export class StationMusicPlayer2 {
         }
     }
 
-    bindSpotifyActions() {
+    bindMusicPlayerAvailableActions() {
+        this.musicPlayer.on('available', () => {
+            this.bindMusicPlayerActions();
+            this.musicPlayer.connect();
+        });
+    }
+
+    bindMusicPlayerActions() {
         this.storedSpotifyCallbacks.forEach(nameCBPair => {
             // @ts-ignore
             this.musicPlayer.on(nameCBPair[0], nameCBPair[1]);
@@ -409,7 +437,7 @@ export class StationMusicPlayer2 {
         });
     }
 
-    getCurrentState(): Promise<PlaybackState> { return this.musicPlayer.getCurrentState(); }
+    getCurrentState(): Promise<PlaybackState2> { return this.musicPlayer.getCurrentState(); }
 
     static getCachedVolume() {
         const value = localStorage.getItem('musicVolume');
@@ -472,6 +500,10 @@ class CircularArray2<T> {
         this.array[this.position % this.capacity] = e;
         this.position++;
     }
+}
+
+function median(arr: Array<number>): number {
+    return arr.concat().sort()[Math.floor(arr.length / 2)];
 }
 
 function wait(ms: number): Promise<void> {

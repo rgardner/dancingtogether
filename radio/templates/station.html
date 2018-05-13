@@ -62,10 +62,11 @@
 
 {% block extra_script %}
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
-<script src="{% static "channels/js/websocketbridge.js" %}"></script>
+<script src="{% static 'channels/js/websocketbridge.js' %}"></script>
+<script src="{% static 'js/system.js' %}"></script>
 
 {% compress js %}
-<script type="text/typescript" src="{% static "js/station.ts" %}"></script>
+<script type="text/typescript" src="{% static 'js/station2.ts' %}"></script>
 {% endcompress %}
 
 <script>
@@ -74,6 +75,13 @@
     const userIsAdmin = {{ is_admin|yesno:"true,false" }};
     const accessToken = "{{ access_token }}";
     const stationId = {{ station_id }};
-    this.app = new StationApp(userIsDJ, userIsAdmin, accessToken, stationId);
+    SystemJS.config({
+        paths: {
+            'jquery': 'https://code.jquery.com/jquery.js',
+        },
+    });
+    SystemJS.import('station2').then(station => {
+        this.app = new station.StationApp2(userIsDJ, userIsAdmin, accessToken, stationId);
+    });
 </script>
 {% endblock %}{# extra_script #}
