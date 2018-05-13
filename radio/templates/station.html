@@ -80,8 +80,10 @@
             'jquery': 'https://code.jquery.com/jquery.js',
         },
     });
-    SystemJS.import('station2').then(station => {
-        this.app = new station.StationApp2(userIsDJ, userIsAdmin, accessToken, stationId);
-    });
+    window.onSpotifyWebPlaybackSDKReady = () => {
+        SystemJS.import('station2').then(station => {
+            window.app = new station.StationApp2(userIsDJ, userIsAdmin, accessToken, stationId);
+        });
+    };
 </script>
 {% endblock %}{# extra_script #}

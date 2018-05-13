@@ -18,7 +18,6 @@ class MockMusicPlayer implements MusicPlayer {
 
     // MusicPlayer
 
-    isAvailable(): boolean { return true; }
     getAccessToken() { return ''; }
     setAccessToken(_value: string) { }
 

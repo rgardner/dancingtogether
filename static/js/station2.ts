@@ -7,7 +7,6 @@ export const SEEK_OVERCORRECT_MS = 2000;
 export const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
 export interface MusicPlayer {
-    isAvailable(): boolean;
     getAccessToken(): string;
     setAccessToken(value: string);
 
@@ -96,35 +95,21 @@ class ChannelWebSocketBridge implements WebSocketBridge {
 
 class SpotifyMusicPlayer implements MusicPlayer {
     impl?: Spotify.SpotifyPlayer = null;
-    observers: Map<string, JQueryCallback> = new Map([
-        ['available', $.Callbacks()]
-    ]);
 
     constructor(clientName: string, private accessToken: string) {
-        window.onSpotifyWebPlaybackSDKReady = () => {
-            this.impl = new Spotify.Player({
-                name: clientName,
-                getOAuthToken: cb => { cb(this.getAccessToken()); },
-                volume: 0.8, // TODO: use cached volume
-            });
-
-            this.observers['available'].fire();
-        }
+        this.impl = new Spotify.Player({
+            name: clientName,
+            getOAuthToken: cb => { cb(this.getAccessToken()); },
+            volume: 0.8, // TODO: use cached volume
+        });
     }
 
-    isAvailable() { return (this.impl !== null); }
     getAccessToken(): string { return this.accessToken; }
     setAccessToken(value: string) { this.accessToken = value; }
 
     connect(): Promise<boolean> { return this.impl.connect(); }
 
-    on(eventName, cb) {
-        if (eventName === 'available') {
-            this.observers.get('available').add(cb);
-        } else {
-            return this.impl.on(eventName, cb);
-        }
-    }
+    on(eventName, cb) { return this.impl.on(eventName, cb); }
 
     getCurrentState(): Promise<PlaybackState2> {
         return this.impl.getCurrentState().then(state => {
@@ -375,7 +360,8 @@ export class StationServer2 {
             const serverPlaybackState = PlaybackState2.fromServer(action.state);
             this.observers.get(action.type).fire(serverPlaybackState);
         } else if (action.type === 'pong') {
-            this.observers.get(action.type).fire({ startTime: action.start_time });
+            const pong: PongResponse = { startTime: new Date(action.start_time) };
+            this.observers.get(action.type).fire(pong);
         }
     }
 }
@@ -383,42 +369,20 @@ export class StationServer2 {
 export class StationMusicPlayer2 {
     isReady: boolean = false;
     deviceId?: string = null;
-    storedSpotifyCallbacks: Array<[string, Function]> = [];
     volume: number = 0.8;
     volumeBeforeMute: number;
 
     constructor(private musicPlayer: MusicPlayer) {
         this.volumeBeforeMute = this.volume;
-        this.bindMusicPlayerAvailableActions();
-        if (this.musicPlayer.isAvailable()) {
-            // If already available, bind the music player actions immediately
-            this.bindMusicPlayerActions();
-            this.musicPlayer.connect();
-        }
+        this.bindMusicPlayerActions();
+        this.musicPlayer.connect();
     }
 
     on(eventName: string, cb: Function) {
-        if (this.musicPlayer.isAvailable()) {
-            // @ts-ignore
-            this.musicPlayer.on(eventName, cb);
-        } else {
-            this.storedSpotifyCallbacks.push([eventName, cb]);
-        }
-    }
-
-    bindMusicPlayerAvailableActions() {
-        this.musicPlayer.on('available', () => {
-            this.bindMusicPlayerActions();
-            this.musicPlayer.connect();
-        });
+        this.musicPlayer.on(eventName, cb);
     }
 
     bindMusicPlayerActions() {
-        this.storedSpotifyCallbacks.forEach(nameCBPair => {
-            // @ts-ignore
-            this.musicPlayer.on(nameCBPair[0], nameCBPair[1]);
-        });
-
         this.musicPlayer.on('ready', ({ device_id }) => {
             this.deviceId = device_id;
             this.isReady = true;
