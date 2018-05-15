@@ -153,16 +153,20 @@ async def test_simple_playback(user1, user2, station1):
                     StationCommunicator(listener)) as listener_communicator:
                 await listener_communicator.test_join(station1)
 
+                request_id = 1
                 state = get_mock_client_state()
-                await dj_communicator.player_state_change(state, etag='')
+                await dj_communicator.player_state_change(
+                    request_id, state, etag='')
 
                 response = await dj_communicator.receive_json_from()
                 assert response['type'] == 'ensure_playback_state'
+                assert response['request_id'] == request_id
                 server_state = PlaybackState(**response['state'])
                 assert_client_server_states_are_equal(state, server_state)
 
                 response = await listener_communicator.receive_json_from()
                 assert response['type'] == 'ensure_playback_state'
+                assert 'request_id' not in response
                 server_state2 = PlaybackState(**response['state'])
                 assert server_state2 == server_state
 
@@ -184,18 +188,25 @@ async def test_dj_playback_join_existing_station(user1, station1):
         async with disconnecting(StationCommunicator(user1)) as communicator:
             await communicator.test_join(station1)
             response = await communicator.receive_json_from()
+            assert 'request_id' not in response
             server_state = PlaybackState(**response['state'])
             assert_client_server_states_are_equal(initial_state, server_state)
 
+            request_id = 1
             state = get_mock_client_state()
-            await communicator.player_state_change(state, etag='')
+            await communicator.player_state_change(request_id, state, etag='')
+
             response = await communicator.receive_json_from()
             assert response['error'] == 'precondition_failed'
 
+            request_id += 1
             state = get_mock_client_state(raw_position_ms=100)
-            await communicator.player_state_change(
-                state, etag=server_state.etag)
+            await communicator.player_state_change(request_id, state,
+                                                   server_state.etag)
+
             response = await communicator.receive_json_from()
+            assert response['type'] == 'ensure_playback_state'
+            assert response['request_id'] == request_id
             server_state = PlaybackState(**response['state'])
             assert_client_server_states_are_equal(state, server_state)
 
@@ -339,9 +350,10 @@ class StationCommunicator(WebsocketCommunicator):
             'start_time': start_time,
         })
 
-    async def player_state_change(self, state, etag):
+    async def player_state_change(self, request_id, state, etag):
         await self.send_json_to({
             'command': 'player_state_change',
+            'request_id': request_id,
             'state': state.as_dict(),
             'etag': etag,
         })

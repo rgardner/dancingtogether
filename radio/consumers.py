@@ -156,15 +156,17 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 listener = await get_listener_or_error(self.station_id,
                                                        self.user)
                 if listener.is_dj:
-                    await self.update_dj_state(playback_state, content['etag'])
+                    await self.update_dj_state(content['request_id'],
+                                               playback_state, content['etag'])
                 else:
-                    await self.sync_listener_state(playback_state,
-                                                   content['etag'])
+                    await self.sync_listener_state(
+                        content['request_id'], playback_state, content['etag'])
 
             elif command == 'get_playback_state':
                 playback_state = PlaybackState.from_client_state(
                     content['state'])
-                await self.sync_listener_state(playback_state, content['etag'])
+                await self.sync_listener_state(content['request_id'],
+                                               playback_state, content['etag'])
 
             elif command == 'refresh_access_token':
                 await self.refresh_access_token()
@@ -219,7 +221,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         # Reply to client to finish setting up station
         await self.send_json({'join': station.title})
         self.state = StationState.Connected
-        await self.sync_listener_state(state=None, etag='')
+        await self.sync_listener_state(request_id=None, state=None, etag='')
 
     @station_join_required
     async def leave_station(self, station_id):
@@ -248,7 +250,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'type': 'pong', 'start_time': start_time})
 
     @station_join_required
-    async def update_dj_state(self, state, etag):
+    async def update_dj_state(self, request_id, state, etag):
         user = self.user
         station = await get_station_or_error(self.station_id, user)
         station_state = getattr(station, 'playbackstate', None)
@@ -260,7 +262,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 station.group_name, new_state.context_uri,
                 new_state.current_track_uri)
             await self.group_send_ensure_playback_state(
-                station.group_name, new_state)
+                station.group_name, request_id, new_state)
 
         else:
             previous_state = PlaybackState.from_station_state(station_state)
@@ -283,10 +285,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                         new_state.current_track_uri)
 
                 await self.group_send_ensure_playback_state(
-                    station.group_name, new_state)
+                    station.group_name, request_id, new_state)
 
     @station_join_required
-    async def sync_listener_state(self, state: Optional[PlaybackState], etag):
+    async def sync_listener_state(self, request_id: Optional[str],
+                                  state: Optional[PlaybackState], etag):
         user = self.user
         station = await get_station_or_error(self.station_id, user)
         if hasattr(station, 'playbackstate'):
@@ -307,7 +310,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     user.id, self.device_id, station_state.context_uri,
                     station_state.current_track_uri)
 
-            await self.ensure_playback_state(station_state.as_dict())
+            await self.ensure_playback_state(request_id,
+                                             station_state.as_dict())
 
     async def refresh_access_token(self) -> AccessToken:
         access_token = await get_access_token(self.user.id)
@@ -375,12 +379,13 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 'current_track_uri': current_track_uri,
             })
 
-    async def group_send_ensure_playback_state(self, group_name,
+    async def group_send_ensure_playback_state(self, group_name, request_id,
                                                state: PlaybackState):
         await self.channel_layer.group_send(
             group_name, {
                 'type': 'station.ensure_playback_state',
                 'sender_user_id': self.user.id,
+                'request_id': request_id,
                 'state': state.as_dict(),
             })
 
@@ -420,7 +425,10 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                              event['current_track_uri'])
 
     async def station_ensure_playback_state(self, event: Dict[str, Any]):
-        await self.ensure_playback_state(event['state'])
+        sender_user_id = event['sender_user_id']
+        request_id = event[
+            'request_id'] if sender_user_id == self.user.id else None
+        await self.ensure_playback_state(request_id, event['state'])
 
     # Utils
 
@@ -439,11 +447,14 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                                       access_token, device_id,
                                                       context_uri, uri)
 
-    async def ensure_playback_state(self, state):
-        await self.send_json({
+    async def ensure_playback_state(self, request_id: Optional[str], state):
+        message = {
             'type': 'ensure_playback_state',
             'state': state,
-        })
+        }
+        if request_id is not None:
+            message['request_id'] = request_id
+        await self.send_json(message)
 
 
 # Database
