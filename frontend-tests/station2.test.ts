@@ -157,13 +157,15 @@ test('station server can send a playback state', async () => {
         0 /*raw_position_ms*/, new Date(), null);
     const mockServerEtag = '';
     mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual({
+        expect(data).toEqual(expect.objectContaining({
             'command': 'player_state_change',
+            'request_id': expect.any(Number),
             'state': mockPlaybackState,
             'etag': mockServerEtag,
-        });
+        }));
         mockWebSocketBridge.fire({
             'type': 'ensure_playback_state',
+            'request_id': data.request_id,
             'state': mockPlaybackState,
         });
     });
@@ -181,13 +183,15 @@ test('station server can resync the playback state', async () => {
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
         0 /*raw_position_ms*/, new Date());
     mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual({
+        expect(data).toEqual(expect.objectContaining({
             'command': 'player_state_change',
+            'request_id': expect.any(Number),
             'state': mockPlaybackState,
             'etag': '',
-        });
+        }));
         mockWebSocketBridge.fire({
             'type': 'ensure_playback_state',
+            'request_id': data.request_id,
             'state': mockPlaybackState,
         });
     });

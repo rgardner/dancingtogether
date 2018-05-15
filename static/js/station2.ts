@@ -268,10 +268,12 @@ export class StationManager {
 }
 
 export class StationServer2 {
+    requestId: number = 0;
     observers: Map<string, JQueryCallback> = new Map([
         ['join', $.Callbacks()],
         ['pong', $.Callbacks()],
         ['ensure_playback_state', $.Callbacks()],
+        ['station_state_change', $.Callbacks()],
     ]);
 
     constructor(private stationId: number, private webSocketBridge: WebSocketBridge) {
@@ -286,6 +288,8 @@ export class StationServer2 {
         this.webSocketBridge.listen(action => { this.onMessage(action); });
     }
 
+    // Public events
+    // station_state_change: (state: PlaybackState2)
     on(eventName: string, cb: Function) {
         this.observers.get(eventName).add(cb);
     }
@@ -294,6 +298,16 @@ export class StationServer2 {
         const cbWrapper = (...args) => {
             this.removeListener(eventName, cbWrapper);
             cb(...args);
+        };
+        this.on(eventName, cbWrapper);
+    }
+
+    onRequest(eventName: string, thisRequestId: number, cb: Function) {
+        const cbWrapper = (requestId, ...args) => {
+            if (requestId === thisRequestId) {
+                this.removeListener(eventName, cbWrapper);
+                cb(...args);
+            }
         };
         this.on(eventName, cbWrapper);
     }
@@ -329,11 +343,13 @@ export class StationServer2 {
 
     sendPlaybackState(playbackState: PlaybackState2, serverEtag?: string): Promise<PlaybackState2> {
         return new Promise(resolve => {
-            this.onOnce('ensure_playback_state', serverPlaybackState => {
+            const thisRequestId = ++this.requestId;
+            this.onRequest('ensure_playback_state', thisRequestId, serverPlaybackState => {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
                 'command': 'player_state_change',
+                'request_id': thisRequestId,
                 'state': playbackState,
                 'etag': serverEtag || '',
             });
@@ -342,11 +358,13 @@ export class StationServer2 {
 
     sendSyncRequest(playbackState): Promise<PlaybackState2> {
         return new Promise(resolve => {
-            this.onOnce('ensure_playback_state', serverPlaybackState => {
+            const thisRequestId = ++this.requestId;
+            this.onRequest('ensure_playback_state', thisRequestId, serverPlaybackState => {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
                 'command': 'player_state_change',
+                'request_id': thisRequestId,
                 'state': playbackState,
                 'etag': '',
             });
@@ -357,8 +375,13 @@ export class StationServer2 {
         if (action.join) {
             this.observers.get('join').fire(action.join);
         } else if (action.type === 'ensure_playback_state') {
+            const requestId = action.request_id;
             const serverPlaybackState = PlaybackState2.fromServer(action.state);
-            this.observers.get(action.type).fire(serverPlaybackState);
+            if (requestId) {
+                this.observers.get(action.type).fire(requestId, serverPlaybackState);
+            } else {
+                this.observers.get('station_state_change').fire(serverPlaybackState);
+            }
         } else if (action.type === 'pong') {
             const pong: PongResponse = { startTime: new Date(action.start_time) };
             this.observers.get(action.type).fire(pong);
