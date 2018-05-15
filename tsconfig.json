@@ -6,6 +6,7 @@
         "target": "es2016"
     },
     "files": [
-        "station/js/station.ts"
+        "station/js/station.ts",
+        "station/js/station2.ts"
     ]
 }
