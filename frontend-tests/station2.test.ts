@@ -1,7 +1,7 @@
 import {
-    SEEK_OVERCORRECT_MS, DEFAULT_SERVER_ONE_WAY_TIME_MS,
-    MusicPlayer, PlaybackState2, StationManager, StationMusicPlayer2,
-    StationServer2, WebSocketBridge, WebSocketListenCallback
+    SEEK_OVERCORRECT_MS, MusicPlayer, PlaybackState2, StationManager,
+    StationMusicPlayer2, StationServer2, WebSocketBridge,
+    WebSocketListenCallback
 } from '../static/js/station2'
 import $ from 'jquery';
 
@@ -11,6 +11,16 @@ const MockDeviceId: string = 'MockDeviceId';
 const MockContextUri: string = 'MockContextUri';
 const MockCurrentTrackUri: string = 'MockCurrentTrackUri';
 const MockServerEtag: string = 'MockServerEtag';
+
+beforeEach(() => {
+    // Mock StationManager.getAdjustedPlaybackPosition, as it adjusts based on
+    // the client/server time offset via Date.getTime, which is
+    // non-deterministic
+    const getAdjustedPlaybackPosition = jest.fn().mockImplementation(serverState => {
+        return serverState.raw_position_ms;
+    });
+    StationManager.prototype.getAdjustedPlaybackPosition = getAdjustedPlaybackPosition.bind(StationManager);
+});
 
 class MockMusicPlayer implements MusicPlayer {
     public playbackState: PlaybackState2 = new PlaybackState2('', '', true, 0, new Date(), null);
@@ -212,10 +222,9 @@ test('station manager correctly adjusts playback state when server is paused', a
 
 test('station manager correctly adjusts playback state when server is playing', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
-    let stationMusicPlayer = new StationMusicPlayer2(mockMusicPlayer);
     let stationManager = new StationManager(
         new StationServer2(MockStationId, new MockWebSocketBridge()),
-        stationMusicPlayer);
+        new StationMusicPlayer2(mockMusicPlayer));
 
     const mockPlaybackState = new PlaybackState2(
         MockContextUri, MockCurrentTrackUri, false /*paused*/,
@@ -230,7 +239,7 @@ test('station manager correctly adjusts playback state when server is playing', 
     expect(mockMusicPlayer.playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
     expect(mockMusicPlayer.playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
     expect(mockMusicPlayer.playbackState.paused).toBe(mockPlaybackState.paused);
-    const newPlaybackPosition = mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS - DEFAULT_SERVER_ONE_WAY_TIME_MS;
+    const newPlaybackPosition = mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS;
     expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(newPlaybackPosition);
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
 });

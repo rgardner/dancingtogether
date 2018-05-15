@@ -4,7 +4,7 @@ declare var channels;
 
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
-export const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
+const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
 export interface MusicPlayer {
     getAccessToken(): string;
