@@ -200,6 +200,25 @@ test('station server can resync the playback state', async () => {
         .resolves.toEqual(mockPlaybackState);
 });
 
+test('station server fires notifications for station state changes', async () => {
+    expect.assertions(1);
+    let mockWebSocketBridge = new MockWebSocketBridge();
+    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+
+    const mockPlaybackState = new PlaybackState2(
+        MockContextUri, MockCurrentTrackUri, true /*paused*/,
+        0 /*raw_position_ms*/, new Date());
+
+    stationServer.on('station_state_change', data => {
+        expect(data).toEqual(mockPlaybackState);
+    });
+
+    mockWebSocketBridge.fire({
+        'type': 'ensure_playback_state',
+        'state': mockPlaybackState,
+    });
+});
+
 test('station manager correctly adjusts playback state when server is paused', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
     let stationMusicPlayer = new StationMusicPlayer2(mockMusicPlayer);
