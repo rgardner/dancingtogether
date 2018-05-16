@@ -184,7 +184,7 @@ test('station server can resync the playback state', async () => {
         0 /*raw_position_ms*/, new Date());
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual(expect.objectContaining({
-            'command': 'player_state_change',
+            'command': 'get_playback_state',
             'request_id': expect.any(Number),
             'state': mockPlaybackState,
             'etag': '',
@@ -217,6 +217,20 @@ test('station server fires notifications for station state changes', async () =>
         'type': 'ensure_playback_state',
         'state': mockPlaybackState,
     });
+});
+
+test('station server fires notifications for errors', async () => {
+    expect.assertions(2);
+    let mockWebSocketBridge = new MockWebSocketBridge();
+    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+
+    const mockError = { error: 'precondition_failed', message: 'out of sync' };
+    stationServer.on('error', (error, message) => {
+        expect(error).toEqual(mockError.error);
+        expect(message).toEqual(mockError.message);
+    });
+
+    mockWebSocketBridge.fire(mockError);
 });
 
 test('station manager correctly adjusts playback state when server is paused', async () => {

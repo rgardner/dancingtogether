@@ -138,6 +138,7 @@ export class StationManager {
 
     constructor(private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
         this.bindMusicPlayerActions();
+        this.bindServerActions();
     }
 
     bindMusicPlayerActions() {
@@ -154,8 +155,21 @@ export class StationManager {
         });
     }
 
-    updateServerPlaybackState(playbackState: PlaybackState2): Promise<void> {
-        return Promise.race([this.server.sendPlaybackState(playbackState), timeout(5000)])
+    bindServerActions() {
+        this.server.on('error', (error, message) => {
+            console.error(`${error}: ${message}`);
+        });
+
+        this.server.on('station_state_change', serverState => {
+            this.taskExecutor.push(() => this.applyServerState(serverState));
+        });
+    }
+
+    updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
+        return ((playbackState !== null) ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
+            .then(state => {
+                return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)]);
+            })
             .then(serverState => {
                 return this.applyServerState(<PlaybackState2>serverState);
             })
@@ -164,8 +178,11 @@ export class StationManager {
             });
     }
 
-    syncServerPlaybackState(playbackState: PlaybackState2): Promise<void> {
-        return Promise.race([this.server.sendSyncRequest(playbackState), timeout(5000)])
+    syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
+        return ((playbackState !== null) ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
+            .then(state => {
+                return Promise.race([this.server.sendSyncRequest(state), timeout(5000)]);
+            })
             .then(serverState => {
                 return this.applyServerState(<PlaybackState2>serverState);
             })
@@ -222,9 +239,7 @@ export class StationManager {
             })
             .catch(e => {
                 console.error(e);
-                this.musicPlayer.getCurrentState().then(state => {
-                    this.taskExecutor.push(() => this.syncServerPlaybackState(state));
-                })
+                this.taskExecutor.push(() => this.syncServerPlaybackState(null));
             });
     }
 
@@ -270,6 +285,7 @@ export class StationManager {
 export class StationServer2 {
     requestId: number = 0;
     observers: Map<string, JQueryCallback> = new Map([
+        ['error', $.Callbacks()],
         ['join', $.Callbacks()],
         ['pong', $.Callbacks()],
         ['ensure_playback_state', $.Callbacks()],
@@ -290,6 +306,9 @@ export class StationServer2 {
 
     // Public events
     // station_state_change: (state: PlaybackState2)
+    // error: (error: string, message: string)
+    //     client_error
+    //     precondition_failed
     on(eventName: string, cb: Function) {
         this.observers.get(eventName).add(cb);
     }
@@ -363,7 +382,7 @@ export class StationServer2 {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
-                'command': 'player_state_change',
+                'command': 'get_playback_state',
                 'request_id': thisRequestId,
                 'state': playbackState,
                 'etag': '',
@@ -372,7 +391,9 @@ export class StationServer2 {
     }
 
     onMessage(action) {
-        if (action.join) {
+        if (action.error) {
+            this.observers.get('error').fire(action.error, action.message);
+        } else if (action.join) {
             this.observers.get('join').fire(action.join);
         } else if (action.type === 'ensure_playback_state') {
             const requestId = action.request_id;
@@ -456,7 +477,7 @@ class TaskExecutor {
     tasks: Promise<any> = Promise.resolve();
     tasksInFlight: number = 0;
 
-    push(task) {
+    push(task: (Function) => Promise<any>) {
         if (this.tasksInFlight === 0) {
             // why reset tasks here? in case the native promises implementation isn't
             // smart enough to garbage collect old completed tasks in the chain.
