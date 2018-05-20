@@ -146,14 +146,7 @@ export class StationManager {
             this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
             this.taskExecutor.push(() => this.calculatePing());
         });
-
-        this.musicPlayer.on('player_state_changed', state => {
-            if (state) {
-                const clientState = PlaybackState2.fromSpotify(state);
-                this.taskExecutor.push(() => this.updateServerPlaybackState(clientState));
             }
-        });
-    }
 
     bindServerActions() {
         this.server.on('error', (error, message) => {
