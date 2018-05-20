@@ -2,6 +2,7 @@ import $ from 'jquery';
 
 declare var channels;
 
+const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
 const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
@@ -135,6 +136,7 @@ export class StationManager {
     serverPings: CircularArray2<number> = new CircularArray2(5);
     clientEtag?: Date = null;
     serverEtag?: string = null;
+    heartbeatIntervalId?: number = null;
 
     constructor(private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
         this.bindMusicPlayerActions();
@@ -145,6 +147,7 @@ export class StationManager {
         this.musicPlayer.on('ready', ({ device_id }) => {
             this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
             this.taskExecutor.push(() => this.calculatePing());
+            this.enableHeartbeat();
         });
             }
 
@@ -156,6 +159,13 @@ export class StationManager {
         this.server.on('station_state_change', serverState => {
             this.taskExecutor.push(() => this.applyServerState(serverState));
         });
+    }
+
+    enableHeartbeat() {
+        this.heartbeatIntervalId = window.setInterval(() => {
+            this.taskExecutor.push(() => this.calculatePing());
+            this.taskExecutor.push(() => this.updateServerPlaybackState(null));
+        }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
     updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
