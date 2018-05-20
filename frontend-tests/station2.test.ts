@@ -10,7 +10,8 @@ const MockStationName: string = 'MockStationName';
 const MockDeviceId: string = 'MockDeviceId';
 const MockContextUri: string = 'MockContextUri';
 const MockCurrentTrackUri: string = 'MockCurrentTrackUri';
-const MockServerEtag: string = 'MockServerEtag';
+const MockServerEtag1: Date = new Date('2018-05-20T20:57:33.992Z');
+const MockServerEtag2: Date = new Date('2018-05-20T20:58:33.992Z');
 
 beforeEach(() => {
     // Mock StationManager.getAdjustedPlaybackPosition, as it adjusts based on
@@ -155,7 +156,7 @@ test('station server can send a playback state', async () => {
     const mockPlaybackState = new PlaybackState2(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
         0 /*raw_position_ms*/, new Date(), null);
-    const mockServerEtag = '';
+    const mockServerEtag = MockServerEtag1;
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual(expect.objectContaining({
             'command': 'player_state_change',
@@ -163,15 +164,19 @@ test('station server can send a playback state', async () => {
             'state': mockPlaybackState,
             'etag': mockServerEtag,
         }));
+        let responsePlaybackState = mockPlaybackState;
+        responsePlaybackState.etag = MockServerEtag2;
         mockWebSocketBridge.fire({
             'type': 'ensure_playback_state',
             'request_id': data.request_id,
-            'state': mockPlaybackState,
+            'state': responsePlaybackState,
         });
     });
 
+    let expectedResponsePlaybackState = mockPlaybackState;
+    expectedResponsePlaybackState.etag = MockServerEtag2;
     await expect(stationServer.sendPlaybackState(mockPlaybackState, mockServerEtag))
-        .resolves.toEqual(mockPlaybackState);
+        .resolves.toEqual(expectedResponsePlaybackState);
 });
 
 test('station server can resync the playback state', async () => {
@@ -181,23 +186,26 @@ test('station server can resync the playback state', async () => {
 
     const mockPlaybackState = new PlaybackState2(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
-        0 /*raw_position_ms*/, new Date());
+        0 /*raw_position_ms*/, new Date(), null);
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual(expect.objectContaining({
             'command': 'get_playback_state',
             'request_id': expect.any(Number),
             'state': mockPlaybackState,
-            'etag': '',
         }));
+        let responsePlaybackState = mockPlaybackState;
+        responsePlaybackState.etag = MockServerEtag1;
         mockWebSocketBridge.fire({
             'type': 'ensure_playback_state',
             'request_id': data.request_id,
-            'state': mockPlaybackState,
+            'state': responsePlaybackState,
         });
     });
 
+    let expectedResponsePlaybackState = mockPlaybackState;
+    expectedResponsePlaybackState.etag = MockServerEtag1;
     await expect(stationServer.sendSyncRequest(mockPlaybackState))
-        .resolves.toEqual(mockPlaybackState);
+        .resolves.toEqual(expectedResponsePlaybackState);
 });
 
 test('station server fires notifications for station state changes', async () => {
@@ -207,7 +215,7 @@ test('station server fires notifications for station state changes', async () =>
 
     const mockPlaybackState = new PlaybackState2(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
-        0 /*raw_position_ms*/, new Date());
+        0 /*raw_position_ms*/, new Date(), MockServerEtag1);
 
     stationServer.on('station_state_change', data => {
         expect(data).toEqual(mockPlaybackState);
@@ -242,7 +250,7 @@ test('station manager correctly adjusts playback state when server is paused', a
 
     const mockPlaybackState = new PlaybackState2(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
-        0 /*raw_position_ms*/, new Date(), MockServerEtag);
+        0 /*raw_position_ms*/, new Date(), MockServerEtag1);
 
     // assume server has already set the current track
     mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;
@@ -265,7 +273,7 @@ test('station manager correctly adjusts playback state when server is playing', 
 
     const mockPlaybackState = new PlaybackState2(
         MockContextUri, MockCurrentTrackUri, false /*paused*/,
-        10000 /*raw_position_ms*/, new Date(), MockServerEtag);
+        10000 /*raw_position_ms*/, new Date(), MockServerEtag1);
 
     // assume server has already set the current track
     mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;

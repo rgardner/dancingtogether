@@ -51,7 +51,7 @@ interface PongResponse {
 export class PlaybackState2 {
     constructor(public context_uri: string,
         public current_track_uri: string, public paused: boolean,
-        public raw_position_ms: number, public sample_time: Date, public etag?: string) {
+        public raw_position_ms: number, public sample_time: Date, public etag?: Date) {
     }
 
     static fromSpotify(state) {
@@ -71,7 +71,7 @@ export class PlaybackState2 {
             state.paused,
             state.raw_position_ms,
             new Date(state.sample_time),
-            state.etag);
+            new Date(state.etag));
     }
 }
 
@@ -135,7 +135,7 @@ export class StationManager {
     taskExecutor: TaskExecutor = new TaskExecutor();
     serverPings: CircularArray2<number> = new CircularArray2(5);
     clientEtag?: Date = null;
-    serverEtag?: string = null;
+    serverEtag?: Date = null;
     heartbeatIntervalId?: number = null;
 
     constructor(private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
@@ -172,35 +172,35 @@ export class StationManager {
     updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                if (state && (state.sample_time >= this.clientEtag)) {
-                    return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
-                        .then(serverState => {
-                            return this.applyServerState(<PlaybackState2>serverState);
-                        })
-                        .catch(() => {
-                            return this.syncServerPlaybackState(playbackState);
-                        });
-                } else {
+                if (!state || (state.sample_time <= this.clientEtag)) {
                     return Promise.resolve();
                 }
-            })
+
+                return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
+                    .then(serverState => {
+                        return this.applyServerState(<PlaybackState2>serverState);
+                    })
+                    .catch(() => {
+                        return this.syncServerPlaybackState(playbackState);
+                    });
+            });
     }
 
     syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                if (state && (state.sample_time >= this.clientEtag)) {
-                    return Promise.race([this.server.sendSyncRequest(state), timeout(5000)])
-                        .then(serverState => {
-                            return this.applyServerState(<PlaybackState2>serverState);
-                        })
-                        .catch(() => {
-                            return this.syncServerPlaybackState(playbackState);
-                        });
-                } else {
+                if (!state || (state.sample_time <= this.clientEtag)) {
                     return Promise.resolve();
                 }
-            })
+
+                return Promise.race([this.server.sendSyncRequest(state), timeout(5000)])
+                    .then(serverState => {
+                        return this.applyServerState(<PlaybackState2>serverState);
+                    })
+                    .catch(() => {
+                        return this.syncServerPlaybackState(playbackState);
+                    });
+            });
     }
 
     calculatePing(): Promise<void> {
@@ -212,6 +212,10 @@ export class StationManager {
     }
 
     applyServerState(serverState: PlaybackState2): Promise<void> {
+        if (serverState.etag <= this.serverEtag) {
+            return Promise.resolve();
+        }
+
         return Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)])
             .then(() => this.musicPlayer.getCurrentState())
             .then(clientState => {
@@ -372,7 +376,7 @@ export class StationServer2 {
         });
     }
 
-    sendPlaybackState(playbackState: PlaybackState2, serverEtag?: string): Promise<PlaybackState2> {
+    sendPlaybackState(playbackState: PlaybackState2, serverEtag?: Date): Promise<PlaybackState2> {
         return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
             this.onRequest('ensure_playback_state', thisRequestId, serverPlaybackState => {
@@ -382,7 +386,7 @@ export class StationServer2 {
                 'command': 'player_state_change',
                 'request_id': thisRequestId,
                 'state': playbackState,
-                'etag': serverEtag || '',
+                'etag': serverEtag,
             });
         });
     }
@@ -397,7 +401,6 @@ export class StationServer2 {
                 'command': 'get_playback_state',
                 'request_id': thisRequestId,
                 'state': playbackState,
-                'etag': '',
             });
         });
     }
