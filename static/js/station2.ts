@@ -147,9 +147,10 @@ export class StationManager {
         this.musicPlayer.on('ready', ({ device_id }) => {
             this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
             this.taskExecutor.push(() => this.calculatePing());
+            this.taskExecutor.push(() => this.syncServerPlaybackState(null));
             this.enableHeartbeat();
         });
-            }
+    }
 
     bindServerActions() {
         this.server.on('error', (error, message) => {
@@ -169,29 +170,37 @@ export class StationManager {
     }
 
     updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
-        return ((playbackState !== null) ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
+        return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)]);
+                if (state && (state.sample_time >= this.clientEtag)) {
+                    return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
+                        .then(serverState => {
+                            return this.applyServerState(<PlaybackState2>serverState);
+                        })
+                        .catch(() => {
+                            return this.syncServerPlaybackState(playbackState);
+                        });
+                } else {
+                    return Promise.resolve();
+                }
             })
-            .then(serverState => {
-                return this.applyServerState(<PlaybackState2>serverState);
-            })
-            .catch(() => {
-                return this.syncServerPlaybackState(playbackState);
-            });
     }
 
     syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
-        return ((playbackState !== null) ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
+        return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                return Promise.race([this.server.sendSyncRequest(state), timeout(5000)]);
+                if (state && (state.sample_time >= this.clientEtag)) {
+                    return Promise.race([this.server.sendSyncRequest(state), timeout(5000)])
+                        .then(serverState => {
+                            return this.applyServerState(<PlaybackState2>serverState);
+                        })
+                        .catch(() => {
+                            return this.syncServerPlaybackState(playbackState);
+                        });
+                } else {
+                    return Promise.resolve();
+                }
             })
-            .then(serverState => {
-                return this.applyServerState(<PlaybackState2>serverState);
-            })
-            .catch(() => {
-                return this.syncServerPlaybackState(playbackState);
-            });
     }
 
     calculatePing(): Promise<void> {
