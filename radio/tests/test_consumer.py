@@ -158,7 +158,7 @@ async def test_simple_playback(user1, user2, station1):
                 request_id = 1
                 state = get_mock_client_state()
                 await dj_communicator.player_state_change(
-                    request_id, state, etag='')
+                    request_id, state, etag=None)
 
                 response = await dj_communicator.receive_json_from()
                 assert response['type'] == 'ensure_playback_state'
@@ -195,7 +195,8 @@ async def test_dj_playback_join_existing_station(user1, station1):
 
             request_id = 1
             state = get_mock_client_state()
-            await communicator.player_state_change(request_id, state, etag='')
+            await communicator.player_state_change(
+                request_id, state, etag=None)
             response = await communicator.receive_json_from()
             assert response['error'] == 'precondition_failed'
 
@@ -364,12 +365,12 @@ class StationCommunicator(WebsocketCommunicator):
             'start_time': start_time,
         })
 
-    async def player_state_change(self, request_id, state, etag):
+    async def player_state_change(self, request_id, state, etag=None):
         await self.send_json_to({
             'command': 'player_state_change',
             'request_id': request_id,
             'state': state.as_dict(),
-            'etag': etag,
+            'etag': etag.isoformat() if etag else None,
         })
 
     async def get_playback_state(self, request_id, client_playback_state):

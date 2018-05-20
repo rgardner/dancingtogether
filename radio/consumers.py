@@ -37,11 +37,14 @@ class PlaybackState:
     raw_position_ms: int
     position_ms: int = dataclasses.field(init=False)
     sample_time: datetime
-    etag: Optional[str] = dataclasses.field(default=None)
+    etag: Optional[datetime] = dataclasses.field(default=None)
 
     def __post_init__(self):
         if type(self.sample_time) is str:
             self.sample_time = dateutil.parser.parse(self.sample_time)
+
+        if (self.etag is not None) and (type(self.etag) is str):
+            self.etag = dateutil.parser.parse(self.etag)
 
         if self.paused:
             self.position_ms = self.raw_position_ms
@@ -62,11 +65,10 @@ class PlaybackState:
 
     @staticmethod
     def from_station_state(station_state: models.PlaybackState):
-        return PlaybackState(station_state.context_uri,
-                             station_state.current_track_uri,
-                             station_state.paused, station_state.position_ms,
-                             station_state.last_updated_time,
-                             station_state.last_updated_time.isoformat())
+        return PlaybackState(
+            station_state.context_uri, station_state.current_track_uri,
+            station_state.paused, station_state.position_ms,
+            station_state.last_updated_time, station_state.last_updated_time)
 
     def as_dict(self):
         return {
@@ -75,7 +77,7 @@ class PlaybackState:
             'paused': self.paused,
             'raw_position_ms': self.raw_position_ms,
             'sample_time': self.sample_time.isoformat(),
-            'etag': self.etag,
+            'etag': self.etag.isoformat() if self.etag else None,
         }
 
 
@@ -156,8 +158,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 listener = await get_listener_or_error(self.station_id,
                                                        self.user)
                 if listener.is_dj:
+                    etag = dateutil.parser.parse(
+                        content['etag']) if content.get('etag',
+                                                        False) else None
                     await self.update_dj_state(content['request_id'],
-                                               playback_state, content['etag'])
+                                               playback_state, etag)
                 else:
                     await self.sync_listener_state(content['request_id'],
                                                    playback_state)
