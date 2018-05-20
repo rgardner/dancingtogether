@@ -159,14 +159,14 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     await self.update_dj_state(content['request_id'],
                                                playback_state, content['etag'])
                 else:
-                    await self.sync_listener_state(
-                        content['request_id'], playback_state, content['etag'])
+                    await self.sync_listener_state(content['request_id'],
+                                                   playback_state)
 
             elif command == 'get_playback_state':
                 playback_state = PlaybackState.from_client_state(
                     content['state'])
                 await self.sync_listener_state(content['request_id'],
-                                               playback_state, content['etag'])
+                                               playback_state)
 
             elif command == 'refresh_access_token':
                 await self.refresh_access_token()
@@ -219,9 +219,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                                          self.user.username, self.user.email)
 
         # Reply to client to finish setting up station
-        await self.send_json({'join': station.title})
         self.state = StationState.Connected
-        await self.sync_listener_state(request_id=None, state=None, etag='')
+        await self.send_json({'join': station.title})
 
     @station_join_required
     async def leave_station(self, station_id):
@@ -289,25 +288,15 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     @station_join_required
     async def sync_listener_state(self, request_id: Optional[str],
-                                  state: Optional[PlaybackState], etag):
-        user = self.user
-        station = await get_station_or_error(self.station_id, user)
+                                  state: Optional[PlaybackState]):
+        station = await get_station_or_error(self.station_id, self.user)
         if hasattr(station, 'playbackstate'):
             station_state = PlaybackState.from_station_state(
                 station.playbackstate)
 
-            if (state is None) or not etag:
-                logger.debug(f'{user} requested full sync')
-            elif etag != station_state.etag:
-                logger.debug(
-                    f'{user} is out of sync. Latest Etag: {station_state.etag}. Their etag: {etag}'
-                )
-                raise ClientError('precondition_failed',
-                                  'Playback state is stale')
-
             if (state is None) or needs_start_playback(state, station_state):
                 await self.start_resume_playback(
-                    user.id, self.device_id, station_state.context_uri,
+                    self.user.id, self.device_id, station_state.context_uri,
                     station_state.current_track_uri)
 
             await self.ensure_playback_state(request_id,

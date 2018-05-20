@@ -15,6 +15,8 @@ from ..consumers import PlaybackState, StationConsumer
 from ..models import Listener, SpotifyCredentials, Station
 from . import mocks
 
+MOCK_CONTEXT_URI1 = 'MockContextUri1'
+MOCK_CONTEXT_URI2 = 'MockContextUri2'
 NON_USER_EMAIL = 'nonuser@example.com'
 
 
@@ -187,23 +189,31 @@ async def test_dj_playback_join_existing_station(user1, station1):
     ):
         async with disconnecting(StationCommunicator(user1)) as communicator:
             await communicator.test_join(station1)
-            response = await communicator.receive_json_from()
-            assert 'request_id' not in response
-            server_state = PlaybackState(**response['state'])
-            assert_client_server_states_are_equal(initial_state, server_state)
+
+            # Trying to update a station that already has music should result
+            # in an error
 
             request_id = 1
             state = get_mock_client_state()
             await communicator.player_state_change(request_id, state, etag='')
-
             response = await communicator.receive_json_from()
             assert response['error'] == 'precondition_failed'
+
+            # Ensure client has latest server playback state
+
+            request_id += 1
+            await communicator.get_playback_state(request_id, state)
+            response = await communicator.receive_json_from()
+            assert response['type'] == 'ensure_playback_state'
+            assert response['request_id'] == request_id
+            server_state = PlaybackState(**response['state'])
+
+            # Now client can update server
 
             request_id += 1
             state = get_mock_client_state(raw_position_ms=100)
             await communicator.player_state_change(request_id, state,
                                                    server_state.etag)
-
             response = await communicator.receive_json_from()
             assert response['type'] == 'ensure_playback_state'
             assert response['request_id'] == request_id
@@ -226,6 +236,10 @@ async def test_playback_error(user1, station1):
     ):
         async with disconnecting(StationCommunicator(user1)) as communicator:
             await communicator.test_join(station1)
+            request_id = 1
+            await communicator.get_playback_state(
+                request_id,
+                get_mock_client_state(context_uri=MOCK_CONTEXT_URI2))
             response = await communicator.receive_json_from()
             assert response['error'] == 'spotify_error'
 
@@ -296,7 +310,7 @@ def create_spotify_credentials(user):
 
 def get_mock_client_state(**kwargs) -> PlaybackState:
     return PlaybackState(
-        context_uri=kwargs.get('context_uri', 'MockContextUri'),
+        context_uri=kwargs.get('context_uri', MOCK_CONTEXT_URI1),
         current_track_uri='MockCurrentTrackUri',
         paused=True,
         raw_position_ms=kwargs.get('raw_position_ms', 0),
@@ -356,6 +370,13 @@ class StationCommunicator(WebsocketCommunicator):
             'request_id': request_id,
             'state': state.as_dict(),
             'etag': etag,
+        })
+
+    async def get_playback_state(self, request_id, client_playback_state):
+        await self.send_json_to({
+            'command': 'get_playback_state',
+            'request_id': request_id,
+            'state': client_playback_state.as_dict(),
         })
 
     async def refresh_access_token(self):
