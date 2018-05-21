@@ -258,7 +258,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'type': 'pong', 'start_time': start_time})
 
     @station_join_required
-    async def update_dj_state(self, request_id, state, etag):
+    async def update_dj_state(self, request_id, state,
+                              etag: Optional[datetime]):
         user = self.user
         station = await get_station_or_error(self.station_id, user)
         station_state = getattr(station, 'playbackstate', None)
@@ -274,7 +275,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         else:
             previous_state = PlaybackState.from_station_state(station_state)
-            if etags_are_equal(etag, previous_state.etag):
+            if etag and etags_are_equal(etag, previous_state.etag):
                 logger.debug(f'DJ {user} is in sync, updating state...')
                 await update_station_state(station_state, state)
                 new_state = PlaybackState.from_station_state(station_state)

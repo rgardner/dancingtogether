@@ -189,7 +189,7 @@ export class StationManager {
     syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                if (!state || (state.sample_time <= this.clientEtag)) {
+                if ((!state && this.clientEtag) || (state && (state.sample_time <= this.clientEtag))) {
                     return Promise.resolve();
                 }
 
