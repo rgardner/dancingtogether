@@ -391,7 +391,7 @@ export class StationServer2 {
         });
     }
 
-    sendSyncRequest(playbackState): Promise<PlaybackState2> {
+    sendSyncRequest(playbackState?: PlaybackState2): Promise<PlaybackState2> {
         return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
             this.onRequest('ensure_playback_state', thisRequestId, serverPlaybackState => {

@@ -131,7 +131,7 @@ None
             ]
         },
     },
-    "required": ["command", "request_id", "state"]
+    "required": ["command", "request_id"]
 }
 ```
 

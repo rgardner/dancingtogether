@@ -87,6 +87,10 @@ def needs_start_playback(old_state, new_state):
             or (old_state.current_track_uri != new_state.current_track_uri))
 
 
+def etags_are_equal(etag1: datetime, etag2: datetime):
+    return abs(etag2 - etag1).total_seconds() < 1.0
+
+
 # Station Decorators
 
 
@@ -169,7 +173,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
             elif command == 'get_playback_state':
                 playback_state = PlaybackState.from_client_state(
-                    content['state'])
+                    content['state']) if content.get('state', False) else None
                 await self.sync_listener_state(content['request_id'],
                                                playback_state)
 
@@ -270,13 +274,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         else:
             previous_state = PlaybackState.from_station_state(station_state)
-            if etag != previous_state.etag:
-                logger.debug(
-                    f'DJ {user} is out of sync, rejecting request. Latest Etag: {previous_state.etag}. Their etag: {etag}'
-                )
-                raise ClientError('precondition_failed',
-                                  'Playback state is stale')
-            else:
+            if etags_are_equal(etag, previous_state.etag):
                 logger.debug(f'DJ {user} is in sync, updating state...')
                 await update_station_state(station_state, state)
                 new_state = PlaybackState.from_station_state(station_state)
@@ -290,6 +288,12 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
                 await self.group_send_ensure_playback_state(
                     station.group_name, request_id, new_state)
+            else:
+                logger.debug(
+                    f'DJ {user} is out of sync, rejecting request. Latest Etag: {previous_state.etag}. Their etag: {etag}'
+                )
+                raise ClientError('precondition_failed',
+                                  'Playback state is stale')
 
     @station_join_required
     async def sync_listener_state(self, request_id: Optional[str],
