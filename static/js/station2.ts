@@ -1,6 +1,7 @@
 import $ from 'jquery';
 
 declare var channels;
+declare var SERVER_DATA;
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
@@ -78,11 +79,11 @@ export class PlaybackState2 {
 export class StationApp2 {
     readonly stationManager: StationManager;
 
-    constructor(_userIsDJ, _userIsAdmin, accessToken, stationId) {
+    constructor() {
         let webSocketBridge = new ChannelWebSocketBridge();
-        let musicPlayer = new SpotifyMusicPlayer('Dancing Together', accessToken);
+        let musicPlayer = new SpotifyMusicPlayer('Dancing Together', SERVER_DATA.accessToken);
         this.stationManager = new StationManager(
-            new StationServer2(stationId, webSocketBridge),
+            new StationServer2(SERVER_DATA.stationId, webSocketBridge),
             new StationMusicPlayer2(musicPlayer));
     }
 }

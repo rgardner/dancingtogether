@@ -71,10 +71,12 @@
 
 <script>
     'use strict';
-    const userIsDJ = {{ is_dj|yesno:"true,false" }};
-    const userIsAdmin = {{ is_admin|yesno:"true,false" }};
-    const accessToken = "{{ access_token }}";
-    const stationId = {{ station_id }};
+    const SERVER_DATA = {
+        userIsDJ: {{ is_dj|yesno:"true,false" }},
+        userIsAdmin: {{ is_admin|yesno:"true,false" }},
+        accessToken: "{{ access_token }}",
+        stationId: {{ station_id }},
+    };
     SystemJS.config({
         paths: {
             'jquery': 'https://code.jquery.com/jquery.js',
@@ -82,7 +84,7 @@
     });
     window.onSpotifyWebPlaybackSDKReady = () => {
         SystemJS.import('station2').then(station => {
-            window.app = new station.StationApp2(userIsDJ, userIsAdmin, accessToken, stationId);
+            window.app = new station.StationApp2();
         });
     };
 </script>
