@@ -3,7 +3,6 @@ var path = require("path");
 module.exports = {
     context: __dirname,
     entry: {
-        main: './assets/js/station.ts',
         station: './static/js/station2.ts',
     },
     devtool: 'inline-source-map',

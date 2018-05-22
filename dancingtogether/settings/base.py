@@ -42,7 +42,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'bootstrap4',
     'channels',
-    'compressor',
     'webpack_loader',
     # Project Apps
     'main',
@@ -138,24 +137,12 @@ STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'assets'),
 ]
 
-STATICFILES_FINDERS = (
-    'django.contrib.staticfiles.finders.FileSystemFinder',
-    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
-    # other finders..
-    'compressor.finders.CompressorFinder',
-)
-
 WEBPACK_LOADER = {
     'DEFAULT': {
         'BUNDLE_DIR_NAME': 'bundles/',
         'STATS_FILE': os.path.join(BASE_DIR, 'webpack-stats.json'),
     },
 }
-
-COMPRESS_OFFLINE = not DEBUG
-TSC_COMPILER = os.path.join(BASE_DIR, 'my-tsc')
-COMPRESS_PRECOMPILERS = (('text/typescript',
-                          '%s {infile} {outfile}' % (TSC_COMPILER)), )
 
 # Logging
 

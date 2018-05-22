@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-set -eo pipefail
-
-npm install -g typescript
-
-ln -s -f ../../vendor/node/bin/tsc .heroku/python/bin/tsc
