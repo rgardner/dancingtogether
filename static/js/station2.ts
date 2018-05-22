@@ -1,9 +1,13 @@
 import * as $ from 'jquery';
+import { ViewManager } from './station_view';
+import { wait } from './util';
 
 // @ts-ignore: No typings for Django Channels WebSocketBridge
 declare var channels;
 
 interface ServerData {
+    userIsDJ: boolean;
+    userIsAdmin: boolean;
     accessToken: string;
     stationId: number;
 }
@@ -59,7 +63,10 @@ interface PongResponse {
 export class PlaybackState2 {
     constructor(public context_uri: string,
         public current_track_uri: string, public paused: boolean,
-        public raw_position_ms: number, public sample_time: Date, public etag?: Date) {
+        public raw_position_ms: number, public sample_time: Date,
+        public etag?: Date, public album_image_url?: string,
+        public album_name?: string, public current_track_name?: string, public artist_name?: string,
+        public duration?: number) {
     }
 
     static fromSpotify(state: Spotify.PlaybackState) {
@@ -69,7 +76,14 @@ export class PlaybackState2 {
             state.paused,
             state.position,
             // @ts-ignore: Spotify.PlaybackState does have timestamp
-            new Date(state.timestamp));
+            new Date(state.timestamp),
+            undefined,
+            state.track_window.current_track.album.images[0].url,
+            state.track_window.current_track.album.name,
+            state.track_window.current_track.name,
+            state.track_window.current_track.artists[0].name,
+            state.duration,
+        );
     }
 
     static fromServer(state: any) {
@@ -94,6 +108,8 @@ export class StationApp2 {
         let webSocketBridge = new ChannelWebSocketBridge();
         let musicPlayer = new SpotifyMusicPlayer('Dancing Together', SERVER_DATA.accessToken);
         this.stationManager = new StationManager(
+            SERVER_DATA.userIsDJ,
+            SERVER_DATA.userIsAdmin,
             new StationServer2(SERVER_DATA.stationId, webSocketBridge),
             new StationMusicPlayer2(musicPlayer));
     }
@@ -147,15 +163,18 @@ class SpotifyMusicPlayer implements MusicPlayer {
 }
 
 export class StationManager {
-    taskExecutor: TaskExecutor = new TaskExecutor();
-    serverPings: CircularArray2<number> = new CircularArray2(5);
+    taskExecutor = new TaskExecutor();
+    serverPings = new CircularArray2<number>(5);
     clientEtag?: Date;
     serverEtag?: Date;
     heartbeatIntervalId?: number;
+    viewManager: ViewManager;
 
-    constructor(private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
+    constructor(userIsDJ: boolean, userIsAdmin: boolean, private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
+        this.viewManager = new ViewManager(userIsDJ, userIsAdmin);
         this.bindMusicPlayerActions();
         this.bindServerActions();
+        this.bindViewActions();
     }
 
     bindMusicPlayerActions() {
@@ -164,6 +183,34 @@ export class StationManager {
             this.taskExecutor.push(() => this.calculatePing());
             this.taskExecutor.push(() => this.syncServerPlaybackState());
             this.enableHeartbeat();
+
+            this.viewManager.stationView.setState(() => ({ isConnected: true }));
+            this.viewManager.listenerView.setState(() => ({ isReady: true }));
+            this.musicPlayer.getVolume().then(volume => {
+                this.viewManager.listenerView.setState(() => ({ volume: volume }));
+            });
+            this.viewManager.djView.setState(() => ({ isReady: true }));
+        });
+
+        this.musicPlayer.on('initialization_error', ({ message }) => {
+            this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+        });
+
+        this.musicPlayer.on('account_error', ({ message }) => {
+            this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+        });
+
+        this.musicPlayer.on('player_state_changed', state => {
+            if (state) {
+                const clientState = PlaybackState2.fromSpotify(state);
+                if (this.clientEtag && (clientState.sample_time <= this.clientEtag)) {
+                    return;
+                }
+
+                this.viewManager.stationView.setState(() => ({ playbackState: clientState }));
+                this.viewManager.musicPositionView.setState(() => ({ paused: clientState.paused, positionMS: clientState.raw_position_ms }));
+                this.viewManager.djView.setState(() => ({ playbackState: state }));
+            }
         });
     }
 
@@ -174,6 +221,32 @@ export class StationManager {
 
         this.server.on('station_state_change', (serverState: PlaybackState2) => {
             this.taskExecutor.push(() => this.applyServerState(serverState));
+        });
+    }
+
+    bindViewActions() {
+        this.viewManager.listenerView.on('muteButtonClick', () => {
+            this.musicPlayer.muteUnmuteVolume().then(newVolume => {
+                this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
+            });
+        });
+
+        this.viewManager.listenerView.on('volumeSliderChange', newVolume => {
+            this.musicPlayer.setVolume(<number>newVolume).then(() => {
+                this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
+            });
+        });
+
+        this.viewManager.djView.on('playPauseButtonClick', () => {
+            this.musicPlayer.togglePlay();
+        });
+
+        this.viewManager.djView.on('previousTrackButtonClick', () => {
+            this.musicPlayer.previousTrack();
+        });
+
+        this.viewManager.djView.on('nextTrackButtonClick', () => {
+            this.musicPlayer.nextTrack();
         });
     }
 
@@ -494,6 +567,31 @@ export class StationMusicPlayer2 {
     getVolume(): Promise<number> { return this.musicPlayer.getVolume(); }
     setVolume(value: number): Promise<void> { return this.musicPlayer.setVolume(value); }
 
+    muteUnmuteVolume() {
+        return new Promise(resolve => {
+            this.getVolume().then(volume => {
+                // BUG: Spotify API returns null instead of 0.0.
+                // Tracked by https://github.com/rgardner/dancingtogether/issues/12
+
+                let newVolume = 0.0;
+                if ((volume === 0.0) || (volume === null)) {
+                    // currently muted, so unmute
+                    newVolume = this.volumeBeforeMute;
+                } else {
+                    // currently unmuted, so mute and store current volume for restore
+                    this.volumeBeforeMute = volume;
+                    newVolume = 0.0;
+                }
+
+                return newVolume;
+            }).then(newVolume => {
+                return this.setVolume(newVolume).then(() => Promise.resolve(newVolume));
+            }).then(newVolume => {
+                resolve(newVolume);
+            });
+        });
+    }
+
     pause(): Promise<void> { return this.musicPlayer.pause(); }
     resume(): Promise<void> { return this.musicPlayer.resume(); }
     togglePlay(): Promise<void> { return this.musicPlayer.togglePlay(); }
@@ -547,10 +645,6 @@ class CircularArray2<T> {
 
 function median(arr: Array<number>): number {
     return arr.concat().sort()[Math.floor(arr.length / 2)];
-}
-
-function wait(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function timeout(ms: number): Promise<never> {
