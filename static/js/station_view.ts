@@ -1,5 +1,6 @@
 import * as $ from 'jquery';
 import { wait } from './util';
+import { PlaybackState2 } from './music_player';
 
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
@@ -19,7 +20,7 @@ export class ViewManager {
 class StationView {
     private state = new class {
         stationName = '';
-        playbackState?: any;
+        playbackState?: PlaybackState2;
         isConnected = false;
         errorMessage?: string;
     };
@@ -60,11 +61,11 @@ class StationView {
             }).appendTo('#album-art');
 
             // Update track title and track artist
-            $('#playback-track-title').html(this.state.playbackState.current_track_name);
-            $('#playback-track-artist').html(this.state.playbackState.artist_name);
+            $('#playback-track-title').html(<string>this.state.playbackState.current_track_name);
+            $('#playback-track-artist').html(<string>this.state.playbackState.artist_name);
 
             // Update duration, current position is handled in MusicPositionView
-            $('#playback-duration').html(msToTimeString(this.state.playbackState.duration));
+            $('#playback-duration').html(msToTimeString(<number>this.state.playbackState.duration));
         }
     }
 }

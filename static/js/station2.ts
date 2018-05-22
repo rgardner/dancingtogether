@@ -1,6 +1,8 @@
 import * as $ from 'jquery';
-import { ViewManager } from './station_view';
 import { wait } from './util';
+import { MusicPlayer, PlaybackState2 } from './music_player';
+import { WebSocketBridge, WebSocketListenCallback } from './websocket_bridge';
+import { ViewManager } from './station_view';
 
 // @ts-ignore: No typings for Django Channels WebSocketBridge
 declare var channels;
@@ -19,39 +21,6 @@ export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
 const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
-export interface MusicPlayer {
-    getAccessToken(): string;
-    setAccessToken(value: string): void;
-
-    connect(): Promise<boolean>;
-
-    on(eventName: string, cb: (...args: any[]) => void): void;
-
-    getCurrentState(): Promise<PlaybackState2 | null>;
-
-    getVolume(): Promise<number>;
-    setVolume(value: number): Promise<void>;
-
-    pause(): Promise<void>;
-    resume(): Promise<void>;
-    togglePlay(): Promise<void>;
-
-    seek(positionMS: number): Promise<void>;
-
-    previousTrack(): Promise<void>;
-    nextTrack(): Promise<void>;
-}
-
-export interface WebSocketListenCallback {
-    (action: any, stream: string): void;
-}
-
-export interface WebSocketBridge {
-    connect(path: string): void;
-    listen(callback: WebSocketListenCallback): void;
-    send(data: any): void;
-}
-
 interface JoinResponse {
     stationName: string;
 }
@@ -60,41 +29,31 @@ interface PongResponse {
     startTime: Date;
 }
 
-export class PlaybackState2 {
-    constructor(public context_uri: string,
-        public current_track_uri: string, public paused: boolean,
-        public raw_position_ms: number, public sample_time: Date,
-        public etag?: Date, public album_image_url?: string,
-        public album_name?: string, public current_track_name?: string, public artist_name?: string,
-        public duration?: number) {
-    }
+function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
+    return new PlaybackState2(
+        <string>state.context.uri,
+        state.track_window.current_track.uri,
+        state.paused,
+        state.position,
+        // @ts-ignore: Spotify.PlaybackState does have timestamp
+        new Date(state.timestamp),
+        undefined,
+        state.track_window.current_track.album.images[0].url,
+        state.track_window.current_track.album.name,
+        state.track_window.current_track.name,
+        state.track_window.current_track.artists[0].name,
+        state.duration,
+    );
+}
 
-    static fromSpotify(state: Spotify.PlaybackState) {
-        return new PlaybackState2(
-            <string>state.context.uri,
-            state.track_window.current_track.uri,
-            state.paused,
-            state.position,
-            // @ts-ignore: Spotify.PlaybackState does have timestamp
-            new Date(state.timestamp),
-            undefined,
-            state.track_window.current_track.album.images[0].url,
-            state.track_window.current_track.album.name,
-            state.track_window.current_track.name,
-            state.track_window.current_track.artists[0].name,
-            state.duration,
-        );
-    }
-
-    static fromServer(state: any) {
-        return new PlaybackState2(
-            state.context_uri,
-            state.current_track_uri,
-            state.paused,
-            state.raw_position_ms,
-            new Date(state.sample_time),
-            new Date(state.etag));
-    }
+function createPlaybackStateFromServer(state: any) {
+    return new PlaybackState2(
+        state.context_uri,
+        state.current_track_uri,
+        state.paused,
+        state.raw_position_ms,
+        new Date(state.sample_time),
+        new Date(state.etag));
 }
 
 window.onSpotifyWebPlaybackSDKReady = () => {
@@ -145,7 +104,7 @@ class SpotifyMusicPlayer implements MusicPlayer {
 
     getCurrentState(): Promise<PlaybackState2 | null> {
         return this.impl.getCurrentState().then(state => {
-            return (state ? PlaybackState2.fromSpotify(state) : null);
+            return (state ? createPlaybackStateFromSpotify(state) : null);
         });
     }
 
@@ -202,7 +161,7 @@ export class StationManager {
 
         this.musicPlayer.on('player_state_changed', state => {
             if (state) {
-                const clientState = PlaybackState2.fromSpotify(state);
+                const clientState = createPlaybackStateFromSpotify(state);
                 if (this.clientEtag && (clientState.sample_time <= this.clientEtag)) {
                     return;
                 }
@@ -505,7 +464,7 @@ export class StationServer2 {
             this.observers.get('join')!.fire(action.join);
         } else if (action.type === 'ensure_playback_state') {
             const requestId = action.request_id;
-            const serverPlaybackState = PlaybackState2.fromServer(action.state);
+            const serverPlaybackState = createPlaybackStateFromServer(action.state);
             if (requestId) {
                 this.observers.get(action.type)!.fire(requestId, serverPlaybackState);
             } else {
