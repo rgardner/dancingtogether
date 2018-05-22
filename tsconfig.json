@@ -2,11 +2,12 @@
     "compilerOptions": {
         "allowJs": true,
         "allowSyntheticDefaultImports": true,
+        "module": "commonjs",
+        "sourceMap": true,
         "strict": true,
         "target": "es2016"
     },
     "files": [
-        "station/js/station.ts",
-        "station/js/station2.ts"
+        "assets/js/station.ts",
     ]
 }

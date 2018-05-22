@@ -3,7 +3,7 @@ ENV PYTHONUNBUFFERED 1
 
 RUN curl -sL https://deb.nodesource.com/setup_10.x | bash -
 RUN apt-get install -y nodejs
-RUN npm install -g typescript
+RUN npm install -g webpack webpack-bundle-tracker typescript ts-loader
 
 RUN set -ex && mkdir /app
 WORKDIR /app

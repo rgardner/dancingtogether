@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'bootstrap4',
     'channels',
     'compressor',
+    'webpack_loader',
     # Project Apps
     'main',
     'radio',
@@ -134,6 +135,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
+    os.path.join(BASE_DIR, 'assets'),
 ]
 
 STATICFILES_FINDERS = (
@@ -142,6 +144,13 @@ STATICFILES_FINDERS = (
     # other finders..
     'compressor.finders.CompressorFinder',
 )
+
+WEBPACK_LOADER = {
+    'DEFAULT': {
+        'BUNDLE_DIR_NAME': 'bundles/',
+        'STATS_FILE': os.path.join(BASE_DIR, 'webpack-stats.json'),
+    },
+}
 
 COMPRESS_OFFLINE = not DEBUG
 TSC_COMPILER = os.path.join(BASE_DIR, 'my-tsc')

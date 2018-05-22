@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+echo "-----> Generating production bundles"
+npm run build-production
+
+echo

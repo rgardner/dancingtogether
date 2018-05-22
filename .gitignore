@@ -8,7 +8,13 @@ staticfiles
 ## Pytest
 .pytest_cache
 
-# Node
+# Frontend
+assets/bundles
+assets/dist
+webpack-stats.json
+webpack-stats-prod.json
+
+## Node
 node_modules
 
 # Dancing Together

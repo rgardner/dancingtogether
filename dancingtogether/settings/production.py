@@ -1,5 +1,15 @@
 from .base import *
 
+# Webpack
+
+if not DEBUG:
+    WEBPACK_LOADER['DEFAULT'].update({
+        'BUNDLE_DIR_NAME':
+        'dist/',
+        'STATS_FILE':
+        os.path.join(BASE_DIR, 'webpack-stats-prod.json'),
+    })
+
 # Channel layer definitions
 # http://channels.readthedocs.io/en/latest/topics/channel_layers.html
 
