@@ -1,4 +1,4 @@
-export class PlaybackState2 {
+export class PlaybackState {
     constructor(public context_uri: string,
         public current_track_uri: string, public paused: boolean,
         public raw_position_ms: number, public sample_time: Date,
@@ -16,7 +16,7 @@ export interface MusicPlayer {
 
     on(eventName: string, cb: (...args: any[]) => void): void;
 
-    getCurrentState(): Promise<PlaybackState2 | null>;
+    getCurrentState(): Promise<PlaybackState | null>;
 
     getVolume(): Promise<number>;
     setVolume(value: number): Promise<void>;

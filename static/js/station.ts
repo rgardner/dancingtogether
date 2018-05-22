@@ -1,6 +1,6 @@
 import * as $ from 'jquery';
 import { wait } from './util';
-import { MusicPlayer, PlaybackState2 } from './music_player';
+import { MusicPlayer, PlaybackState } from './music_player';
 import { WebSocketBridge, WebSocketListenCallback } from './websocket_bridge';
 import { ViewManager } from './station_view';
 
@@ -30,7 +30,7 @@ interface PongResponse {
 }
 
 function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
-    return new PlaybackState2(
+    return new PlaybackState(
         <string>state.context.uri,
         state.track_window.current_track.uri,
         state.paused,
@@ -47,7 +47,7 @@ function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
 }
 
 function createPlaybackStateFromServer(state: any) {
-    return new PlaybackState2(
+    return new PlaybackState(
         state.context_uri,
         state.current_track_uri,
         state.paused,
@@ -57,10 +57,10 @@ function createPlaybackStateFromServer(state: any) {
 }
 
 window.onSpotifyWebPlaybackSDKReady = () => {
-    new StationApp2();
+    new StationApp();
 };
 
-export class StationApp2 {
+export class StationApp {
     readonly stationManager: StationManager;
 
     constructor() {
@@ -69,8 +69,8 @@ export class StationApp2 {
         this.stationManager = new StationManager(
             SERVER_DATA.userIsDJ,
             SERVER_DATA.userIsAdmin,
-            new StationServer2(SERVER_DATA.stationId, webSocketBridge),
-            new StationMusicPlayer2(musicPlayer));
+            new StationServer(SERVER_DATA.stationId, webSocketBridge),
+            new StationMusicPlayer(musicPlayer));
     }
 }
 
@@ -102,7 +102,7 @@ class SpotifyMusicPlayer implements MusicPlayer {
         return this.impl.on(eventName, cb);
     }
 
-    getCurrentState(): Promise<PlaybackState2 | null> {
+    getCurrentState(): Promise<PlaybackState | null> {
         return this.impl.getCurrentState().then(state => {
             return (state ? createPlaybackStateFromSpotify(state) : null);
         });
@@ -129,7 +129,7 @@ export class StationManager {
     heartbeatIntervalId?: number;
     viewManager: ViewManager;
 
-    constructor(userIsDJ: boolean, userIsAdmin: boolean, private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
+    constructor(userIsDJ: boolean, userIsAdmin: boolean, private server: StationServer, private musicPlayer: StationMusicPlayer) {
         this.viewManager = new ViewManager(userIsDJ, userIsAdmin);
         this.bindMusicPlayerActions();
         this.bindServerActions();
@@ -178,7 +178,7 @@ export class StationManager {
             console.error(`${error}: ${message}`);
         });
 
-        this.server.on('station_state_change', (serverState: PlaybackState2) => {
+        this.server.on('station_state_change', (serverState: PlaybackState) => {
             this.taskExecutor.push(() => this.applyServerState(serverState));
         });
     }
@@ -216,7 +216,7 @@ export class StationManager {
         }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
-    updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
+    updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
                 if (!state || (this.clientEtag && (state.sample_time <= this.clientEtag))) {
@@ -225,7 +225,7 @@ export class StationManager {
 
                 return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
                     .then(serverState => {
-                        return this.applyServerState(<PlaybackState2>serverState);
+                        return this.applyServerState(<PlaybackState>serverState);
                     })
                     .catch(() => {
                         return this.syncServerPlaybackState(playbackState);
@@ -233,7 +233,7 @@ export class StationManager {
             });
     }
 
-    syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
+    syncServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
                 if ((!state && this.clientEtag) || (state && (this.clientEtag && (state.sample_time <= this.clientEtag)))) {
@@ -242,7 +242,7 @@ export class StationManager {
 
                 return Promise.race([this.server.sendSyncRequest(state || undefined), timeout(5000)])
                     .then(serverState => {
-                        return this.applyServerState(<PlaybackState2>serverState);
+                        return this.applyServerState(<PlaybackState>serverState);
                     })
                     .catch(() => {
                         return this.syncServerPlaybackState(playbackState);
@@ -258,7 +258,7 @@ export class StationManager {
             .catch(console.error);
     }
 
-    applyServerState(serverState: PlaybackState2): Promise<void> {
+    applyServerState(serverState: PlaybackState): Promise<void> {
         if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
             return Promise.resolve();
         }
@@ -311,7 +311,7 @@ export class StationManager {
             });
     }
 
-    currentTrackReady(expectedState: PlaybackState2): Promise<boolean> {
+    currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
         return this.musicPlayer.getCurrentState().then(state => {
             if (state) {
                 return state.current_track_uri === expectedState.current_track_uri;
@@ -339,7 +339,7 @@ export class StationManager {
         }
     }
 
-    getAdjustedPlaybackPosition(serverState: PlaybackState2): number {
+    getAdjustedPlaybackPosition(serverState: PlaybackState): number {
         let position = serverState.raw_position_ms;
         if (!serverState.paused) {
             const serverDelay = this.getMedianServerOneWayTime();
@@ -350,7 +350,7 @@ export class StationManager {
     }
 }
 
-export class StationServer2 {
+export class StationServer {
     requestId: number = 0;
     observers: Map<string, JQueryCallback> = new Map([
         ['error', $.Callbacks()],
@@ -373,7 +373,7 @@ export class StationServer2 {
     }
 
     // Public events
-    // station_state_change: (state: PlaybackState2)
+    // station_state_change: (state: PlaybackState)
     // error: (error: string, message: string)
     //     client_error
     //     precondition_failed
@@ -428,10 +428,10 @@ export class StationServer2 {
         });
     }
 
-    sendPlaybackState(playbackState: PlaybackState2, serverEtag?: Date): Promise<PlaybackState2> {
+    sendPlaybackState(playbackState: PlaybackState, serverEtag?: Date): Promise<PlaybackState> {
         return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
-            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState2) => {
+            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState) => {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
@@ -443,10 +443,10 @@ export class StationServer2 {
         });
     }
 
-    sendSyncRequest(playbackState?: PlaybackState2): Promise<PlaybackState2> {
+    sendSyncRequest(playbackState?: PlaybackState): Promise<PlaybackState> {
         return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
-            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState2) => {
+            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState) => {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
@@ -477,7 +477,7 @@ export class StationServer2 {
     }
 }
 
-export class StationMusicPlayer2 {
+export class StationMusicPlayer {
     isReady: boolean = false;
     deviceId?: string;
     volume: number = 0.8;
@@ -512,7 +512,7 @@ export class StationMusicPlayer2 {
         });
     }
 
-    getCurrentState(): Promise<PlaybackState2 | null> { return this.musicPlayer.getCurrentState(); }
+    getCurrentState(): Promise<PlaybackState | null> { return this.musicPlayer.getCurrentState(); }
 
     static getCachedVolume() {
         const value = localStorage.getItem('musicVolume');

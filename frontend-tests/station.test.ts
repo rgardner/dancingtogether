@@ -1,8 +1,8 @@
 import * as $ from 'jquery';
-import { MusicPlayer, PlaybackState2 } from '../static/js/music_player';
+import { MusicPlayer, PlaybackState } from '../static/js/music_player';
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
-    SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer2, StationServer2,
+    SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer, StationServer,
 } from '../static/js/station'
 
 const MockStationId: number = 1;
@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 class MockMusicPlayer implements MusicPlayer {
-    public playbackState: PlaybackState2 = new PlaybackState2('', '', true, 0, new Date(), null);
+    public playbackState = new PlaybackState('', '', true, 0, new Date(), null);
     observers: Map<string, JQueryCallback> = new Map();
 
     // MusicPlayer
@@ -44,7 +44,7 @@ class MockMusicPlayer implements MusicPlayer {
         callbacks.add(cb);
     }
 
-    getCurrentState(): Promise<PlaybackState2> {
+    getCurrentState(): Promise<PlaybackState> {
         return Promise.resolve(this.playbackState);
     }
 
@@ -115,7 +115,7 @@ class MockWebSocketBridge implements WebSocketBridge {
 test('station server can join a station', async () => {
     expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual({
@@ -135,7 +135,7 @@ test('station server can join a station', async () => {
 test('station server can send a ping', async () => {
     expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual(expect.objectContaining({
@@ -153,9 +153,9 @@ test('station server can send a ping', async () => {
 test('station server can send a playback state', async () => {
     expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
-    const mockPlaybackState = new PlaybackState2(
+    const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
         0 /*raw_position_ms*/, new Date(), null);
     const mockServerEtag = MockServerEtag1;
@@ -184,9 +184,9 @@ test('station server can send a playback state', async () => {
 test('station server can resync the playback state', async () => {
     expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
-    const mockPlaybackState = new PlaybackState2(
+    const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
         0 /*raw_position_ms*/, new Date(), null);
     mockWebSocketBridge.receiveData().then(data => {
@@ -213,9 +213,9 @@ test('station server can resync the playback state', async () => {
 test('station server fires notifications for station state changes', async () => {
     expect.assertions(1);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
-    const mockPlaybackState = new PlaybackState2(
+    const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
         0 /*raw_position_ms*/, new Date(), MockServerEtag1);
 
@@ -232,7 +232,7 @@ test('station server fires notifications for station state changes', async () =>
 test('station server fires notifications for errors', async () => {
     expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer2(MockStationId, mockWebSocketBridge);
+    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
     const mockError = { error: 'precondition_failed', message: 'out of sync' };
     stationServer.on('error', (error, message) => {
@@ -245,13 +245,13 @@ test('station server fires notifications for errors', async () => {
 
 test('station manager correctly adjusts playback state when server is paused', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
-    let stationMusicPlayer = new StationMusicPlayer2(mockMusicPlayer);
+    let stationMusicPlayer = new StationMusicPlayer(mockMusicPlayer);
     let stationManager = new StationManager(
         false, false,
-        new StationServer2(MockStationId, new MockWebSocketBridge()),
+        new StationServer(MockStationId, new MockWebSocketBridge()),
         stationMusicPlayer);
 
-    const mockPlaybackState = new PlaybackState2(
+    const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
         0 /*raw_position_ms*/, new Date(), MockServerEtag1);
 
@@ -272,10 +272,10 @@ test('station manager correctly adjusts playback state when server is playing', 
     let mockMusicPlayer = new MockMusicPlayer();
     let stationManager = new StationManager(
         false, false,
-        new StationServer2(MockStationId, new MockWebSocketBridge()),
-        new StationMusicPlayer2(mockMusicPlayer));
+        new StationServer(MockStationId, new MockWebSocketBridge()),
+        new StationMusicPlayer(mockMusicPlayer));
 
-    const mockPlaybackState = new PlaybackState2(
+    const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, false /*paused*/,
         10000 /*raw_position_ms*/, new Date(), MockServerEtag1);
 

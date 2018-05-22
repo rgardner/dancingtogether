@@ -1,6 +1,6 @@
 import * as $ from 'jquery';
 import { wait } from './util';
-import { PlaybackState2 } from './music_player';
+import { PlaybackState } from './music_player';
 
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
@@ -20,7 +20,7 @@ export class ViewManager {
 class StationView {
     private state = new class {
         stationName = '';
-        playbackState?: PlaybackState2;
+        playbackState?: PlaybackState;
         isConnected = false;
         errorMessage?: string;
     };
