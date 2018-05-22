@@ -1,161 +1,396 @@
-'use strict';
+import * as $ from 'jquery';
+import { wait } from './util';
+import { MusicPlayer, PlaybackState2 } from './music_player';
+import { WebSocketBridge, WebSocketListenCallback } from './websocket_bridge';
+import { ViewManager } from './station_view';
 
+// @ts-ignore: No typings for Django Channels WebSocketBridge
 declare var channels;
 
+interface ServerData {
+    userIsDJ: boolean;
+    userIsAdmin: boolean;
+    accessToken: string;
+    stationId: number;
+}
+
+declare var SERVER_DATA: ServerData;
+
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
-const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
-const MAX_SEEK_ERROR_MS = 2000;
+export const MAX_SEEK_ERROR_MS = 2000;
+export const SEEK_OVERCORRECT_MS = 2000;
+const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
-class StationApp { // eslint-disable-line no-unused-vars
-    readonly musicPlayer: StationMusicPlayer;
-    readonly stationServer: StationServer;
-    readonly view: StationView;
+interface JoinResponse {
+    stationName: string;
+}
 
-    constructor(userIsDJ, userIsAdmin, accessToken, stationId) {
-        this.musicPlayer = new StationMusicPlayer('Dancing Together', accessToken);
-        this.stationServer = new StationServer(stationId, this.musicPlayer);
-        this.view = new StationView(userIsDJ, userIsAdmin, this.musicPlayer, this.stationServer);
+interface PongResponse {
+    startTime: Date;
+}
+
+function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
+    return new PlaybackState2(
+        <string>state.context.uri,
+        state.track_window.current_track.uri,
+        state.paused,
+        state.position,
+        // @ts-ignore: Spotify.PlaybackState does have timestamp
+        new Date(state.timestamp),
+        undefined,
+        state.track_window.current_track.album.images[0].url,
+        state.track_window.current_track.album.name,
+        state.track_window.current_track.name,
+        state.track_window.current_track.artists[0].name,
+        state.duration,
+    );
+}
+
+function createPlaybackStateFromServer(state: any) {
+    return new PlaybackState2(
+        state.context_uri,
+        state.current_track_uri,
+        state.paused,
+        state.raw_position_ms,
+        new Date(state.sample_time),
+        new Date(state.etag));
+}
+
+window.onSpotifyWebPlaybackSDKReady = () => {
+    new StationApp2();
+};
+
+export class StationApp2 {
+    readonly stationManager: StationManager;
+
+    constructor() {
+        let webSocketBridge = new ChannelWebSocketBridge();
+        let musicPlayer = new SpotifyMusicPlayer('Dancing Together', SERVER_DATA.accessToken);
+        this.stationManager = new StationManager(
+            SERVER_DATA.userIsDJ,
+            SERVER_DATA.userIsAdmin,
+            new StationServer2(SERVER_DATA.stationId, webSocketBridge),
+            new StationMusicPlayer2(musicPlayer));
     }
 }
 
-interface MusicPlayer {
-    getCurrentState(): Promise<Spotify.PlaybackState>;
-
-    getVolume(): Promise<number>;
-    setVolume(value: number): Promise<void>;
-
-    pause(): Promise<void>;
-    resume(): Promise<void>;
-    togglePlay(): Promise<void>;
-
-    seek(positionMS: number): Promise<void>;
-
-    previousTrack(): Promise<void>;
-    nextTrack(): Promise<void>;
+class ChannelWebSocketBridge implements WebSocketBridge {
+    impl: any = new channels.WebSocketBridge();
+    connect(path: string) { this.impl.connect(path); }
+    listen(callback: WebSocketListenCallback) { this.impl.listen(callback); }
+    send(data: any) { this.impl.send(data); }
 }
 
-interface ListenCallback {
-    (action, stream);
+class SpotifyMusicPlayer implements MusicPlayer {
+    impl: Spotify.SpotifyPlayer;
+
+    constructor(clientName: string, private accessToken: string) {
+        this.impl = new Spotify.Player({
+            name: clientName,
+            getOAuthToken: cb => { cb(this.getAccessToken()); },
+            volume: 0.8, // TODO: use cached volume
+        });
+    }
+
+    getAccessToken(): string { return this.accessToken; }
+    setAccessToken(value: string) { this.accessToken = value; }
+
+    connect(): Promise<boolean> { return this.impl.connect(); }
+
+    on(eventName: string, cb: (_args: any[]) => void) {
+        // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
+        return this.impl.on(eventName, cb);
+    }
+
+    getCurrentState(): Promise<PlaybackState2 | null> {
+        return this.impl.getCurrentState().then(state => {
+            return (state ? createPlaybackStateFromSpotify(state) : null);
+        });
+    }
+
+    getVolume(): Promise<number> { return this.impl.getVolume(); }
+    setVolume(value: number): Promise<void> { return this.impl.setVolume(value); }
+
+    pause(): Promise<void> { return this.impl.pause(); }
+    resume(): Promise<void> { return this.impl.resume(); }
+    togglePlay(): Promise<void> { return this.impl.togglePlay(); }
+
+    seek(positionMS: number): Promise<void> { return this.impl.seek(positionMS); }
+
+    previousTrack(): Promise<void> { return this.impl.previousTrack(); }
+    nextTrack(): Promise<void> { return this.impl.nextTrack(); }
 }
 
-interface WebSocketBridge {
-    socket: WebSocket;
-    connect(path: string);
-    listen(callback: ListenCallback);
-}
+export class StationManager {
+    taskExecutor = new TaskExecutor();
+    serverPings = new CircularArray2<number>(5);
+    clientEtag?: Date;
+    serverEtag?: Date;
+    heartbeatIntervalId?: number;
+    viewManager: ViewManager;
 
-class StationMusicPlayer {
-    isReady: boolean = false;
-    player?: Spotify.SpotifyPlayer = null;
-    deviceId?: string = null;
-    storedSpotifyCallbacks: Array<[string, Function]> = [];
+    constructor(userIsDJ: boolean, userIsAdmin: boolean, private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
+        this.viewManager = new ViewManager(userIsDJ, userIsAdmin);
+        this.bindMusicPlayerActions();
+        this.bindServerActions();
+        this.bindViewActions();
+    }
 
-    constructor(client_name, public accessToken: string) {
-        window.onSpotifyWebPlaybackSDKReady = () => {
-            this.player = new Spotify.Player({
-                name: client_name,
-                getOAuthToken: cb => { cb(this.getAccessToken()); },
-                volume: MusicVolume.getCachedVolume(),
+    bindMusicPlayerActions() {
+        this.musicPlayer.on('ready', ({ device_id }) => {
+            this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
+            this.taskExecutor.push(() => this.calculatePing());
+            this.taskExecutor.push(() => this.syncServerPlaybackState());
+            this.enableHeartbeat();
+
+            this.viewManager.stationView.setState(() => ({ isConnected: true }));
+            this.viewManager.listenerView.setState(() => ({ isReady: true }));
+            this.musicPlayer.getVolume().then(volume => {
+                this.viewManager.listenerView.setState(() => ({ volume: volume }));
             });
+            this.viewManager.djView.setState(() => ({ isReady: true }));
+        });
 
-            this.bindSpotifyActions();
-            this.player.connect();
-        };
+        this.musicPlayer.on('initialization_error', ({ message }) => {
+            this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+        });
+
+        this.musicPlayer.on('account_error', ({ message }) => {
+            this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+        });
+
+        this.musicPlayer.on('player_state_changed', state => {
+            if (state) {
+                const clientState = createPlaybackStateFromSpotify(state);
+                if (this.clientEtag && (clientState.sample_time <= this.clientEtag)) {
+                    return;
+                }
+
+                this.viewManager.stationView.setState(() => ({ playbackState: clientState }));
+                this.viewManager.musicPositionView.setState(() => ({ paused: clientState.paused, positionMS: clientState.raw_position_ms }));
+                this.viewManager.djView.setState(() => ({ playbackState: state }));
+            }
+        });
     }
 
-    on(eventName: string, cb: Function) {
-        if (this.player) {
-            // @ts-ignore
-            this.player.on(eventName, cb);
+    bindServerActions() {
+        this.server.on('error', (error: string, message: string) => {
+            console.error(`${error}: ${message}`);
+        });
+
+        this.server.on('station_state_change', (serverState: PlaybackState2) => {
+            this.taskExecutor.push(() => this.applyServerState(serverState));
+        });
+    }
+
+    bindViewActions() {
+        this.viewManager.listenerView.on('muteButtonClick', () => {
+            this.musicPlayer.muteUnmuteVolume().then(newVolume => {
+                this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
+            });
+        });
+
+        this.viewManager.listenerView.on('volumeSliderChange', newVolume => {
+            this.musicPlayer.setVolume(<number>newVolume).then(() => {
+                this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
+            });
+        });
+
+        this.viewManager.djView.on('playPauseButtonClick', () => {
+            this.musicPlayer.togglePlay();
+        });
+
+        this.viewManager.djView.on('previousTrackButtonClick', () => {
+            this.musicPlayer.previousTrack();
+        });
+
+        this.viewManager.djView.on('nextTrackButtonClick', () => {
+            this.musicPlayer.nextTrack();
+        });
+    }
+
+    enableHeartbeat() {
+        this.heartbeatIntervalId = window.setInterval(() => {
+            this.taskExecutor.push(() => this.calculatePing());
+            this.taskExecutor.push(() => this.updateServerPlaybackState());
+        }, SERVER_HEARTBEAT_INTERVAL_MS);
+    }
+
+    updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
+        return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
+            .then(state => {
+                if (!state || (this.clientEtag && (state.sample_time <= this.clientEtag))) {
+                    return Promise.resolve();
+                }
+
+                return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
+                    .then(serverState => {
+                        return this.applyServerState(<PlaybackState2>serverState);
+                    })
+                    .catch(() => {
+                        return this.syncServerPlaybackState(playbackState);
+                    });
+            });
+    }
+
+    syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
+        return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
+            .then(state => {
+                if ((!state && this.clientEtag) || (state && (this.clientEtag && (state.sample_time <= this.clientEtag)))) {
+                    return Promise.resolve();
+                }
+
+                return Promise.race([this.server.sendSyncRequest(state || undefined), timeout(5000)])
+                    .then(serverState => {
+                        return this.applyServerState(<PlaybackState2>serverState);
+                    })
+                    .catch(() => {
+                        return this.syncServerPlaybackState(playbackState);
+                    });
+            });
+    }
+
+    calculatePing(): Promise<void> {
+        return Promise.race([this.server.sendPingRequest(), timeout(5000)])
+            .then((pong: PongResponse) => {
+                this.serverPings.push((new Date()).getTime() - pong.startTime.getTime());
+            })
+            .catch(console.error);
+    }
+
+    applyServerState(serverState: PlaybackState2): Promise<void> {
+        if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
+            return Promise.resolve();
+        }
+
+        return Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)])
+            .then(() => this.musicPlayer.getCurrentState())
+            .then(clientState => {
+                if (!clientState) {
+                    return Promise.reject('Spotify not ready');
+                }
+
+                if (serverState.paused) {
+                    const pauseIfNeeded = (clientState.paused ? Promise.resolve() : this.musicPlayer.pause());
+                    return pauseIfNeeded.then(() => this.musicPlayer.seek(serverState.raw_position_ms));
+                } else {
+                    const localPosition = clientState.raw_position_ms;
+                    const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                    if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
+                        const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
+                        return this.musicPlayer.seek(newLocalPosition)
+                            .then(() => Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]))
+                            .then(() => {
+                                const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                                if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
+                                    return this.musicPlayer.freeze(localPosition - serverPosition);
+                                } else {
+                                    return this.musicPlayer.resume();
+                                }
+                            });
+                    } else if (clientState.paused) {
+                        return this.musicPlayer.resume();
+                    } else {
+                        return Promise.resolve();
+                    }
+                }
+            })
+            .then(() => this.musicPlayer.getCurrentState())
+            .then(clientState => {
+                if (!clientState) {
+                    return Promise.reject('Spotify not ready');
+                }
+
+                this.clientEtag = clientState.sample_time;
+                this.serverEtag = serverState.etag;
+                return Promise.resolve();
+            })
+            .catch((e: any) => {
+                console.error(e);
+                this.taskExecutor.push(() => this.syncServerPlaybackState());
+            });
+    }
+
+    currentTrackReady(expectedState: PlaybackState2): Promise<boolean> {
+        return this.musicPlayer.getCurrentState().then(state => {
+            if (state) {
+                return state.current_track_uri === expectedState.current_track_uri;
+            } else {
+                return false;
+            }
+        });
+    }
+
+    currentPositionReady(expectedPosition: number): Promise<boolean> {
+        return this.musicPlayer.getCurrentState().then(state => {
+            if (state) {
+                return state.raw_position_ms >= expectedPosition;
+            } else {
+                return false;
+            }
+        });
+    }
+
+    getMedianServerOneWayTime(): number {
+        if (this.serverPings.length === 0) {
+            return DEFAULT_SERVER_ONE_WAY_TIME_MS;
         } else {
-            this.storedSpotifyCallbacks.push([eventName, cb]);
+            return (median(this.serverPings.entries()) / 2);
         }
     }
 
-    bindSpotifyActions() {
-        this.storedSpotifyCallbacks.forEach(nameCBPair => {
-            // @ts-ignore
-            this.player.on(nameCBPair[0], nameCBPair[1]);
-        });
+    getAdjustedPlaybackPosition(serverState: PlaybackState2): number {
+        let position = serverState.raw_position_ms;
+        if (!serverState.paused) {
+            const serverDelay = this.getMedianServerOneWayTime();
+            position += ((new Date()).getTime() - (serverState.sample_time.getTime() + serverDelay));
+        }
 
-        this.player.on('ready', ({ device_id }) => {
-            this.deviceId = device_id;
-            this.isReady = true;
-        });
-
-        this.player.on('initialization_error', () => {
-            this.isReady = false;
-        });
-
-        this.player.on('authentication_error', () => {
-            this.isReady = false;
-        });
-
-        this.player.on('account_error', () => {
-            this.isReady = false;
-        });
+        return position;
     }
-
-    getAccessToken(): string {
-        return this.accessToken;
-    }
-
-    setAccessToken(accessToken: string) {
-        this.accessToken = accessToken;
-    }
-
-    getCurrentState(): Promise<Spotify.PlaybackState> { return this.player.getCurrentState(); }
-
-    getVolume(): Promise<number> { return this.player.getVolume(); }
-    setVolume(value: number): Promise<void> { return this.player.setVolume(value); }
-
-    pause(): Promise<void> { return this.player.pause(); }
-    resume(): Promise<void> { return this.player.resume(); }
-    togglePlay(): Promise<void> { return this.player.togglePlay(); }
-
-    freeze(duration: number): Promise<void> {
-        return this.player.pause().then(() => wait(duration)).then(() => this.player.resume());
-    }
-
-    seek(positionMS): Promise<void> { return this.player.seek(positionMS); }
-
-    previousTrack(): Promise<void> { return this.player.previousTrack(); }
-    nextTrack(): Promise<void> { return this.player.nextTrack(); }
 }
 
-// Public Events
-// 'ready' -> Server is now ready to accept requests
-// 'listener_change' -> The station's listeners have changed
-// 'error' -> An error occurred.
-class StationServer {
-    webSocketBridge?: any = null;
-    observers: Map<string, JQueryCallback>;
-    serverPings: CircularArray = new CircularArray(5);
-    heartbeatIntervalId?: number = null;
+export class StationServer2 {
     requestId: number = 0;
-    clientPlaybackStateUpdateInProgress: boolean = false;
-    clientEtag?: Date = null;
-    serverEtag?: string = null;
-    initialStateReady: boolean = false;
+    observers: Map<string, JQueryCallback> = new Map([
+        ['error', $.Callbacks()],
+        ['join', $.Callbacks()],
+        ['pong', $.Callbacks()],
+        ['ensure_playback_state', $.Callbacks()],
+        ['station_state_change', $.Callbacks()],
+    ]);
 
-    constructor(readonly stationId: number, readonly musicPlayer: StationMusicPlayer) {
-        this.bindSpotifyActions();
-        this.observers = new Map([
-            ['ready', $.Callbacks()],
-            ['listener_change', $.Callbacks()],
-            ['error', $.Callbacks()],
-            // Private observers
-            ['get_listeners_result', $.Callbacks()],
-            ['send_listener_invite_result', $.Callbacks()],
-        ]);
+    constructor(private stationId: number, private webSocketBridge: WebSocketBridge) {
+        // Correctly decide between ws:// and wss://
+        const wsScheme = window.location.protocol == 'https:' ? 'wss' : 'ws';
+        const wsPath = wsScheme + '://' + window.location.host + '/station/stream/';
+        this.webSocketBridge.connect(wsPath);
+        this.bindWebSocketBridgeActions();
     }
 
+    bindWebSocketBridgeActions() {
+        this.webSocketBridge.listen(action => { this.onMessage(action); });
+    }
+
+    // Public events
+    // station_state_change: (state: PlaybackState2)
+    // error: (error: string, message: string)
+    //     client_error
+    //     precondition_failed
     on(eventName: string, cb: Function) {
-        this.observers.get(eventName).add(cb);
+        this.observers.get(eventName)!.add(cb);
     }
 
-    onOnce(eventName: string, thisRequestId: number, cb: Function) {
-        const cbWrapper = (requestId, ...args) => {
+    onOnce(eventName: string, cb: Function) {
+        const cbWrapper = (...args: any[]) => {
+            this.removeListener(eventName, cbWrapper);
+            cb(...args);
+        };
+        this.on(eventName, cbWrapper);
+    }
+
+    onRequest(eventName: string, thisRequestId: number, cb: Function) {
+        const cbWrapper = (requestId: number, ...args: any[]) => {
             if (requestId === thisRequestId) {
                 this.removeListener(eventName, cbWrapper);
                 cb(...args);
@@ -165,761 +400,190 @@ class StationServer {
     }
 
     removeListener(eventName: string, cb: Function) {
-        this.observers.get(eventName).remove(cb);
+        this.observers.get(eventName)!.remove(cb);
     }
 
-    bindSpotifyActions() {
-        this.musicPlayer.on('ready', () => {
-            this.connect();
+    sendJoinRequest(deviceId: string): Promise<JoinResponse> {
+        return new Promise(resolve => {
+            this.onOnce('join', (stationName: string) => {
+                resolve({ stationName });
+            });
+            this.webSocketBridge.send({
+                'command': 'join',
+                'station': this.stationId,
+                'device_id': deviceId,
+            });
+        });
+    }
+
+    sendPingRequest(): Promise<PongResponse> {
+        return new Promise(resolve => {
+            this.onOnce('pong', (pongResponse: PongResponse) => {
+                resolve(pongResponse);
+            });
+            this.webSocketBridge.send({
+                'command': 'ping',
+                'start_time': new Date(),
+            });
+        });
+    }
+
+    sendPlaybackState(playbackState: PlaybackState2, serverEtag?: Date): Promise<PlaybackState2> {
+        return new Promise(resolve => {
+            const thisRequestId = ++this.requestId;
+            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState2) => {
+                resolve(serverPlaybackState);
+            });
+            this.webSocketBridge.send({
+                'command': 'player_state_change',
+                'request_id': thisRequestId,
+                'state': playbackState,
+                'etag': serverEtag,
+            });
+        });
+    }
+
+    sendSyncRequest(playbackState?: PlaybackState2): Promise<PlaybackState2> {
+        return new Promise(resolve => {
+            const thisRequestId = ++this.requestId;
+            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState2) => {
+                resolve(serverPlaybackState);
+            });
+            this.webSocketBridge.send({
+                'command': 'get_playback_state',
+                'request_id': thisRequestId,
+                'state': playbackState,
+            });
+        });
+    }
+
+    onMessage(action: any) {
+        if (action.error) {
+            this.observers.get('error')!.fire(action.error, action.message);
+        } else if (action.join) {
+            this.observers.get('join')!.fire(action.join);
+        } else if (action.type === 'ensure_playback_state') {
+            const requestId = action.request_id;
+            const serverPlaybackState = createPlaybackStateFromServer(action.state);
+            if (requestId) {
+                this.observers.get(action.type)!.fire(requestId, serverPlaybackState);
+            } else {
+                this.observers.get('station_state_change')!.fire(serverPlaybackState);
+            }
+        } else if (action.type === 'pong') {
+            const pong: PongResponse = { startTime: new Date(action.start_time) };
+            this.observers.get(action.type)!.fire(pong);
+        }
+    }
+}
+
+export class StationMusicPlayer2 {
+    isReady: boolean = false;
+    deviceId?: string;
+    volume: number = 0.8;
+    volumeBeforeMute: number;
+
+    constructor(private musicPlayer: MusicPlayer) {
+        this.volumeBeforeMute = this.volume;
+        this.bindMusicPlayerActions();
+        this.musicPlayer.connect();
+    }
+
+    on(eventName: string, cb: (...args: any[]) => void) {
+        this.musicPlayer.on(eventName, cb);
+    }
+
+    bindMusicPlayerActions() {
+        this.musicPlayer.on('ready', ({ device_id }) => {
+            this.deviceId = device_id;
+            this.isReady = true;
         });
 
-        this.musicPlayer.on('player_state_changed', state => {
-            if (state) {
-                this.sendPlayerState(state);
-            }
+        this.musicPlayer.on('initialization_error', () => {
+            this.isReady = false;
         });
 
         this.musicPlayer.on('authentication_error', () => {
-            this.refreshAccessToken();
+            this.isReady = false;
+        });
+
+        this.musicPlayer.on('account_error', () => {
+            this.isReady = false;
         });
     }
 
-    bindWebSocketBridgeActions() {
-        this.webSocketBridge.socket.onopen = () => { this.onOpen(); };
-        this.webSocketBridge.listen(action => { this.onMessage(action); });
-    }
+    getCurrentState(): Promise<PlaybackState2 | null> { return this.musicPlayer.getCurrentState(); }
 
-    connect() {
-        // Correctly decide between ws:// and wss://
-        const wsScheme = window.location.protocol == 'https:' ? 'wss' : 'ws';
-        const wsPath = wsScheme + '://' + window.location.host + '/station/stream/';
-        this.webSocketBridge = new channels.WebSocketBridge();
-        this.webSocketBridge.connect(wsPath);
-        this.bindWebSocketBridgeActions();
-    }
-
-    enableHeartbeat() {
-        this.heartbeatIntervalId = window.setInterval(() => {
-            if (!this.clientPlaybackStateUpdateInProgress) {
-                this.sendPing();
-                this.musicPlayer.player.getCurrentState().then(state => {
-                    if (state) {
-                        this.sendPlayerState(state);
-                    }
-                });
-            }
-        }, SERVER_HEARTBEAT_INTERVAL_MS);
-    }
-
-    disableHeartbeat() {
-        window.clearInterval(this.heartbeatIntervalId);
-        this.heartbeatIntervalId = null;
-    }
-
-    // Socket Callbacks
-
-    onOpen() {
-        this.webSocketBridge.send({
-            'command': 'join',
-            'station': this.stationId,
-            'device_id': this.musicPlayer.deviceId
-        });
-    }
-
-    onMessage(action) {
-        if (action.error) {
-            this.syncPlaybackState();
-            this.observers.get('error').fire(action.error, action.message);
-        } else if (action.join) {
-            this.enableHeartbeat();
-            this.observers.get('ready').fire(action.join);
-        } else if (action.leave) {
-            $('#station-name').html('');
-            this.disableHeartbeat();
-        } else if (action.type === 'pong') {
-            this.serverPings.push((new Date()).getTime() - new Date(action.start_time).getTime());
-        } else if (action.type === 'ensure_playback_state') {
-            this.ensurePlaybackState(action.state);
-        } else if (action.type === 'access_token_change') {
-            this.musicPlayer.setAccessToken(action.accessToken);
-        } else if (action.type === 'listener_change') {
-            this.observers['listener_change'].fire(action.listener_change_type, action.listener);
-        } else if (action.type === 'get_listeners_result') {
-            this.observers.get(action.type).fire(action.request_id, action.listeners, action.pending_listeners);
-        } else if (action.type === 'send_listener_invite_result') {
-            this.observers.get(action.type).fire(action.request_id, action.result, action.is_new_user);
-        } else {
-            console.error('Unknown message from server: ', action);
-        }
-    }
-
-    sendPing() {
-        this.webSocketBridge.send({
-            'command': 'ping',
-            'start_time': new Date(),
-        });
-    }
-
-    sendPlayerState(state) {
-        if (!this.initialStateReady || this.clientPlaybackStateUpdateInProgress
-            || (this.clientEtag !== null) && (new Date(state.timestamp) < this.clientEtag)) {
-            return;
-        }
-
-        this.webSocketBridge.send({
-            'command': 'player_state_change',
-            'state': PlaybackState.fromSpotify(state),
-            'etag': this.serverEtag || '',
-        });
-    }
-
-    syncPlaybackState() {
-        if (!this.initialStateReady || this.clientPlaybackStateUpdateInProgress) {
-            return;
-        }
-
-        this.musicPlayer.getCurrentState()
-            .then(state => {
-                if (!state) {
-                    return;
-                }
-
-                this.webSocketBridge.send({
-                    'command': 'get_playback_state',
-                    'state': PlaybackState.fromSpotify(state),
-                    'etag': '',
-                });
-            });
-    }
-
-    refreshAccessToken() {
-        this.webSocketBridge.send({
-            'command': 'refresh_access_token'
-        });
-    }
-
-    getListeners() {
-        return new Promise(resolve => {
-            const thisRequestId = ++this.requestId;
-            this.onOnce('get_listeners_result', thisRequestId, (listeners, pendingListeners) => {
-                resolve({ listeners, pendingListeners });
-            });
-
-            this.webSocketBridge.send({
-                'command': 'get_listeners',
-                'request_id': thisRequestId,
-            });
-        });
-    }
-
-    sendListenerInvite(listenerEmail: string) {
-        return new Promise((resolve) => {
-            const thisRequestId = ++this.requestId;
-            this.onOnce('send_listener_invite_result', thisRequestId, (result, isNewUser) => {
-                resolve({ result, isNewUser });
-            });
-
-            this.webSocketBridge.send({
-                'command': 'send_listener_invite',
-                'request_id': thisRequestId,
-                'listener_email': listenerEmail,
-            });
-        });
-    }
-
-    ensurePlaybackState(serverState) {
-        if (this.clientPlaybackStateUpdateInProgress) {
-            return;
-        }
-
-        this.clientPlaybackStateUpdateInProgress = true;
-        const currentTrackReady = () => this.musicPlayer.getCurrentState().then(state => {
-            if (state) {
-                return state.track_window.current_track.uri === serverState.current_track_uri;
-            } else {
-                return false;
-            }
-        });
-        Promise.race([retry(currentTrackReady), timeout(5000)])
-            .then(() => this.musicPlayer.getCurrentState())
-            .then(state => {
-                if (!state) {
-                    return Promise.reject('Spotify not ready');
-                }
-
-                if (serverState.paused) {
-                    const pauseIfNeeded = (state.paused ? Promise.resolve() : this.musicPlayer.pause());
-                    return pauseIfNeeded.then(() => this.musicPlayer.seek(serverState.position));
-                } else {
-                    const localPosition = state.position;
-                    const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                    if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
-                        const newLocalPosition = serverPosition + 2000;
-                        const currentPositionReady = () => this.musicPlayer.getCurrentState().then(state => {
-                            if (state) {
-                                return state.position > newLocalPosition;
-                            } else {
-                                return false;
-                            }
-                        });
-                        return this.musicPlayer.seek(newLocalPosition)
-                            .then(() => Promise.race([retry(currentPositionReady), timeout(5000)]))
-                            .then(() => {
-                                const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                                if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
-                                    return this.musicPlayer.freeze(localPosition - serverPosition);
-                                } else {
-                                    return this.musicPlayer.resume();
-                                }
-                            });
-                    } else if (state.paused) {
-                        return this.musicPlayer.resume();
-                    } else {
-                        return Promise.resolve();
-                    }
-                }
-            })
-            .then(() => this.musicPlayer.getCurrentState())
-            .then(state => {
-                // @ts-ignore
-                this.clientEtag = new Date(state.timestamp);
-                this.serverEtag = serverState.etag;
-                this.initialStateReady = true;
-                this.clientPlaybackStateUpdateInProgress = false;
-            })
-            .catch(e => {
-                console.error(e);
-                this.clientPlaybackStateUpdateInProgress = false;
-                return wait(100).then(() => this.ensurePlaybackState(serverState));
-            });
-    }
-
-    getMedianServerOneWayTime(): number {
-        return ((this.serverPings.length === 0) ? 30 : (median(this.serverPings.entries()) / 2));
-    }
-
-    getAdjustedPlaybackPosition(serverState): number {
-        let position = serverState.raw_position_ms;
-        if (!serverState.paused) {
-            const sampleTime = new Date(serverState.sample_time);
-            const serverDelay = this.getMedianServerOneWayTime();
-            position += ((new Date()).getTime() - (sampleTime.getTime() + serverDelay));
-        }
-
-        return position;
-    }
-}
-
-// View Management
-
-class StationView {
-    private state = new class {
-        playbackState?: Spotify.PlaybackState = null;
-        isConnected: boolean = false;
-        errorMessage?: string = null;
-    };
-    readonly musicPositionView: MusicPositionView;
-    readonly listenerView: StationListenerView;
-    readonly djView: StationDJView;
-    readonly adminView: StationAdminView;
-
-    constructor(userIsDJ, userIsAdmin, readonly musicPlayer: StationMusicPlayer, readonly stationServer: StationServer) {
-        this.musicPositionView = new MusicPositionView(musicPlayer);
-        this.listenerView = new StationListenerView(musicPlayer);
-        this.djView = new StationDJView(userIsDJ, musicPlayer);
-        this.adminView = new StationAdminView(userIsAdmin, stationServer);
-        this.bindSpotifyActions();
-        this.render();
-    }
-
-    bindSpotifyActions() {
-        this.musicPlayer.on('ready', () => {
-            this.setState(() => ({ isConnected: true }));
-        });
-
-        this.musicPlayer.on('initialization_error', ({ message }) => {
-            this.setState(() => ({ isConnected: false, errorMessage: message }));
-        });
-
-        this.musicPlayer.on('account_error', ({ message }) => {
-            this.setState(() => ({ isConnected: false, errorMessage: message }));
-        });
-
-        this.musicPlayer.on('player_state_changed', state => {
-            this.setState(() => ({ playbackState: state }));
-        });
-
-        this.stationServer.on('error', (error, message) => {
-            if (error != 'precondition_failed') {
-                this.setState(() => ({ errorMessage: message }));
-            }
-        });
-    }
-
-    render() {
-        $('#connection-status').removeClass().empty();
-        if (this.state.isConnected) {
-            $('#connection-status').addClass('bg-success').html('Connected');
-        } else if (this.state.errorMessage) {
-            $('#connection-status').addClass('bg-danger').html('Not Connected');
-        } else {
-            $('#connection-status').addClass('bg-info').html('Not Connected');
-        }
-
-        $('#connection-status-error').empty();
-        if (this.state.errorMessage) {
-            $('#connection-status-error').html(this.state.errorMessage);
-        }
-
-        if (this.state.playbackState !== null) {
-            // Update album art
-            $('#album-art').empty();
-            $('<img/>', {
-                src: this.state.playbackState.track_window.current_track.album.images[0].url,
-                alt: this.state.playbackState.track_window.current_track.album.name
-            }).appendTo('#album-art');
-
-            // Update track title and track artist
-            $('#playback-track-title').html(this.state.playbackState.track_window.current_track.name);
-            $('#playback-track-artist').html(this.state.playbackState.track_window.current_track.artists[0].name);
-
-            // Update duration, current position is handled in MusicPositionView
-            $('#playback-duration').html(msToTimeString(this.state.playbackState.duration));
-        }
-    }
-
-    setState(updater) {
-        // Merge previous state and new state
-        this.state = Object.assign({}, this.state, updater(this.state));
-        this.render();
-    }
-}
-
-class MusicPositionView {
-    private state = new class {
-        positionMS: number = 0.0;
-    };
-    refreshTimeoutId?: number = null;
-
-    constructor(readonly musicPlayer: StationMusicPlayer) {
-        this.bindSpotifyActions();
-        this.render();
-    }
-
-    bindSpotifyActions() {
-        this.musicPlayer.on('player_state_changed', state => {
-            if (state) {
-                this.setState(() => ({ positionMS: state.position }));
-
-                if (state.paused) {
-                    this.ensureDisableRefresh();
-                } else {
-                    this.ensureEnableRefresh();
-                }
-            }
-        });
-    }
-
-    render() {
-        $('#playback-current-position').html(msToTimeString(this.state.positionMS));
-    }
-
-    setState(updater) {
-        // Merge previous state and new state
-        this.state = Object.assign({}, this.state, updater(this.state));
-        this.render();
-    }
-
-    ensureEnableRefresh() {
-        if (this.refreshTimeoutId === null) {
-            this.refreshTimeoutId = window.setInterval(() => {
-                this.render();
-                this.state.positionMS += MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS;
-            }, MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS);
-        }
-    }
-
-    ensureDisableRefresh() {
-        if (this.refreshTimeoutId !== null) {
-            window.clearInterval(this.refreshTimeoutId);
-            this.refreshTimeoutId = null;
-        }
-    }
-}
-
-class MusicVolume {
-    volume: number = MusicVolume.getCachedVolume();
-    volumeBeforeMute: number;
-
-    constructor(readonly musicPlayer) {
-        this.volumeBeforeMute = this.volume;
-    }
-
-    static getCachedVolume(): number {
-        if (localStorage.getItem('musicVolume') !== null) {
-            return localStorage['musicVolume'];
-        } else {
-            return 0.8;
-        }
+    static getCachedVolume() {
+        const value = localStorage.getItem('musicVolume');
+        return ((value !== null) ? parseFloat(value) : 0.8);
     }
 
     static setCachedVolume(volume: number) {
         localStorage['musicVolume'] = volume;
     }
 
-    getVolume(): Promise<number> {
-        return new Promise(resolve => {
-            if (this.musicPlayer.isReady) {
-                this.musicPlayer.getVolume()
-                    .then((volume) => {
-                        resolve(volume);
-                    });
-            }
-        });
-    }
-
-    setVolume(volume: number): Promise<void> {
-        return new Promise(resolve => {
-            if (this.musicPlayer.isReady) {
-                this.musicPlayer.setVolume(volume)
-                    .then(() => {
-                        MusicVolume.setCachedVolume(volume);
-                        resolve();
-                    });
-            }
-        });
-    }
-
-    mute(): Promise<number> {
-        return new Promise(resolve => {
-            if (this.musicPlayer.isReady) {
-                this.getVolume().then(volume => {
-                    // BUG: Spotify API returns null instead of 0.0.
-                    // Tracked by https://github.com/rgardner/dancingtogether/issues/12
-
-                    var newVolume = 0.0;
-                    if ((volume === 0.0) || (volume === null)) {
-                        // currently muted, so unmute
-                        newVolume = this.volumeBeforeMute;
-                    } else {
-                        // currently unmuted, so mute and store current volume for restore
-                        this.volumeBeforeMute = volume;
-                        newVolume = 0.0;
-                    }
-
-                    return newVolume;
-                }).then(newVolume => {
-                    return this.setVolume(newVolume).then(() => Promise.resolve(newVolume));
-                }).then(newVolume => {
-                    return resolve(newVolume);
-                });
-            }
-        });
-    }
-}
-
-class StationListenerView {
-    private state = new class {
-        isReady: boolean = false;
-        volume: number = MusicVolume.getCachedVolume();
-    };
-    musicVolume: MusicVolume;
-
-    constructor(readonly musicPlayer) {
-        this.musicVolume = new MusicVolume(musicPlayer);
-        this.bindSpotifyActions();
-        this.bindUIActions();
-        this.render();
-    }
-
-    bindSpotifyActions() {
-        this.musicPlayer.on('ready', () => {
-            this.setState(() => ({ isReady: true }));
-            this.getVolume();
-        });
-    }
-
-    bindUIActions() {
-        $('#mute-button').on('click', () => {
-            this.muteUnmuteVolume();
-        });
-
-        $('#volume-slider').change(() => {
-            this.changeVolume();
-        });
-    }
-
-    render() {
-        $('#listener-controls :button').prop('disabled', !this.state.isReady);
-        if (this.state.volume !== null) {
-            if (this.state.volume === 0.0) {
-                $('#mute-button').html('<i class="fas fa-volume-off"></i>');
-            } else {
-                $('#mute-button').html('<i class="fas fa-volume-up"></i>');
-            }
-
-            $('#volume-slider').val(this.state.volume);
-        }
-    }
-
-    setState(updater) {
-        // Merge previous state and new state
-        this.state = Object.assign({}, this.state, updater(this.state));
-        this.render();
-    }
-
-    getVolume() {
-        this.musicVolume.getVolume().then((volume) => {
-            this.setState(() => ({ volume: volume }));
-        });
-    }
-
-    changeVolume() {
-        if (this.musicPlayer) {
-            const newVolume = parseFloat($('#volume-slider').val() as string);
-            this.musicVolume.setVolume(newVolume).then(() => {
-                this.setState(() => ({ volume: newVolume }));
-            });
-        }
-    }
+    getVolume(): Promise<number> { return this.musicPlayer.getVolume(); }
+    setVolume(value: number): Promise<void> { return this.musicPlayer.setVolume(value); }
 
     muteUnmuteVolume() {
-        this.musicVolume.mute().then(newVolume => {
-            this.setState(() => ({ volume: newVolume }));
-        });
-    }
-}
+        return new Promise(resolve => {
+            this.getVolume().then(volume => {
+                // BUG: Spotify API returns null instead of 0.0.
+                // Tracked by https://github.com/rgardner/dancingtogether/issues/12
 
-class StationDJView {
-    private state = new class {
-        isEnabled: boolean;
-        isReady: boolean = false;
-        playbackState?: PlaybackState;
-    };
-    constructor(userIsDJ, readonly musicPlayer: StationMusicPlayer) {
-        this.state.isEnabled = userIsDJ;
-        this.bindSpotifyActions();
-        this.bindUIActions();
-        this.render();
-    }
+                let newVolume = 0.0;
+                if ((volume === 0.0) || (volume === null)) {
+                    // currently muted, so unmute
+                    newVolume = this.volumeBeforeMute;
+                } else {
+                    // currently unmuted, so mute and store current volume for restore
+                    this.volumeBeforeMute = volume;
+                    newVolume = 0.0;
+                }
 
-    bindSpotifyActions() {
-        this.musicPlayer.on('ready', () => {
-            this.setState(() => ({ isReady: true }));
-        });
-
-        this.musicPlayer.on('player_state_changed', state => {
-            this.setState(() => ({ playbackState: state }));
-        });
-    }
-
-    bindUIActions() {
-        $('#play-pause-button').on('click', () => {
-            this.playPause();
-        });
-
-        $('#previous-track-button').on('click', () => {
-            this.previousTrack();
-        });
-
-        $('#next-track-button').on('click', () => {
-            this.nextTrack();
-        });
-    }
-
-    render() {
-        if (this.state.isEnabled) {
-            $('#dj-controls').show();
-        } else {
-            $('#dj-controls').hide();
-            return;
-        }
-
-        if (this.state.playbackState) {
-            $('#dj-controls :button').prop('disabled', !this.state.isReady);
-            if (this.state.playbackState.paused) {
-                $('#play-pause-button').html('<i class="fas fa-play"></i>');
-            } else {
-                $('#play-pause-button').html('<i class="fas fa-pause"></i>');
-            }
-        }
-    }
-
-    setState(updater) {
-        // Merge previous state and new state
-        this.state = Object.assign({}, this.state, updater(this.state));
-        this.render();
-    }
-
-    playPause() {
-        if (this.state.isEnabled && this.state.isReady) {
-            this.musicPlayer.togglePlay();
-        }
-    }
-
-    previousTrack() {
-        if (this.state.isEnabled && this.state.isReady) {
-            this.musicPlayer.previousTrack();
-        }
-    }
-
-    nextTrack() {
-        if (this.state.isEnabled && this.state.isReady) {
-            this.musicPlayer.nextTrack();
-        }
-    }
-}
-
-class StationAdminView {
-    private state = new class {
-        isEnabled: boolean;
-        isReady: boolean = false;
-        listeners: Array<Listener> = [];
-        pendingListeners: Array<Listener> = [];
-    };
-
-    constructor(userIsAdmin, readonly stationServer: StationServer) {
-        this.state.isEnabled = userIsAdmin;
-        this.bindUIActions();
-        this.bindServerActions();
-        this.render();
-    }
-
-    bindUIActions() {
-        $('#invite-listener-email').keyup(e => {
-            // Also submit form if the user hits the enter key
-            if (e.keyCode === 13) {
-                $('#invite-listener-form').submit();
-            }
-        });
-
-        $('#invite-listener-form').submit(e => {
-            e.preventDefault();
-            if (this.state.isEnabled) {
-                this.sendListenerInvite();
-            }
-        });
-    }
-
-    bindServerActions() {
-        this.stationServer.on('ready', () => {
-            this.setState(() => ({
-                isReady: true,
-            }));
-
-            this.loadListeners();
-        });
-
-        this.stationServer.on('listener_change', (listener_change_type, listener) => {
-            if (listener_change_type === 'join') {
-                this.setState(prevState => {
-                    let listeners = prevState.listeners;
-                    const listenerIdx = listeners.findIndex(l => l.id == listener.id);
-                    if (listenerIdx === -1) {
-                        listeners.push(listener);
-                    } else {
-                        listeners[listenerIdx] = listener;
-                    }
-                    return { listeners: listeners };
-                });
-            } else if (listener_change_type === 'leave') {
-                this.setState(prevState => {
-                    let listeners = prevState.listeners;
-                    listeners.splice(listeners.indexOf(listener), 1);
-                    return { listeners: listeners };
-                });
-            }
-        });
-    }
-
-    render() {
-        if (this.state.isEnabled) {
-            $('#admin-view').show();
-        } else {
-            $('#admin-view').hide();
-            return;
-        }
-
-        $('#admin-view :input,:button').prop('disabled', false);
-
-        $('#listeners-table tr').remove();
-        this.state.listeners.forEach(({ username, email }) => {
-            this.makeListenerTableRow(username, email).appendTo('#listeners-table');
-        });
-
-        $('#pending-listeners-table tr').remove();
-        this.state.pendingListeners.forEach(({ username, email }) => {
-            this.makeListenerTableRow(username, email).appendTo('#pending-listeners-table');
-        });
-    }
-
-    makeListenerTableRow(username, email) {
-        let $row = $('<tr>');
-        $('<td>').html(username).appendTo($row);
-        $('<td>').html(email).appendTo($row);
-        $('<button', {
-            type: 'submit',
-            class: 'btn btn-warning btn-sm',
-            value: email,
-        }).html('Remove').appendTo($('<td>')).appendTo($row);
-        return $row;
-    }
-
-    setState(updater) {
-        // Merge previous state and new state
-        this.state = Object.assign({}, this.state, updater(this.state));
-        this.render();
-    }
-
-    loadListeners() {
-        if (this.state.isEnabled) {
-            this.stationServer.getListeners().then(({ listeners, pendingListeners }) => {
-                this.setState(() => ({
-                    listeners: listeners,
-                    pendingListeners: pendingListeners,
-                }));
+                return newVolume;
+            }).then(newVolume => {
+                return this.setVolume(newVolume).then(() => Promise.resolve(newVolume));
+            }).then(newVolume => {
+                resolve(newVolume);
             });
-        }
-    }
-
-    sendListenerInvite() {
-        const listenerEmail = $('#invite-listener-email').val() as string;
-        if (listenerEmail.length === 0) {
-            return;
-        }
-
-        this.stationServer.sendListenerInvite(listenerEmail).then(({ result, isNewUser }) => {
-            let message;
-            if (result === 'ok') {
-                message = (isNewUser ? 'Invite sent to new user!' : 'Invite sent!');
-            } else if (result === 'err_user_exists') {
-                message = `Error: ${listenerEmail} is already a listener`;
-            } else {
-                message = `An error occurred while inviting ${listenerEmail}`;
-            }
-
-            $('#admin-invite-sent').html(message);
-            wait(10000).then(() => $('#admin-invite-sent').hide());
-
-            $('#invite-listener-email').val('');
         });
     }
+
+    pause(): Promise<void> { return this.musicPlayer.pause(); }
+    resume(): Promise<void> { return this.musicPlayer.resume(); }
+    togglePlay(): Promise<void> { return this.musicPlayer.togglePlay(); }
+
+    freeze(duration: number): Promise<void> {
+        return this.musicPlayer.pause().then(() => wait(duration)).then(() => this.musicPlayer.resume());
+    }
+
+    seek(positionMS: number): Promise<void> { return this.musicPlayer.seek(positionMS); }
+
+    previousTrack(): Promise<void> { return this.musicPlayer.previousTrack(); }
+    nextTrack(): Promise<void> { return this.musicPlayer.nextTrack(); }
 }
 
-function wait(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+class TaskExecutor {
+    tasks: Promise<any> = Promise.resolve();
+    tasksInFlight: number = 0;
+
+    push(task: (...args: any[]) => Promise<any>) {
+        if (this.tasksInFlight === 0) {
+            // why reset tasks here? in case the native promises implementation isn't
+            // smart enough to garbage collect old completed tasks in the chain.
+            this.tasks = Promise.resolve();
+        }
+        this.tasksInFlight += 1;
+        this.tasks.then(task).then(() => {
+            this.tasksInFlight -= 1;
+        })
+    }
 }
 
-function timeout(ms: number) {
-    return wait(ms).then(Promise.reject);
-}
-
-function retry(condition: () => Promise<boolean>): Promise<void> {
-    return condition().then(b => (b ? Promise.resolve() : wait(250).then(() => retry(condition))));
-}
-
-class CircularArray {
-    array: Array<any> = [];
+class CircularArray2<T> {
+    array: Array<T> = [];
     position: number = 0;
     constructor(readonly capacity: number) {
     }
@@ -928,44 +592,13 @@ class CircularArray {
         return this.array.length;
     }
 
-    entries(): Array<any> {
+    entries(): Array<T> {
         return this.array;
     }
 
-    push(e: any) {
+    push(e: T) {
         this.array[this.position % this.capacity] = e;
         this.position++;
-    }
-}
-
-interface Listener {
-    id: number;
-    username: string;
-    email: string;
-}
-
-class PlaybackState {
-    constructor(readonly context_uri: string,
-        readonly current_track_uri: string, readonly paused: boolean,
-        readonly raw_position_ms: number, readonly sample_time: Date) {
-    }
-
-    static fromSpotify(state) {
-        return new PlaybackState(
-            state['context']['uri'],
-            state['track_window']['current_track']['uri'],
-            state['paused'],
-            state['position'],
-            new Date(state['timestamp']));
-    }
-
-    static fromServer(state) {
-        return new PlaybackState(
-            state.context_uri,
-            state.current_track_uri,
-            state.paused,
-            state.raw_position_ms,
-            new Date(state.sample_time));
     }
 }
 
@@ -973,14 +606,11 @@ function median(arr: Array<number>): number {
     return arr.concat().sort()[Math.floor(arr.length / 2)];
 }
 
-// milliseconds -> 'm:ss', rounding down, and left-padding seconds
-// '0' -> '0:00'
-// '153790' -> '2:33'
-// Does not support hours (most songs are <60mins)
-function msToTimeString(ms: number): string {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60).toString();
-    const secondsRemainder = Math.floor(seconds % 60).toString();
-    const secondsRemainderPad = (secondsRemainder.length === 1) ? '0' + secondsRemainder : secondsRemainder;
-    return `${minutes}:${secondsRemainderPad}`;
+function timeout(ms: number): Promise<never> {
+    // @ts-ignore: Type '{}' is not assignable to type 'never'
+    return wait(ms).then(Promise.reject);
+}
+
+function retry(condition: () => Promise<boolean>): Promise<void> {
+    return condition().then(b => (b ? Promise.resolve() : wait(250).then(() => retry(condition))));
 }

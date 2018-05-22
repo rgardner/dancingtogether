@@ -1,9 +1,9 @@
-import {
-    SEEK_OVERCORRECT_MS, MusicPlayer, PlaybackState2, StationManager,
-    StationMusicPlayer2, StationServer2, WebSocketBridge,
-    WebSocketListenCallback
-} from '../static/js/station2'
 import * as $ from 'jquery';
+import { MusicPlayer, PlaybackState2 } from '../static/js/music_player';
+import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
+import {
+    SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer2, StationServer2,
+} from '../static/js/station'
 
 const MockStationId: number = 1;
 const MockStationName: string = 'MockStationName';
@@ -247,6 +247,7 @@ test('station manager correctly adjusts playback state when server is paused', a
     let mockMusicPlayer = new MockMusicPlayer();
     let stationMusicPlayer = new StationMusicPlayer2(mockMusicPlayer);
     let stationManager = new StationManager(
+        false, false,
         new StationServer2(MockStationId, new MockWebSocketBridge()),
         stationMusicPlayer);
 
@@ -270,6 +271,7 @@ test('station manager correctly adjusts playback state when server is paused', a
 test('station manager correctly adjusts playback state when server is playing', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
     let stationManager = new StationManager(
+        false, false,
         new StationServer2(MockStationId, new MockWebSocketBridge()),
         new StationMusicPlayer2(mockMusicPlayer));
 

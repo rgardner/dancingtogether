@@ -10,7 +10,7 @@
         "static/js/util.ts",
         "static/js/music_player.ts",
         "static/js/websocket_bridge.ts",
-        "static/js/station2.ts",
+        "static/js/station.ts",
         "static/js/station_view.ts"
     ]
 }
