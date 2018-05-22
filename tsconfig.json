@@ -3,7 +3,7 @@
         "allowJs": true,
         "module": "commonjs",
         "sourceMap": true,
-        "strict": false,
+        "strict": true,
         "target": "es2016"
     },
     "files": [

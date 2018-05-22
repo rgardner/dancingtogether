@@ -3,7 +3,7 @@ import {
     StationMusicPlayer2, StationServer2, WebSocketBridge,
     WebSocketListenCallback
 } from '../static/js/station2'
-import $ from 'jquery';
+import * as $ from 'jquery';
 
 const MockStationId: number = 1;
 const MockStationName: string = 'MockStationName';
@@ -83,8 +83,8 @@ class MockMusicPlayer implements MusicPlayer {
 }
 
 class MockWebSocketBridge implements WebSocketBridge {
-    callback?: WebSocketListenCallback = null;
-    receiveDataCallback?: Function = null;
+    callback?: WebSocketListenCallback;
+    receiveDataCallback?: Function;
 
     // WebSocketBridge
 
@@ -127,7 +127,9 @@ test('station server can join a station', async () => {
         mockWebSocketBridge.fire({ 'join': MockStationName });
     });
 
-    await expect(stationServer.sendJoinRequest(MockDeviceId)).resolves.toEqual(MockStationName);
+    await expect(stationServer.sendJoinRequest(MockDeviceId)).resolves.toEqual({
+        'stationName': MockStationName,
+    });
 });
 
 test('station server can send a ping', async () => {

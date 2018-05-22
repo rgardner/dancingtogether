@@ -1,7 +1,14 @@
 import * as $ from 'jquery';
 
+// @ts-ignore: No typings for Django Channels WebSocketBridge
 declare var channels;
-declare var SERVER_DATA;
+
+interface ServerData {
+    accessToken: string;
+    stationId: number;
+}
+
+declare var SERVER_DATA: ServerData;
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
@@ -10,13 +17,13 @@ const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
 export interface MusicPlayer {
     getAccessToken(): string;
-    setAccessToken(value: string);
+    setAccessToken(value: string): void;
 
     connect(): Promise<boolean>;
 
-    on(eventName, cb);
+    on(eventName: string, cb: (...args: any[]) => void): void;
 
-    getCurrentState(): Promise<PlaybackState2>;
+    getCurrentState(): Promise<PlaybackState2 | null>;
 
     getVolume(): Promise<number>;
     setVolume(value: number): Promise<void>;
@@ -32,13 +39,13 @@ export interface MusicPlayer {
 }
 
 export interface WebSocketListenCallback {
-    (action, stream);
+    (action: any, stream: string): void;
 }
 
 export interface WebSocketBridge {
-    connect(path: string);
-    listen(callback: WebSocketListenCallback);
-    send(data: any);
+    connect(path: string): void;
+    listen(callback: WebSocketListenCallback): void;
+    send(data: any): void;
 }
 
 interface JoinResponse {
@@ -55,17 +62,17 @@ export class PlaybackState2 {
         public raw_position_ms: number, public sample_time: Date, public etag?: Date) {
     }
 
-    static fromSpotify(state) {
+    static fromSpotify(state: Spotify.PlaybackState) {
         return new PlaybackState2(
-            state['context']['uri'],
-            state['track_window']['current_track']['uri'],
-            state['paused'],
-            state['position'],
-            new Date(state['timestamp']),
-            null);
+            <string>state.context.uri,
+            state.track_window.current_track.uri,
+            state.paused,
+            state.position,
+            // @ts-ignore: Spotify.PlaybackState does have timestamp
+            new Date(state.timestamp));
     }
 
-    static fromServer(state) {
+    static fromServer(state: any) {
         return new PlaybackState2(
             state.context_uri,
             state.current_track_uri,
@@ -100,7 +107,7 @@ class ChannelWebSocketBridge implements WebSocketBridge {
 }
 
 class SpotifyMusicPlayer implements MusicPlayer {
-    impl?: Spotify.SpotifyPlayer = null;
+    impl: Spotify.SpotifyPlayer;
 
     constructor(clientName: string, private accessToken: string) {
         this.impl = new Spotify.Player({
@@ -115,9 +122,12 @@ class SpotifyMusicPlayer implements MusicPlayer {
 
     connect(): Promise<boolean> { return this.impl.connect(); }
 
-    on(eventName, cb) { return this.impl.on(eventName, cb); }
+    on(eventName: string, cb: (_args: any[]) => void) {
+        // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
+        return this.impl.on(eventName, cb);
+    }
 
-    getCurrentState(): Promise<PlaybackState2> {
+    getCurrentState(): Promise<PlaybackState2 | null> {
         return this.impl.getCurrentState().then(state => {
             return (state ? PlaybackState2.fromSpotify(state) : null);
         });
@@ -139,9 +149,9 @@ class SpotifyMusicPlayer implements MusicPlayer {
 export class StationManager {
     taskExecutor: TaskExecutor = new TaskExecutor();
     serverPings: CircularArray2<number> = new CircularArray2(5);
-    clientEtag?: Date = null;
-    serverEtag?: Date = null;
-    heartbeatIntervalId?: number = null;
+    clientEtag?: Date;
+    serverEtag?: Date;
+    heartbeatIntervalId?: number;
 
     constructor(private server: StationServer2, private musicPlayer: StationMusicPlayer2) {
         this.bindMusicPlayerActions();
@@ -152,17 +162,17 @@ export class StationManager {
         this.musicPlayer.on('ready', ({ device_id }) => {
             this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
             this.taskExecutor.push(() => this.calculatePing());
-            this.taskExecutor.push(() => this.syncServerPlaybackState(null));
+            this.taskExecutor.push(() => this.syncServerPlaybackState());
             this.enableHeartbeat();
         });
     }
 
     bindServerActions() {
-        this.server.on('error', (error, message) => {
+        this.server.on('error', (error: string, message: string) => {
             console.error(`${error}: ${message}`);
         });
 
-        this.server.on('station_state_change', serverState => {
+        this.server.on('station_state_change', (serverState: PlaybackState2) => {
             this.taskExecutor.push(() => this.applyServerState(serverState));
         });
     }
@@ -170,14 +180,14 @@ export class StationManager {
     enableHeartbeat() {
         this.heartbeatIntervalId = window.setInterval(() => {
             this.taskExecutor.push(() => this.calculatePing());
-            this.taskExecutor.push(() => this.updateServerPlaybackState(null));
+            this.taskExecutor.push(() => this.updateServerPlaybackState());
         }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
     updateServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                if (!state || (state.sample_time <= this.clientEtag)) {
+                if (!state || (this.clientEtag && (state.sample_time <= this.clientEtag))) {
                     return Promise.resolve();
                 }
 
@@ -194,11 +204,11 @@ export class StationManager {
     syncServerPlaybackState(playbackState?: PlaybackState2): Promise<void> {
         return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
             .then(state => {
-                if ((!state && this.clientEtag) || (state && (state.sample_time <= this.clientEtag))) {
+                if ((!state && this.clientEtag) || (state && (this.clientEtag && (state.sample_time <= this.clientEtag)))) {
                     return Promise.resolve();
                 }
 
-                return Promise.race([this.server.sendSyncRequest(state), timeout(5000)])
+                return Promise.race([this.server.sendSyncRequest(state || undefined), timeout(5000)])
                     .then(serverState => {
                         return this.applyServerState(<PlaybackState2>serverState);
                     })
@@ -217,7 +227,7 @@ export class StationManager {
     }
 
     applyServerState(serverState: PlaybackState2): Promise<void> {
-        if (serverState.etag <= this.serverEtag) {
+        if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
             return Promise.resolve();
         }
 
@@ -254,13 +264,18 @@ export class StationManager {
                 }
             })
             .then(() => this.musicPlayer.getCurrentState())
-            .then(state => {
-                this.clientEtag = state.sample_time;
+            .then(clientState => {
+                if (!clientState) {
+                    return Promise.reject('Spotify not ready');
+                }
+
+                this.clientEtag = clientState.sample_time;
                 this.serverEtag = serverState.etag;
+                return Promise.resolve();
             })
-            .catch(e => {
+            .catch((e: any) => {
                 console.error(e);
-                this.taskExecutor.push(() => this.syncServerPlaybackState(null));
+                this.taskExecutor.push(() => this.syncServerPlaybackState());
             });
     }
 
@@ -331,11 +346,11 @@ export class StationServer2 {
     //     client_error
     //     precondition_failed
     on(eventName: string, cb: Function) {
-        this.observers.get(eventName).add(cb);
+        this.observers.get(eventName)!.add(cb);
     }
 
     onOnce(eventName: string, cb: Function) {
-        const cbWrapper = (...args) => {
+        const cbWrapper = (...args: any[]) => {
             this.removeListener(eventName, cbWrapper);
             cb(...args);
         };
@@ -343,7 +358,7 @@ export class StationServer2 {
     }
 
     onRequest(eventName: string, thisRequestId: number, cb: Function) {
-        const cbWrapper = (requestId, ...args) => {
+        const cbWrapper = (requestId: number, ...args: any[]) => {
             if (requestId === thisRequestId) {
                 this.removeListener(eventName, cbWrapper);
                 cb(...args);
@@ -353,13 +368,13 @@ export class StationServer2 {
     }
 
     removeListener(eventName: string, cb: Function) {
-        this.observers.get(eventName).remove(cb);
+        this.observers.get(eventName)!.remove(cb);
     }
 
-    sendJoinRequest(deviceId): Promise<JoinResponse> {
+    sendJoinRequest(deviceId: string): Promise<JoinResponse> {
         return new Promise(resolve => {
-            this.onOnce('join', stationName => {
-                resolve(stationName);
+            this.onOnce('join', (stationName: string) => {
+                resolve({ stationName });
             });
             this.webSocketBridge.send({
                 'command': 'join',
@@ -371,7 +386,7 @@ export class StationServer2 {
 
     sendPingRequest(): Promise<PongResponse> {
         return new Promise(resolve => {
-            this.onOnce('pong', pongResponse => {
+            this.onOnce('pong', (pongResponse: PongResponse) => {
                 resolve(pongResponse);
             });
             this.webSocketBridge.send({
@@ -384,7 +399,7 @@ export class StationServer2 {
     sendPlaybackState(playbackState: PlaybackState2, serverEtag?: Date): Promise<PlaybackState2> {
         return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
-            this.onRequest('ensure_playback_state', thisRequestId, serverPlaybackState => {
+            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState2) => {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
@@ -399,7 +414,7 @@ export class StationServer2 {
     sendSyncRequest(playbackState?: PlaybackState2): Promise<PlaybackState2> {
         return new Promise(resolve => {
             const thisRequestId = ++this.requestId;
-            this.onRequest('ensure_playback_state', thisRequestId, serverPlaybackState => {
+            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState2) => {
                 resolve(serverPlaybackState);
             });
             this.webSocketBridge.send({
@@ -410,29 +425,29 @@ export class StationServer2 {
         });
     }
 
-    onMessage(action) {
+    onMessage(action: any) {
         if (action.error) {
-            this.observers.get('error').fire(action.error, action.message);
+            this.observers.get('error')!.fire(action.error, action.message);
         } else if (action.join) {
-            this.observers.get('join').fire(action.join);
+            this.observers.get('join')!.fire(action.join);
         } else if (action.type === 'ensure_playback_state') {
             const requestId = action.request_id;
             const serverPlaybackState = PlaybackState2.fromServer(action.state);
             if (requestId) {
-                this.observers.get(action.type).fire(requestId, serverPlaybackState);
+                this.observers.get(action.type)!.fire(requestId, serverPlaybackState);
             } else {
-                this.observers.get('station_state_change').fire(serverPlaybackState);
+                this.observers.get('station_state_change')!.fire(serverPlaybackState);
             }
         } else if (action.type === 'pong') {
             const pong: PongResponse = { startTime: new Date(action.start_time) };
-            this.observers.get(action.type).fire(pong);
+            this.observers.get(action.type)!.fire(pong);
         }
     }
 }
 
 export class StationMusicPlayer2 {
     isReady: boolean = false;
-    deviceId?: string = null;
+    deviceId?: string;
     volume: number = 0.8;
     volumeBeforeMute: number;
 
@@ -442,7 +457,7 @@ export class StationMusicPlayer2 {
         this.musicPlayer.connect();
     }
 
-    on(eventName: string, cb: Function) {
+    on(eventName: string, cb: (...args: any[]) => void) {
         this.musicPlayer.on(eventName, cb);
     }
 
@@ -465,14 +480,14 @@ export class StationMusicPlayer2 {
         });
     }
 
-    getCurrentState(): Promise<PlaybackState2> { return this.musicPlayer.getCurrentState(); }
+    getCurrentState(): Promise<PlaybackState2 | null> { return this.musicPlayer.getCurrentState(); }
 
     static getCachedVolume() {
         const value = localStorage.getItem('musicVolume');
         return ((value !== null) ? parseFloat(value) : 0.8);
     }
 
-    static setCachedVolume(volume) {
+    static setCachedVolume(volume: number) {
         localStorage['musicVolume'] = volume;
     }
 
@@ -487,7 +502,7 @@ export class StationMusicPlayer2 {
         return this.musicPlayer.pause().then(() => wait(duration)).then(() => this.musicPlayer.resume());
     }
 
-    seek(positionMS): Promise<void> { return this.musicPlayer.seek(positionMS); }
+    seek(positionMS: number): Promise<void> { return this.musicPlayer.seek(positionMS); }
 
     previousTrack(): Promise<void> { return this.musicPlayer.previousTrack(); }
     nextTrack(): Promise<void> { return this.musicPlayer.nextTrack(); }
@@ -497,7 +512,7 @@ class TaskExecutor {
     tasks: Promise<any> = Promise.resolve();
     tasksInFlight: number = 0;
 
-    push(task: (Function) => Promise<any>) {
+    push(task: (...args: any[]) => Promise<any>) {
         if (this.tasksInFlight === 0) {
             // why reset tasks here? in case the native promises implementation isn't
             // smart enough to garbage collect old completed tasks in the chain.
@@ -538,7 +553,8 @@ function wait(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function timeout(ms: number): Promise<{}> {
+function timeout(ms: number): Promise<never> {
+    // @ts-ignore: Type '{}' is not assignable to type 'never'
     return wait(ms).then(Promise.reject);
 }
 
