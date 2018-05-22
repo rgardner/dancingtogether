@@ -2,7 +2,10 @@ var path = require("path");
 
 module.exports = {
     context: __dirname,
-    entry: './assets/js/station.ts',
+    entry: {
+        main: './assets/js/station.ts',
+        station: './static/js/station2.ts',
+    },
     devtool: 'inline-source-map',
     plugins: [],
     mode: 'none',
@@ -16,6 +19,7 @@ module.exports = {
         ],
     },
     resolve: {
+        modules: ['node_modules'],
         extensions: ['.ts', '.js'],
     },
     output: {

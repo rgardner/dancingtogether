@@ -1,5 +1,8 @@
+import * as $ from 'jquery';
+
 function myAlert(message: string) {
+    $.Callbacks();
     alert(message);
 }
 
-myAlert('Hello, world!');
+myAlert('Hello, cruel world!');

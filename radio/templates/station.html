@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% load compress %}
+{% load render_bundle from webpack_loader %}
 {% load staticfiles %}
 
 {% block content %}
@@ -63,12 +63,6 @@
 {% block extra_script %}
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static 'channels/js/websocketbridge.js' %}"></script>
-<script src="{% static 'js/system.js' %}"></script>
-
-{% compress js %}
-<script type="text/typescript" src="{% static 'js/station2.ts' %}"></script>
-{% endcompress %}
-
 <script>
     'use strict';
     const SERVER_DATA = {
@@ -77,15 +71,8 @@
         accessToken: "{{ access_token }}",
         stationId: {{ station_id }},
     };
-    SystemJS.config({
-        paths: {
-            'jquery': 'https://code.jquery.com/jquery.js',
-        },
-    });
-    window.onSpotifyWebPlaybackSDKReady = () => {
-        SystemJS.import('station2').then(station => {
-            window.app = new station.StationApp2();
-        });
-    };
 </script>
+
+{% render_bundle 'station' %}
+
 {% endblock %}{# extra_script #}

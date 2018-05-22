@@ -1,4 +1,4 @@
-import $ from 'jquery';
+import * as $ from 'jquery';
 
 declare var channels;
 declare var SERVER_DATA;
@@ -75,6 +75,10 @@ export class PlaybackState2 {
             new Date(state.etag));
     }
 }
+
+window.onSpotifyWebPlaybackSDKReady = () => {
+    new StationApp2();
+};
 
 export class StationApp2 {
     readonly stationManager: StationManager;
@@ -534,7 +538,7 @@ function wait(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function timeout(ms: number): Promise<void> {
+function timeout(ms: number): Promise<{}> {
     return wait(ms).then(Promise.reject);
 }
 
