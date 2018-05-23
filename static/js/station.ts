@@ -12,6 +12,7 @@ export const SEEK_OVERCORRECT_MS = 2000;
 const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
 interface AppData {
+    spotifyConnectPlayerName: string;
     userIsDJ: boolean;
     userIsAdmin: boolean;
     accessToken: string;
@@ -22,7 +23,7 @@ declare const APP_DATA: AppData;
 
 window.onSpotifyWebPlaybackSDKReady = () => {
     let webSocketBridge = new ChannelWebSocketBridge();
-    let musicPlayer = new SpotifyMusicPlayer('Dancing Together', APP_DATA.accessToken);
+    let musicPlayer = new SpotifyMusicPlayer(APP_DATA.spotifyConnectPlayerName, APP_DATA.accessToken);
     new StationManager(
         APP_DATA.userIsDJ,
         APP_DATA.userIsAdmin,
