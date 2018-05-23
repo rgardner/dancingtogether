@@ -3,6 +3,7 @@ all: run
 .PHONY: build
 build:
 	docker-compose build
+	npm install
 
 .PHONY: migrate
 migrate:
@@ -14,7 +15,15 @@ run:
 
 .PHONY: rund
 rund:
-	docker-compose up -d
+	docker-compose up --detach
+
+.PHONY: stop
+stop:
+	docker-compose down
+
+.PHONY: watch
+watch:
+	npm run watch
 
 .PHONY: attach
 attach:
@@ -25,8 +34,14 @@ shell:
 	docker-compose run web python3 manage.py shell
 
 .PHONY: test
-test:
+test: client-test server-test
+
+.PHONY: client-test
+client-test:
 	npm test
+
+.PHONY: server-test
+server-test:
 	DJANGO_SETTINGS_MODULE=dancingtogether.settings.test pipenv run python3 manage.py test
 
 .PHONY: deploy
