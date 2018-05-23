@@ -24,8 +24,10 @@ beforeEach(() => {
 });
 
 class MockMusicPlayer implements MusicPlayer {
-    public playbackState = new PlaybackState('', '', true, 0, new Date(), null);
-    observers: Map<string, JQueryCallback> = new Map();
+    public playbackState = new PlaybackState('', '', true, 0, new Date());
+    observers = new Map([
+        ['player_state_change', $.Callbacks()],
+    ]);
 
     // MusicPlayer
 
@@ -54,31 +56,41 @@ class MockMusicPlayer implements MusicPlayer {
 
     pause(): Promise<void> {
         this.playbackState.paused = true;
+        this.firePlayerStateChange();
         return Promise.resolve();
     }
 
     resume(): Promise<void> {
         this.playbackState.paused = false;
+        this.firePlayerStateChange();
         return Promise.resolve();
     }
 
     togglePlay(): Promise<void> {
         this.playbackState.paused = !this.playbackState.paused;
+        this.firePlayerStateChange();
         return Promise.resolve();
     }
 
     seek(positionMS: number): Promise<void> {
         this.playbackState.raw_position_ms = positionMS;
+        this.firePlayerStateChange();
         return Promise.resolve();
     }
 
-    previousTrack(): Promise<void> { return Promise.reject(); }
-    nextTrack(): Promise<void> { return Promise.reject(); }
+    previousTrack(): Promise<void> { return Promise.reject("not implemented"); }
+    nextTrack(): Promise<void> { return Promise.reject("not implemented"); }
 
     // Mock functions
 
     fire(eventName, payload) {
         this.observers.get(eventName).fire(payload);
+    }
+
+    firePlayerStateChange() {
+        this.getCurrentState().then(playbackState => {
+            this.observers.get('player_state_change')!.fire(playbackState)
+        });
     }
 }
 
@@ -291,4 +303,57 @@ test('station manager correctly adjusts playback state when server is playing', 
     const newPlaybackPosition = mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS;
     expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(newPlaybackPosition);
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
+});
+
+test('station manager correctly handles precondition failed', async () => {
+    let mockWebSocketBridge = new MockWebSocketBridge();
+    let mockMusicPlayer = new MockMusicPlayer();
+    let stationManager = new StationManager(
+        false, false,
+        new StationServer(MockStationId, mockWebSocketBridge),
+        new StationMusicPlayer(mockMusicPlayer));
+
+    const mockPlaybackState = new PlaybackState(
+        MockContextUri, MockCurrentTrackUri, true /*paused*/,
+        0 /*raw_position_ms*/, new Date());
+
+    // Set up callback for server receiving get request and response
+    // assume server has already set the current track
+    mockWebSocketBridge.receiveData().then(data => {
+        expect(data).toEqual(expect.objectContaining({
+            'command': 'get_playback_state',
+            'request_id': expect.any(Number),
+            'state': mockMusicPlayer.playbackState,
+        }));
+
+        // Server would update current track on behalf of client
+        mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;
+        mockMusicPlayer.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
+
+        let responsePlaybackState = mockPlaybackState;
+        responsePlaybackState.etag = MockServerEtag1;
+        mockWebSocketBridge.fire({
+            'type': 'ensure_playback_state',
+            'request_id': data.request_id,
+            'state': responsePlaybackState,
+        });
+    });
+
+    // Set up callback for music player state change correct
+    let donePromise = new Promise(resolve => {
+        mockMusicPlayer.on('player_state_change', (playbackState: PlaybackState) => {
+            expect(playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
+            expect(playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
+            expect(playbackState.paused).toBe(mockPlaybackState.paused);
+            expect(playbackState.raw_position_ms).toBe(mockPlaybackState.raw_position_ms);
+            resolve();
+        });
+    });
+
+    mockWebSocketBridge.fire({
+        error: 'precondition_failed',
+        message: 'out of sync',
+    });
+
+    await expect(donePromise).resolves.toBeUndefined();
 });

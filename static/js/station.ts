@@ -175,7 +175,12 @@ export class StationManager {
 
     bindServerActions() {
         this.server.on('error', (error: string, message: string) => {
-            console.error(`${error}: ${message}`);
+            if (error === 'precondition_failed') {
+                this.taskExecutor.clear();
+                this.taskExecutor.push(() => this.syncServerPlaybackState());
+            } else {
+                console.error(`${error}: ${message}`);
+            }
         });
 
         this.server.on('station_state_change', (serverState: PlaybackState) => {
@@ -573,12 +578,17 @@ class TaskExecutor {
         if (this.tasksInFlight === 0) {
             // why reset tasks here? in case the native promises implementation isn't
             // smart enough to garbage collect old completed tasks in the chain.
-            this.tasks = Promise.resolve();
+            this.clear();
         }
         this.tasksInFlight += 1;
         this.tasks.then(task).then(() => {
             this.tasksInFlight -= 1;
         })
+    }
+
+    clear() {
+        this.tasksInFlight = 0;
+        this.tasks = Promise.resolve();
     }
 }
 
