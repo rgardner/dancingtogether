@@ -1,5 +1,5 @@
 import * as $ from 'jquery';
-import { wait } from './util';
+import { ListenerRole, wait } from './util';
 import { PlaybackState } from './music_player';
 
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
@@ -11,9 +11,9 @@ export class ViewManager {
     djView: StationDJView;
     adminView: StationAdminView;
 
-    constructor(userIsDJ: boolean, userIsAdmin: boolean) {
-        this.djView = new StationDJView(userIsDJ);
-        this.adminView = new StationAdminView(userIsAdmin);
+    constructor(listenerRole: ListenerRole) {
+        this.djView = new StationDJView(listenerRole);
+        this.adminView = new StationAdminView(listenerRole);
     }
 }
 
@@ -177,8 +177,8 @@ class StationDJView {
         ['nextTrackButtonClick', $.Callbacks()],
     ]);
 
-    constructor(userIsDJ: boolean) {
-        this.state.isEnabled = userIsDJ;
+    constructor(listenerRole: ListenerRole) {
+        this.state.isEnabled = ((listenerRole & ListenerRole.DJ) === ListenerRole.DJ);
         this.bindUIActions();
         this.render();
     }
@@ -244,8 +244,8 @@ class StationAdminView {
         ['invite_listener', $.Callbacks()],
     ]);
 
-    constructor(userIsAdmin: boolean) {
-        this.state.isEnabled = userIsAdmin;
+    constructor(listenerRole: ListenerRole) {
+        this.state.isEnabled = ((listenerRole & ListenerRole.Admin) === ListenerRole.Admin);
         this.bindUIActions();
         this.render();
     }

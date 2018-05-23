@@ -1,4 +1,5 @@
 import * as $ from 'jquery';
+import { ListenerRole } from '../static/js/util';
 import { MusicPlayer, PlaybackState } from '../static/js/music_player';
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
@@ -259,7 +260,7 @@ test('station manager correctly adjusts playback state when server is paused', a
     let mockMusicPlayer = new MockMusicPlayer();
     let stationMusicPlayer = new StationMusicPlayer(mockMusicPlayer);
     let stationManager = new StationManager(
-        false, false,
+        ListenerRole.None,
         new StationServer(MockStationId, new MockWebSocketBridge()),
         stationMusicPlayer);
 
@@ -283,7 +284,7 @@ test('station manager correctly adjusts playback state when server is paused', a
 test('station manager correctly adjusts playback state when server is playing', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
     let stationManager = new StationManager(
-        false, false,
+        ListenerRole.None,
         new StationServer(MockStationId, new MockWebSocketBridge()),
         new StationMusicPlayer(mockMusicPlayer));
 
@@ -309,7 +310,7 @@ test('station manager correctly handles precondition failed', async () => {
     let mockWebSocketBridge = new MockWebSocketBridge();
     let mockMusicPlayer = new MockMusicPlayer();
     let stationManager = new StationManager(
-        false, false,
+        ListenerRole.None,
         new StationServer(MockStationId, mockWebSocketBridge),
         new StationMusicPlayer(mockMusicPlayer));
 

@@ -1,5 +1,5 @@
 import * as $ from 'jquery';
-import { wait } from './util';
+import { ListenerRole, wait } from './util';
 import { MusicPlayer, PlaybackState, SpotifyMusicPlayer } from './music_player';
 import { ChannelWebSocketBridge, WebSocketBridge } from './websocket_bridge';
 import { ViewManager } from './station_view';
@@ -22,9 +22,13 @@ declare const APP_DATA: AppData;
 window.onSpotifyWebPlaybackSDKReady = () => {
     let webSocketBridge = new ChannelWebSocketBridge();
     let musicPlayer = new SpotifyMusicPlayer(APP_DATA.spotifyConnectPlayerName, APP_DATA.accessToken);
+
+    let listenerRole = ListenerRole.None;
+    if (APP_DATA.userIsDJ) listenerRole |= ListenerRole.DJ;
+    if (APP_DATA.userIsAdmin) listenerRole |= ListenerRole.Admin;
+
     new StationManager(
-        APP_DATA.userIsDJ,
-        APP_DATA.userIsAdmin,
+        listenerRole,
         new StationServer(APP_DATA.stationId, webSocketBridge),
         new StationMusicPlayer(musicPlayer));
 };
@@ -37,8 +41,8 @@ export class StationManager {
     heartbeatIntervalId?: number;
     viewManager: ViewManager;
 
-    constructor(userIsDJ: boolean, userIsAdmin: boolean, private server: StationServer, private musicPlayer: StationMusicPlayer) {
-        this.viewManager = new ViewManager(userIsDJ, userIsAdmin);
+    constructor(listenerRole: ListenerRole, private server: StationServer, private musicPlayer: StationMusicPlayer) {
+        this.viewManager = new ViewManager(listenerRole);
         this.bindMusicPlayerActions();
         this.bindServerActions();
         this.bindViewActions();
