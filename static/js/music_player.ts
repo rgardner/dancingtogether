@@ -52,8 +52,14 @@ export class SpotifyMusicPlayer implements MusicPlayer {
     connect(): Promise<boolean> { return this.impl.connect(); }
 
     on(eventName: string, cb: (_args: any[]) => void) {
-        // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
-        return this.impl.on(eventName, cb);
+        if (eventName === 'player_state_changed') {
+            this.impl.on(eventName, playbackState => {
+                cb(<any>createPlaybackStateFromSpotify(playbackState));
+            });
+        } else {
+            // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
+            this.impl.on(eventName, cb);
+        }
     }
 
     getCurrentState(): Promise<PlaybackState | null> {
@@ -75,7 +81,7 @@ export class SpotifyMusicPlayer implements MusicPlayer {
     nextTrack(): Promise<void> { return this.impl.nextTrack(); }
 }
 
-export function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
+function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
     return new PlaybackState(
         <string>state.context.uri,
         state.track_window.current_track.uri,

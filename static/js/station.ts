@@ -1,9 +1,7 @@
 import * as $ from 'jquery';
 import { wait } from './util';
-import {
-    MusicPlayer, PlaybackState, SpotifyMusicPlayer, createPlaybackStateFromSpotify
-} from './music_player';
-import { WebSocketBridge, ChannelWebSocketBridge } from './websocket_bridge';
+import { MusicPlayer, PlaybackState, SpotifyMusicPlayer } from './music_player';
+import { ChannelWebSocketBridge, WebSocketBridge } from './websocket_bridge';
 import { ViewManager } from './station_view';
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
@@ -69,9 +67,8 @@ export class StationManager {
             this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
         });
 
-        this.musicPlayer.on('player_state_changed', state => {
-            if (state) {
-                const clientState = createPlaybackStateFromSpotify(state);
+        this.musicPlayer.on('player_state_changed', clientState => {
+            if (clientState) {
                 if (this.clientEtag && (clientState.sample_time <= this.clientEtag)) {
                     return;
                 }
