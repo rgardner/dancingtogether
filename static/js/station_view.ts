@@ -169,7 +169,7 @@ class StationDJView {
     private state = new class {
         isEnabled = false;
         isReady = false;
-        playbackState?: any;
+        playbackState?: PlaybackState;
     };
     observers = new Map([
         ['playPauseButtonClick', $.Callbacks()],

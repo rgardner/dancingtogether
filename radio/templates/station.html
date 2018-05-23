@@ -65,7 +65,7 @@
 <script src="{% static 'channels/js/websocketbridge.js' %}"></script>
 <script>
     'use strict';
-    const SERVER_DATA = {
+    const APP_DATA = {
         userIsDJ: {{ is_dj|yesno:"true,false" }},
         userIsAdmin: {{ is_admin|yesno:"true,false" }},
         accessToken: "{{ access_token }}",

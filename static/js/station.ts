@@ -1,125 +1,34 @@
 import * as $ from 'jquery';
 import { wait } from './util';
-import { MusicPlayer, PlaybackState } from './music_player';
-import { WebSocketBridge, WebSocketListenCallback } from './websocket_bridge';
+import {
+    MusicPlayer, PlaybackState, SpotifyMusicPlayer, createPlaybackStateFromSpotify
+} from './music_player';
+import { WebSocketBridge, ChannelWebSocketBridge } from './websocket_bridge';
 import { ViewManager } from './station_view';
-
-// @ts-ignore: No typings for Django Channels WebSocketBridge
-declare var channels;
-
-interface ServerData {
-    userIsDJ: boolean;
-    userIsAdmin: boolean;
-    accessToken: string;
-    stationId: number;
-}
-
-declare var SERVER_DATA: ServerData;
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
 const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
-interface JoinResponse {
-    stationName: string;
+interface AppData {
+    userIsDJ: boolean;
+    userIsAdmin: boolean;
+    accessToken: string;
+    stationId: number;
 }
 
-interface PongResponse {
-    startTime: Date;
-}
-
-function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
-    return new PlaybackState(
-        <string>state.context.uri,
-        state.track_window.current_track.uri,
-        state.paused,
-        state.position,
-        // @ts-ignore: Spotify.PlaybackState does have timestamp
-        new Date(state.timestamp),
-        undefined,
-        state.track_window.current_track.album.images[0].url,
-        state.track_window.current_track.album.name,
-        state.track_window.current_track.name,
-        state.track_window.current_track.artists[0].name,
-        state.duration,
-    );
-}
-
-function createPlaybackStateFromServer(state: any) {
-    return new PlaybackState(
-        state.context_uri,
-        state.current_track_uri,
-        state.paused,
-        state.raw_position_ms,
-        new Date(state.sample_time),
-        new Date(state.etag));
-}
+declare const APP_DATA: AppData;
 
 window.onSpotifyWebPlaybackSDKReady = () => {
-    new StationApp();
+    let webSocketBridge = new ChannelWebSocketBridge();
+    let musicPlayer = new SpotifyMusicPlayer('Dancing Together', APP_DATA.accessToken);
+    new StationManager(
+        APP_DATA.userIsDJ,
+        APP_DATA.userIsAdmin,
+        new StationServer(APP_DATA.stationId, webSocketBridge),
+        new StationMusicPlayer(musicPlayer));
 };
-
-export class StationApp {
-    readonly stationManager: StationManager;
-
-    constructor() {
-        let webSocketBridge = new ChannelWebSocketBridge();
-        let musicPlayer = new SpotifyMusicPlayer('Dancing Together', SERVER_DATA.accessToken);
-        this.stationManager = new StationManager(
-            SERVER_DATA.userIsDJ,
-            SERVER_DATA.userIsAdmin,
-            new StationServer(SERVER_DATA.stationId, webSocketBridge),
-            new StationMusicPlayer(musicPlayer));
-    }
-}
-
-class ChannelWebSocketBridge implements WebSocketBridge {
-    impl: any = new channels.WebSocketBridge();
-    connect(path: string) { this.impl.connect(path); }
-    listen(callback: WebSocketListenCallback) { this.impl.listen(callback); }
-    send(data: any) { this.impl.send(data); }
-}
-
-class SpotifyMusicPlayer implements MusicPlayer {
-    impl: Spotify.SpotifyPlayer;
-
-    constructor(clientName: string, private accessToken: string) {
-        this.impl = new Spotify.Player({
-            name: clientName,
-            getOAuthToken: cb => { cb(this.getAccessToken()); },
-            volume: 0.8, // TODO: use cached volume
-        });
-    }
-
-    getAccessToken(): string { return this.accessToken; }
-    setAccessToken(value: string) { this.accessToken = value; }
-
-    connect(): Promise<boolean> { return this.impl.connect(); }
-
-    on(eventName: string, cb: (_args: any[]) => void) {
-        // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
-        return this.impl.on(eventName, cb);
-    }
-
-    getCurrentState(): Promise<PlaybackState | null> {
-        return this.impl.getCurrentState().then(state => {
-            return (state ? createPlaybackStateFromSpotify(state) : null);
-        });
-    }
-
-    getVolume(): Promise<number> { return this.impl.getVolume(); }
-    setVolume(value: number): Promise<void> { return this.impl.setVolume(value); }
-
-    pause(): Promise<void> { return this.impl.pause(); }
-    resume(): Promise<void> { return this.impl.resume(); }
-    togglePlay(): Promise<void> { return this.impl.togglePlay(); }
-
-    seek(positionMS: number): Promise<void> { return this.impl.seek(positionMS); }
-
-    previousTrack(): Promise<void> { return this.impl.previousTrack(); }
-    nextTrack(): Promise<void> { return this.impl.nextTrack(); }
-}
 
 export class StationManager {
     taskExecutor = new TaskExecutor();
@@ -168,7 +77,7 @@ export class StationManager {
 
                 this.viewManager.stationView.setState(() => ({ playbackState: clientState }));
                 this.viewManager.musicPositionView.setState(() => ({ paused: clientState.paused, positionMS: clientState.raw_position_ms }));
-                this.viewManager.djView.setState(() => ({ playbackState: state }));
+                this.viewManager.djView.setState(() => ({ playbackState: clientState }));
             }
         });
     }
@@ -355,6 +264,14 @@ export class StationManager {
     }
 }
 
+interface JoinResponse {
+    stationName: string;
+}
+
+interface PongResponse {
+    startTime: Date;
+}
+
 export class StationServer {
     requestId: number = 0;
     observers: Map<string, JQueryCallback> = new Map([
@@ -482,10 +399,20 @@ export class StationServer {
     }
 }
 
+function createPlaybackStateFromServer(state: any) {
+    return new PlaybackState(
+        state.context_uri,
+        state.current_track_uri,
+        state.paused,
+        state.raw_position_ms,
+        new Date(state.sample_time),
+        new Date(state.etag));
+}
+
 export class StationMusicPlayer {
-    isReady: boolean = false;
+    isReady = false;
     deviceId?: string;
-    volume: number = 0.8;
+    volume = 0.8;
     volumeBeforeMute: number;
 
     constructor(private musicPlayer: MusicPlayer) {
@@ -561,7 +488,11 @@ export class StationMusicPlayer {
     togglePlay(): Promise<void> { return this.musicPlayer.togglePlay(); }
 
     freeze(duration: number): Promise<void> {
-        return this.musicPlayer.pause().then(() => wait(duration)).then(() => this.musicPlayer.resume());
+        return this.musicPlayer.pause().then(() => {
+            return wait(duration)
+        }).then(() => {
+            return this.musicPlayer.resume();
+        });
     }
 
     seek(positionMS: number): Promise<void> { return this.musicPlayer.seek(positionMS); }
@@ -594,7 +525,7 @@ class TaskExecutor {
 
 class CircularArray2<T> {
     array: Array<T> = [];
-    position: number = 0;
+    position = 0;
     constructor(readonly capacity: number) {
     }
 
@@ -622,5 +553,9 @@ function timeout(ms: number): Promise<never> {
 }
 
 function retry(condition: () => Promise<boolean>): Promise<void> {
-    return condition().then(b => (b ? Promise.resolve() : wait(250).then(() => retry(condition))));
+    return condition().then(b => {
+        return (b ? Promise.resolve() : wait(250).then(() => {
+            return retry(condition);
+        }));
+    });
 }
