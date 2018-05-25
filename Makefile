@@ -5,6 +5,10 @@ build:
 	docker-compose build
 	npm install
 
+.PHONY: makemigrations
+makemigrations:
+	docker-compse run web python3 manage.py makemigrations
+
 .PHONY: migrate
 migrate:
 	docker-compose run web python3 manage.py migrate
