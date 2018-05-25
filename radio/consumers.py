@@ -35,7 +35,6 @@ class PlaybackState:
     current_track_uri: str
     paused: bool
     raw_position_ms: int
-    position_ms: int = dataclasses.field(init=False)
     sample_time: datetime
     etag: Optional[datetime] = dataclasses.field(default=None)
 
@@ -46,8 +45,10 @@ class PlaybackState:
         if (self.etag is not None) and (type(self.etag) is str):
             self.etag = dateutil.parser.parse(self.etag)
 
+    @property
+    def position_ms(self):
         if self.paused:
-            self.position_ms = self.raw_position_ms
+            return self.raw_position_ms
         else:
             # Assume music has been playing continuously and adjust based on
             # elapsed time since sample was taken
@@ -55,7 +56,7 @@ class PlaybackState:
                 self.sample_time.tzinfo) - self.sample_time
             millis = (elapsed_time.seconds * 1000) + (
                 elapsed_time.microseconds / 1000)
-            self.position_ms = self.raw_position_ms + millis
+            return self.raw_position_ms + millis
 
     @staticmethod
     def from_client_state(state):
@@ -66,9 +67,12 @@ class PlaybackState:
     @staticmethod
     def from_station_state(station_state: models.PlaybackState):
         return PlaybackState(
-            station_state.context_uri, station_state.current_track_uri,
-            station_state.paused, station_state.position_ms,
-            station_state.last_updated_time, station_state.last_updated_time)
+            station_state.context_uri,
+            station_state.current_track_uri,
+            station_state.paused,
+            station_state.raw_position_ms,
+            station_state.sample_time,
+            etag=station_state.last_updated_time)
 
     def as_dict(self):
         return {
@@ -213,7 +217,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         self.station_id = station_id
         self.device_id = device_id
         self.is_admin = listener.is_admin
-        self.is_dj = listener.is_admin
+        self.is_dj = listener.is_dj
 
         station = await get_station_or_error(station_id, self.user)
         await self.channel_layer.group_add(station.group_name,
@@ -244,6 +248,9 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         if self.is_admin:
             await self.channel_layer.group_discard(station.admin_group_name,
                                                    self.channel_name)
+
+        if self.is_dj:
+            await ensure_station_playback_state_is_paused(station)
 
         self.state = StationState.NotConnected
         self.station_id = None
@@ -456,6 +463,14 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json(message)
 
 
+async def ensure_station_playback_state_is_paused(station):
+    db_station_state = getattr(station, 'playbackstate', None)
+    if (db_station_state is not None) and (not db_station_state.paused):
+        station_state = PlaybackState.from_station_state(db_station_state)
+        paused_station_state = dataclasses.replace(station_state, paused=True)
+        await update_station_state(db_station_state, paused_station_state)
+
+
 # Database
 
 
@@ -501,7 +516,8 @@ def update_station_state(station_state, state: PlaybackState):
     station_state.context_uri = state.context_uri
     station_state.current_track_uri = state.current_track_uri
     station_state.paused = state.paused
-    station_state.position_ms = state.position_ms
+    station_state.raw_position_ms = state.raw_position_ms
+    station_state.sample_time = state.sample_time
     station_state.save()
 
 

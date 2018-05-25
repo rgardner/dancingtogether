@@ -56,5 +56,6 @@ class PlaybackState(models.Model):
     context_uri = models.CharField(max_length=256)
     current_track_uri = models.CharField(max_length=256)
     paused = models.NullBooleanField()
-    position_ms = models.PositiveIntegerField()
+    raw_position_ms = models.PositiveIntegerField()
+    sample_time = models.DateTimeField()
     last_updated_time = models.DateTimeField(auto_now=True)

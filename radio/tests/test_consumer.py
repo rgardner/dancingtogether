@@ -224,6 +224,36 @@ async def test_dj_playback_join_existing_station(user1, station1):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_dj_leaves_station(user1, station1):
+    await create_listener(user1, station1, is_dj=True)
+
+    port = mocks.get_free_port()
+    mocks.start_mock_spotify_server(port)
+
+    with override_settings(
+            SPOTIFY_PLAYER_PLAY_API_URL=f'http://localhost:{port}/player/play'
+    ):
+        async with disconnecting(StationCommunicator(user1)) as communicator:
+            await communicator.test_join(station1)
+
+            request_id = 1
+            state = get_mock_client_state(paused=False)
+            await communicator.player_state_change(
+                request_id, state, etag=None)
+
+            response = await communicator.receive_json_from()
+            assert response['type'] == 'ensure_playback_state'
+            assert response['request_id'] == request_id
+            server_state = PlaybackState(**response['state'])
+            assert_client_server_states_are_equal(state, server_state)
+
+        server_state = await get_db_playback_state(station1)
+        expected_state = dataclasses.replace(state, paused=True)
+        assert_client_server_states_are_equal(expected_state, server_state)
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_playback_error(user1, station1):
     await create_listener(user1, station1)
     await create_db_playback_state(station1)
@@ -304,6 +334,12 @@ def create_db_playback_state(station, state=None):
 
 
 @database_sync_to_async
+def get_db_playback_state(station):
+    return PlaybackState.from_station_state(
+        models.PlaybackState.objects.get(station=station))
+
+
+@database_sync_to_async
 def create_spotify_credentials(user):
     return SpotifyCredentials.objects.create(
         user=user, access_token_expiration_time=timezone.now())
@@ -313,7 +349,7 @@ def get_mock_client_state(**kwargs) -> PlaybackState:
     return PlaybackState(
         context_uri=kwargs.get('context_uri', MOCK_CONTEXT_URI1),
         current_track_uri='MockCurrentTrackUri',
-        paused=True,
+        paused=kwargs.get('paused', True),
         raw_position_ms=kwargs.get('raw_position_ms', 0),
         sample_time=timezone.now(),
         etag=None)
