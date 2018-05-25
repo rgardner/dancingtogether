@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -39,6 +40,7 @@ def station(request, station_id):
             'access_token': access_token,
             'is_dj': listener.is_dj,
             'is_admin': listener.is_admin,
+            'player_name': settings.SPOTIFY_PLAYER_NAME,
         })
 
 

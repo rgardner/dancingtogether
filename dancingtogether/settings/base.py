@@ -192,6 +192,8 @@ if 'DATABASE_URL' in os.environ:
 SITE_URL = os.environ.get('DT_SITE_URL')
 SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
 SPOTIFY_CLIENT_SECRET = os.environ.get('DT_SPOTIFY_CLIENT_SECRET')
+SPOTIFY_PLAYER_NAME = os.environ.get('DT_SPOTIFY_PLAYER_NAME',
+                                     'Dancing Together')
 
 SPOTIFY_TOKEN_API_URL = 'https://accounts.spotify.com/api/token'
 SPOTIFY_PLAYER_PLAY_API_URL = 'https://api.spotify.com/v1/me/player/play'
