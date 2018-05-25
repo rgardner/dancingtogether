@@ -271,8 +271,8 @@ interface PongResponse {
 }
 
 export class StationServer {
-    requestId: number = 0;
-    observers: Map<string, JQueryCallback> = new Map([
+    requestId = 0;
+    observers = new Map([
         ['error', $.Callbacks()],
         ['join', $.Callbacks()],
         ['pong', $.Callbacks()],
