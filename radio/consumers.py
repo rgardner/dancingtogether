@@ -45,19 +45,6 @@ class PlaybackState:
         if (self.etag is not None) and (type(self.etag) is str):
             self.etag = dateutil.parser.parse(self.etag)
 
-    @property
-    def position_ms(self):
-        if self.paused:
-            return self.raw_position_ms
-        else:
-            # Assume music has been playing continuously and adjust based on
-            # elapsed time since sample was taken
-            elapsed_time = datetime.now(
-                self.sample_time.tzinfo) - self.sample_time
-            millis = (elapsed_time.seconds * 1000) + (
-                elapsed_time.microseconds / 1000)
-            return self.raw_position_ms + millis
-
     @staticmethod
     def from_client_state(state):
         return PlaybackState(state['context_uri'], state['current_track_uri'],
