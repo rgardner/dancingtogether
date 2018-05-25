@@ -7,7 +7,6 @@ import { ViewManager } from './station_view';
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
-const DEFAULT_SERVER_ONE_WAY_TIME_MS = 30;
 
 interface AppData {
     spotifyConnectPlayerName: string;
@@ -248,11 +247,8 @@ export class StationManager {
     }
 
     getMedianServerOneWayTime(): number {
-        if (this.serverPings.length === 0) {
-            return DEFAULT_SERVER_ONE_WAY_TIME_MS;
-        } else {
-            return (median(this.serverPings.entries()) / 2);
-        }
+        console.assert(this.serverPings.length > 0);
+        return (median(this.serverPings.entries()) / 2);
     }
 
     getAdjustedPlaybackPosition(serverState: PlaybackState): number {
