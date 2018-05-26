@@ -6,13 +6,13 @@ import {
     SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer, StationServer,
 } from '../static/js/station'
 
-const MockStationId: number = 1;
-const MockStationName: string = 'MockStationName';
-const MockDeviceId: string = 'MockDeviceId';
-const MockContextUri: string = 'MockContextUri';
-const MockCurrentTrackUri: string = 'MockCurrentTrackUri';
-const MockServerEtag1: Date = new Date('2018-05-20T20:57:33.992Z');
-const MockServerEtag2: Date = new Date('2018-05-20T20:58:33.992Z');
+const MockStationId = 1;
+const MockStationName = 'MockStationName';
+const MockDeviceId = 'MockDeviceId';
+const MockContextUri = 'MockContextUri';
+const MockCurrentTrackUri = 'MockCurrentTrackUri';
+const MockServerEtag1 = new Date('2018-05-20T20:57:33.992Z');
+const MockServerEtag2 = new Date('2018-05-20T20:58:33.992Z');
 
 beforeEach(() => {
     // Mock StationManager.getAdjustedPlaybackPosition, as it adjusts based on
