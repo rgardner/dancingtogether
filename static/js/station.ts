@@ -408,38 +408,14 @@ function createPlaybackStateFromServer(state: any) {
 }
 
 export class StationMusicPlayer {
-    isReady = false;
-    deviceId?: string;
-    volume = 0.8;
-    volumeBeforeMute: number;
+    volumeBeforeMute = 0.8;
 
     constructor(private musicPlayer: MusicPlayer) {
-        this.volumeBeforeMute = this.volume;
-        this.bindMusicPlayerActions();
         this.musicPlayer.connect();
     }
 
     on(eventName: string, cb: (...args: any[]) => void) {
         this.musicPlayer.on(eventName, cb);
-    }
-
-    bindMusicPlayerActions() {
-        this.musicPlayer.on('ready', ({ device_id }) => {
-            this.deviceId = device_id;
-            this.isReady = true;
-        });
-
-        this.musicPlayer.on('initialization_error', () => {
-            this.isReady = false;
-        });
-
-        this.musicPlayer.on('authentication_error', () => {
-            this.isReady = false;
-        });
-
-        this.musicPlayer.on('account_error', () => {
-            this.isReady = false;
-        });
     }
 
     getCurrentState(): Promise<PlaybackState | null> { return this.musicPlayer.getCurrentState(); }
@@ -454,7 +430,11 @@ export class StationMusicPlayer {
     }
 
     getVolume(): Promise<number> { return this.musicPlayer.getVolume(); }
-    setVolume(value: number): Promise<void> { return this.musicPlayer.setVolume(value); }
+
+    setVolume(value: number): Promise<void> {
+        StationMusicPlayer.setCachedVolume(value);
+        return this.musicPlayer.setVolume(value);
+    }
 
     muteUnmuteVolume() {
         return new Promise(resolve => {
