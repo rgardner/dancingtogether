@@ -1,9 +1,7 @@
 // @ts-ignore: No typings for Django Channels WebSocketBridge
 declare var channels;
 
-export interface WebSocketListenCallback {
-    (action: any, stream: string): void;
-}
+export type WebSocketListenCallback = (action: any, stream: string) => void;
 
 export interface WebSocketBridge {
     connect(path: string): void;
