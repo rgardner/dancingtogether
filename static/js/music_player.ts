@@ -35,7 +35,6 @@ export interface MusicPlayer {
 
 export class SpotifyMusicPlayer implements MusicPlayer {
     impl: Spotify.SpotifyPlayer;
-    playerStateChangeObservers = $.Callbacks();
 
     constructor(clientName: string, private accessToken: string) {
         this.impl = new Spotify.Player({
