@@ -36,11 +36,11 @@ export interface MusicPlayer {
 export class SpotifyMusicPlayer implements MusicPlayer {
     impl: Spotify.SpotifyPlayer;
 
-    constructor(clientName: string, private accessToken: string) {
+    constructor(clientName: string, private accessToken: string, initialVolume: number) {
         this.impl = new Spotify.Player({
             name: clientName,
             getOAuthToken: cb => { cb(this.getAccessToken()); },
-            volume: 0.8, // TODO: use cached volume
+            volume: initialVolume,
         });
 
     }

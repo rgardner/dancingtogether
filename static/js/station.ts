@@ -20,7 +20,8 @@ declare const APP_DATA: AppData;
 
 window.onSpotifyWebPlaybackSDKReady = () => {
     let webSocketBridge = new ChannelWebSocketBridge();
-    let musicPlayer = new SpotifyMusicPlayer(APP_DATA.spotifyConnectPlayerName, APP_DATA.accessToken);
+    let musicPlayer = new SpotifyMusicPlayer(APP_DATA.spotifyConnectPlayerName,
+        APP_DATA.accessToken, StationMusicPlayer.getCachedVolume());
 
     let listenerRole = ListenerRole.None;
     if (APP_DATA.userIsDJ) listenerRole |= ListenerRole.DJ;
