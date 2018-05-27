@@ -249,7 +249,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'leave': station_id})
 
     async def send_pong(self, start_time):
-        await self.send_json({'type': 'pong', 'start_time': start_time})
+        await self.send_json({
+            'type': 'pong',
+            'start_time': start_time,
+            'server_time': datetime.utcnow().isoformat(),
+        })
 
     @station_join_required
     async def update_dj_state(self, request_id, state,

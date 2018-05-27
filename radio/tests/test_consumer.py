@@ -5,6 +5,7 @@ from asgiref.sync import async_to_sync
 from async_generator import asynccontextmanager
 from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
+import dateutil
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.utils import timezone
@@ -48,7 +49,9 @@ async def test_ping_pong(user1, station1):
         await communicator.ping(start_time)
 
         response = await communicator.receive_json_from()
-        assert response == {'type': 'pong', 'start_time': start_time}
+        assert response['type'] == 'pong'
+        assert response['start_time'] == start_time
+        assert dateutil.parser.isoparse(response['server_time'])
 
 
 @pytest.mark.django_db(transaction=True)
