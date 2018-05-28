@@ -40,10 +40,10 @@ class PlaybackState:
 
     def __post_init__(self):
         if type(self.sample_time) is str:
-            self.sample_time = dateutil.parser.parse(self.sample_time)
+            self.sample_time = dateutil.parser.isoparse(self.sample_time)
 
         if (self.etag is not None) and (type(self.etag) is str):
-            self.etag = dateutil.parser.parse(self.etag)
+            self.etag = dateutil.parser.isoparse(self.etag)
 
     @staticmethod
     def from_client_state(state):
