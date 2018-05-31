@@ -152,14 +152,20 @@ test('station server can send a ping', async () => {
 
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual(expect.objectContaining({
+            'command': 'ping',
             'start_time': expect.any(Date),
         }));
-        mockWebSocketBridge.fire({ 'type': 'pong', 'start_time': data.start_time });
+        mockWebSocketBridge.fire({
+            'type': 'pong',
+            'start_time': data.start_time,
+            'server_time': new Date(),
+        });
     });
 
     await expect(stationServer.sendPingRequest())
         .resolves.toEqual(expect.objectContaining({
             'startTime': expect.any(Date),
+            'serverTime': expect.any(Date),
         }));
 });
 
@@ -254,6 +260,24 @@ test('station server fires notifications for errors', async () => {
     });
 
     mockWebSocketBridge.fire(mockError);
+});
+
+test.skip('station manager correctly adjusts client server time offset', async () => {
+    let stationManager = new StationManager(
+        ListenerRole.None,
+        new StationServer(MockStationId, new MockWebSocketBridge()),
+        new StationMusicPlayer(new MockMusicPlayer()));
+
+    let startTime = new Date('2018-05-31T00:00:01.000Z');
+    let serverTime = new Date('2018-05-31T00:00:03.000Z');
+    let currentTime = new Date('2018-05-31T00:00:02.000Z');
+    stationManager.adjustServerTimeOffset(startTime, serverTime, currentTime);
+
+    expect(stationManager.roundTripTimes.length).toBe(1);
+    expect(stationManager.roundTripTimes.entries()).toEqual([1000]);
+    expect(stationManager.clientServerTimeOffsets.length).toBe(1);
+    expect(stationManager.clientServerTimeOffsets.entries()).toEqual([-1500]);
+
 });
 
 test('station manager correctly adjusts playback state when server is paused', async () => {

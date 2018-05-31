@@ -35,11 +35,12 @@ window.onSpotifyWebPlaybackSDKReady = () => {
 
 export class StationManager {
     taskExecutor = new TaskExecutor();
-    serverPings = new CircularArray2<number>(5);
     clientEtag?: Date;
     serverEtag?: Date;
     heartbeatIntervalId?: number;
     viewManager: ViewManager;
+    roundTripTimes = new CircularArray2<number>(5);
+    clientServerTimeOffsets = new CircularArray2<number>(5);
 
     constructor(listenerRole: ListenerRole, private server: StationServer, private musicPlayer: StationMusicPlayer) {
         this.viewManager = new ViewManager(listenerRole);
@@ -169,7 +170,7 @@ export class StationManager {
     calculatePing(): Promise<void> {
         return Promise.race([this.server.sendPingRequest(), timeout(5000)])
             .then((pong: PongResponse) => {
-                this.serverPings.push((new Date()).getTime() - pong.startTime.getTime());
+                this.adjustServerTimeOffset(pong.startTime, pong.serverTime, new Date());
             })
             .catch(console.error);
     }
@@ -247,19 +248,27 @@ export class StationManager {
         });
     }
 
-    getMedianServerOneWayTime(): number {
-        console.assert(this.serverPings.length > 0);
-        return (median(this.serverPings.entries()) / 2);
+    getMedianClientServerTimeOffset(): number {
+        console.assert(this.clientServerTimeOffsets.length > 0);
+        return median(this.clientServerTimeOffsets.entries());
     }
 
     getAdjustedPlaybackPosition(serverState: PlaybackState): number {
         let position = serverState.raw_position_ms;
         if (!serverState.paused) {
-            const serverDelay = this.getMedianServerOneWayTime();
-            position += ((new Date()).getTime() - (serverState.sample_time.getTime() + serverDelay));
+            const serverTimeOffset = this.getMedianClientServerTimeOffset();
+            position += ((new Date()).getTime() - (serverState.sample_time.getTime() + serverTimeOffset));
         }
 
         return position;
+    }
+
+    adjustServerTimeOffset(startTime: Date, serverTime: Date, currentTime: Date) {
+        this.roundTripTimes.push(currentTime.getTime() - startTime.getTime());
+        const medianOneWayTime = Math.round(median(this.roundTripTimes.entries()) / 2);
+        //const clientServerTimeOffset = currentTime.getTime() - medianOneWayTime - serverTime.getTime();
+        const clientServerTimeOffset = currentTime.getTime() - startTime.getTime();
+        this.clientServerTimeOffsets.push(clientServerTimeOffset);
     }
 }
 
@@ -269,6 +278,7 @@ interface JoinResponse {
 
 interface PongResponse {
     startTime: Date;
+    serverTime: Date;
 }
 
 export class StationServer {
@@ -392,7 +402,10 @@ export class StationServer {
                 this.observers.get('station_state_change')!.fire(serverPlaybackState);
             }
         } else if (action.type === 'pong') {
-            const pong: PongResponse = { startTime: new Date(action.start_time) };
+            const pong: PongResponse = {
+                startTime: new Date(action.start_time),
+                serverTime: new Date(action.server_time),
+            };
             this.observers.get(action.type)!.fire(pong);
         }
     }
