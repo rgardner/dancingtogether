@@ -168,6 +168,8 @@ export class StationManager {
                     return Promise.resolve();
                 }
 
+                state.sample_time = new Date(state.sample_time.getTime() + this.getMedianClientServerTimeOffset());
+
                 return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
                     .then(serverState => {
                         return this.applyServerState(<PlaybackState>serverState);
@@ -183,6 +185,10 @@ export class StationManager {
             .then(state => {
                 if ((!state && this.clientEtag) || (state && (this.clientEtag && (state.sample_time <= this.clientEtag)))) {
                     return Promise.resolve();
+                }
+
+                if (state) {
+                    state.sample_time = new Date(state.sample_time.getTime() + this.getMedianClientServerTimeOffset());
                 }
 
                 return Promise.race([this.server.sendSyncRequest(state || undefined), timeout(5000)])
@@ -294,8 +300,7 @@ export class StationManager {
     adjustServerTimeOffset(startTime: Date, serverTime: Date, currentTime: Date) {
         this.roundTripTimes.push(currentTime.getTime() - startTime.getTime());
         const medianOneWayTime = Math.round(median(this.roundTripTimes.entries()) / 2);
-        //const clientServerTimeOffset = currentTime.getTime() - medianOneWayTime - serverTime.getTime();
-        const clientServerTimeOffset = currentTime.getTime() - startTime.getTime();
+        const clientServerTimeOffset = currentTime.getTime() - medianOneWayTime - serverTime.getTime();
         this.clientServerTimeOffsets.push(clientServerTimeOffset);
     }
 }

@@ -1,7 +1,7 @@
 import asyncio
 import dataclasses
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 import logging
 from typing import Any, Dict, Optional, Dict
@@ -250,9 +250,12 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
     async def send_pong(self, start_time):
         await self.send_json({
-            'type': 'pong',
-            'start_time': start_time,
-            'server_time': datetime.utcnow().isoformat(),
+            'type':
+            'pong',
+            'start_time':
+            start_time,
+            'server_time':
+            datetime.now(timezone.utc).isoformat(),
         })
 
     @station_join_required

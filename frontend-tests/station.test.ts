@@ -348,11 +348,17 @@ test('station manager correctly adjusts playback state when server is playing', 
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
+function createStationManager(stationServer: StationServer, stationMusicPlayer: StationMusicPlayer): StationManager {
+    let stationManager = new StationManager(ListenerRole.None, stationServer, stationMusicPlayer);
+    stationManager.roundTripTimes.push(0);
+    stationManager.clientServerTimeOffsets.push(0);
+    return stationManager;
+}
+
 test('station manager correctly handles precondition failed', async () => {
     let mockWebSocketBridge = new MockWebSocketBridge();
     let mockMusicPlayer = new MockMusicPlayer();
-    let stationManager = new StationManager(
-        ListenerRole.None,
+    let stationManager = createStationManager(
         new StationServer(MockStationId, mockWebSocketBridge),
         new StationMusicPlayer(mockMusicPlayer));
 
