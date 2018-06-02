@@ -4,6 +4,7 @@ import { MusicPlayer, PlaybackState } from '../static/js/music_player';
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
     SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer, StationServer,
+    ServerError,
 } from '../static/js/station'
 
 const MockStationId = 1;
@@ -249,17 +250,33 @@ test('station server fires notifications for station state changes', async () =>
 });
 
 test('station server fires notifications for errors', async () => {
-    expect.assertions(2);
+    expect.assertions(6);
     let mockWebSocketBridge = new MockWebSocketBridge();
     let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
-    const mockError = { error: 'precondition_failed', message: 'out of sync' };
-    stationServer.on('error', (error, message) => {
-        expect(error).toEqual(mockError.error);
-        expect(message).toEqual(mockError.message);
+    const mockError1 = { error: 'precondition_failed', message: 'out of sync' };
+    stationServer.onOnce('error', (error, message) => {
+        expect(error).toEqual(ServerError.PreconditionFailed);
+        expect(message).toEqual(mockError1.message);
     });
 
-    mockWebSocketBridge.fire(mockError);
+    mockWebSocketBridge.fire(mockError1);
+
+    const mockError2 = { error: 'too_many_requests', message: 'request throttled' };
+    stationServer.onOnce('error', (error, message) => {
+        expect(error).toEqual(ServerError.TooManyRequests);
+        expect(message).toEqual(mockError2.message);
+    });
+
+    mockWebSocketBridge.fire(mockError2);
+
+    const mockError3 = { error: 'internal_server_error', message: 'an error occurred' };
+    stationServer.onOnce('error', (error, message) => {
+        expect(error).toEqual(ServerError.InternalServerError);
+        expect(message).toEqual(mockError3.message);
+    });
+
+    mockWebSocketBridge.fire(mockError3);
 });
 
 test.skip('station manager correctly adjusts client server time offset', async () => {

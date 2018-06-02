@@ -86,10 +86,12 @@ export class StationManager {
     }
 
     bindServerActions() {
-        this.server.on('error', (error: string, message: string) => {
-            if (error === 'precondition_failed') {
+        this.server.on('error', (error: ServerError, message: string) => {
+            if (error === ServerError.PreconditionFailed) {
                 this.taskExecutor.clear();
                 this.taskExecutor.push(() => this.syncServerPlaybackState());
+            } else if ((error === ServerError.TooManyRequests) || (error === ServerError.InternalServerError)) {
+                this.taskExecutor.clear();
             } else {
                 console.error(`${error}: ${message}`);
             }
@@ -281,6 +283,12 @@ interface PongResponse {
     serverTime: Date;
 }
 
+export enum ServerError {
+    PreconditionFailed = 'precondition_failed',
+    TooManyRequests = 'too_many_requests',
+    InternalServerError = 'internal_server_error',
+}
+
 export class StationServer {
     requestId = 0;
     observers = new Map([
@@ -390,7 +398,7 @@ export class StationServer {
 
     onMessage(action: any) {
         if (action.error) {
-            this.observers.get('error')!.fire(action.error, action.message);
+            this.observers.get('error')!.fire(serverErrorFromString(action.error), action.message);
         } else if (action.join) {
             this.observers.get('join')!.fire(action.join);
         } else if (action.type === 'ensure_playback_state') {
@@ -408,6 +416,19 @@ export class StationServer {
             };
             this.observers.get(action.type)!.fire(pong);
         }
+    }
+}
+
+function serverErrorFromString(error: string): ServerError {
+    if (error === 'precondition_failed') {
+        return ServerError.PreconditionFailed;
+    } else if (error === 'too_many_requests') {
+        return ServerError.TooManyRequests;
+    } else if (error === 'internal_server_error') {
+        return ServerError.InternalServerError;
+    } else {
+        console.assert();
+        throw Error("Unknown server error");
     }
 }
 
