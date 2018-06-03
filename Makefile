@@ -5,13 +5,20 @@ build:
 	docker-compose build
 	npm install
 
-.PHONY: makemigrations
-makemigrations:
+.PHONY: db-makemigrations
+db-makemigrations:
 	docker-compse run web python3 manage.py makemigrations
 
-.PHONY: migrate
-migrate:
+.PHONY: db-migrate
+db-migrate:
 	docker-compose run web python3 manage.py migrate
+
+.PHONY: db-createsuperuser
+db-createsuperuser:
+	docker-compose run web python3 manage.py createsuperuser
+
+.PHONY: db-setup
+db-setup: db-migrate db-createsuperuser
 
 .PHONY: run
 run:
