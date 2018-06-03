@@ -45,14 +45,14 @@ shell:
 	docker-compose run web python3 manage.py shell
 
 .PHONY: test
-test: client-test server-test
+test: test-client test-server
 
-.PHONY: client-test
-client-test:
+.PHONY: test-client
+test-client:
 	npm test
 
-.PHONY: server-test
-server-test:
+.PHONY: test-server
+test-server:
 	DJANGO_SETTINGS_MODULE=dancingtogether.settings.test pipenv run python3 manage.py test
 
 .PHONY: deploy

@@ -18,10 +18,10 @@ $ ./tools/scripts/dev_setup.sh
 $ # Add required environment variables
 $ cp .env.example .env
 $ vim .env
-$ # Build containers and run database migrations
-$ make build && make migrate
-$ # Create a superuser account to administrate the site
-$ docker-compose run web python3 manage.py createsuperuser
+$ # Build containers
+$ make build
+$ # Run database migrations and create a superuser to administrate the site
+$ make db-setup
 ```
 
 ### Docker Usage
@@ -29,8 +29,8 @@ $ docker-compose run web python3 manage.py createsuperuser
 ```sh
 $ # (Re)build the docker containers after updating dependencies
 $ make build
-$ # Run database migrations on containers
-$ make migrate
+$ # Run database migrations and create superuser on containers
+$ make db-setup
 $ # Start the docker containers
 $ make run
 $ # Attach to running containers to enable easy debugging with `pdb`
