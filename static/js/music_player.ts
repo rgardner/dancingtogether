@@ -17,6 +17,7 @@ export interface MusicPlayer {
     connect(): Promise<boolean>;
 
     on(eventName: string, cb: (...args: any[]) => void): void;
+    removeListener(eventName: string): void;
 
     getCurrentState(): Promise<PlaybackState | null>;
 
@@ -59,6 +60,11 @@ export class SpotifyMusicPlayer implements MusicPlayer {
             // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
             this.impl.on(eventName, cb);
         }
+    }
+
+    removeListener(eventName: string) {
+        // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
+        this.impl.removeListener(eventName);
     }
 
     getCurrentState(): Promise<PlaybackState | null> {

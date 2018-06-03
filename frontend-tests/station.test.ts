@@ -1,5 +1,5 @@
 import * as $ from 'jquery';
-import { ListenerRole } from '../static/js/util';
+import { ListenerRole, wait } from '../static/js/util';
 import { MusicPlayer, PlaybackState } from '../static/js/music_player';
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
@@ -28,7 +28,7 @@ beforeEach(() => {
 class MockMusicPlayer implements MusicPlayer {
     public playbackState = new PlaybackState('', '', true, 0, new Date());
     observers = new Map([
-        ['player_state_change', $.Callbacks()],
+        ['player_state_changed', $.Callbacks()],
     ]);
 
     // MusicPlayer
@@ -46,6 +46,10 @@ class MockMusicPlayer implements MusicPlayer {
         }
 
         callbacks.add(cb);
+    }
+
+    removeListener(eventName: string) {
+        this.observers.get(eventName)!.empty();
     }
 
     getCurrentState(): Promise<PlaybackState> {
@@ -91,7 +95,10 @@ class MockMusicPlayer implements MusicPlayer {
 
     firePlayerStateChange() {
         this.getCurrentState().then(playbackState => {
-            this.observers.get('player_state_change')!.fire(playbackState)
+            const newPlaybackState = Object.assign({}, playbackState, {
+                sample_time: new Date(),
+            });
+            this.observers.get('player_state_changed')!.fire(newPlaybackState)
         });
     }
 }
@@ -294,8 +301,14 @@ test.skip('station manager correctly adjusts client server time offset', async (
     expect(stationManager.roundTripTimes.entries()).toEqual([1000]);
     expect(stationManager.clientServerTimeOffsets.length).toBe(1);
     expect(stationManager.clientServerTimeOffsets.entries()).toEqual([-1500]);
-
 });
+
+function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, playbackState: PlaybackState) {
+    expect(mockMusicPlayer.playbackState.context_uri).toEqual(playbackState.context_uri);
+    expect(mockMusicPlayer.playbackState.current_track_uri).toEqual(playbackState.current_track_uri);
+    expect(mockMusicPlayer.playbackState.paused).toBe(playbackState.paused);
+    expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(playbackState.raw_position_ms);
+}
 
 test('station manager correctly adjusts playback state when server is paused', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
@@ -315,10 +328,7 @@ test('station manager correctly adjusts playback state when server is paused', a
 
     await expect(stationManager.applyServerState(mockPlaybackState)).resolves.toBeUndefined();
 
-    expect(mockMusicPlayer.playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
-    expect(mockMusicPlayer.playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
-    expect(mockMusicPlayer.playbackState.paused).toBe(mockPlaybackState.paused);
-    expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(mockPlaybackState.raw_position_ms);
+    verify_music_player_playback_state(mockMusicPlayer, mockPlaybackState);
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
@@ -339,11 +349,10 @@ test('station manager correctly adjusts playback state when server is playing', 
 
     await expect(stationManager.applyServerState(mockPlaybackState)).resolves.toBeUndefined();
 
-    expect(mockMusicPlayer.playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
-    expect(mockMusicPlayer.playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
-    expect(mockMusicPlayer.playbackState.paused).toBe(mockPlaybackState.paused);
-    const newPlaybackPosition = mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS;
-    expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(newPlaybackPosition);
+    const expectedPlaybackState = Object.assign({}, mockPlaybackState, {
+        raw_position_ms: mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS,
+    })
+    verify_music_player_playback_state(mockMusicPlayer, expectedPlaybackState);
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
@@ -383,7 +392,7 @@ test('station manager correctly handles precondition failed', async () => {
 
     // Set up callback for music player state change correct
     let donePromise = new Promise(resolve => {
-        mockMusicPlayer.on('player_state_change', (playbackState: PlaybackState) => {
+        mockMusicPlayer.on('player_state_changed', (playbackState: PlaybackState) => {
             expect(playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
             expect(playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
             expect(playbackState.paused).toBe(mockPlaybackState.paused);
@@ -398,4 +407,32 @@ test('station manager correctly handles precondition failed', async () => {
     });
 
     await expect(donePromise).resolves.toBeUndefined();
+});
+
+test('station manager correctly handles internal server error', async () => {
+    expect.assertions(4);
+
+    let mockMusicPlayer = new MockMusicPlayer();
+    let stationMusicPlayer = new StationMusicPlayer(mockMusicPlayer);
+    let mockWebSocketBridge = new MockWebSocketBridge();
+    let stationManager = new StationManager(
+        ListenerRole.None,
+        new StationServer(MockStationId, mockWebSocketBridge),
+        stationMusicPlayer);
+
+    let initialPlaybackState = mockMusicPlayer.playbackState;
+    stationManager.bindSteadyStateActions();
+
+    mockWebSocketBridge.fire({
+        error: 'internal_server_error',
+        message: 'unknown error occurred',
+    });
+
+    mockWebSocketBridge.fire({
+        'type': 'ensure_playback_state',
+        'state': new PlaybackState(MockContextUri, MockCurrentTrackUri, true /*paused*/, 0, new Date()),
+    });
+    await wait(50).then(() => {
+        verify_music_player_playback_state(mockMusicPlayer, initialPlaybackState);
+    });
 });

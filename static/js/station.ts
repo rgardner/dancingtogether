@@ -7,6 +7,7 @@ import { ViewManager } from './station_view';
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
+const BACKOFF_TIME_MS = 120000;
 
 interface AppData {
     spotifyConnectPlayerName: string;
@@ -46,15 +47,12 @@ export class StationManager {
         this.viewManager = new ViewManager(listenerRole);
         this.bindMusicPlayerActions();
         this.bindServerActions();
-        this.bindViewActions();
     }
 
     bindMusicPlayerActions() {
         this.musicPlayer.on('ready', ({ device_id }) => {
             this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
-            this.taskExecutor.push(() => this.calculatePing());
-            this.taskExecutor.push(() => this.syncServerPlaybackState());
-            this.enableHeartbeat();
+            this.startSteadyState();
 
             this.viewManager.stationView.setState(() => ({ isConnected: true }));
             this.viewManager.listenerView.setState(() => ({ isReady: true }));
@@ -71,7 +69,24 @@ export class StationManager {
         this.musicPlayer.on('account_error', ({ message }) => {
             this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
         });
+    }
 
+    bindServerActions() {
+        this.server.on('error', (error: ServerError, message: string) => {
+            if (error === ServerError.PreconditionFailed) {
+                this.taskExecutor.clear();
+                this.taskExecutor.push(() => this.syncServerPlaybackState());
+            } else if ((error === ServerError.TooManyRequests) || (error === ServerError.InternalServerError)) {
+                Promise.resolve(this.stopSteadyState())
+                    .then(() => wait(BACKOFF_TIME_MS))
+                    .then(() => this.startSteadyState());
+            } else {
+                console.error(`${error}: ${message}`);
+            }
+        });
+    }
+
+    bindSteadyStateActions() {
         this.musicPlayer.on('player_state_changed', clientState => {
             if (clientState) {
                 if (this.clientEtag && (clientState.sample_time <= this.clientEtag)) {
@@ -83,34 +98,19 @@ export class StationManager {
                 this.viewManager.djView.setState(() => ({ playbackState: clientState }));
             }
         });
-    }
-
-    bindServerActions() {
-        this.server.on('error', (error: ServerError, message: string) => {
-            if (error === ServerError.PreconditionFailed) {
-                this.taskExecutor.clear();
-                this.taskExecutor.push(() => this.syncServerPlaybackState());
-            } else if ((error === ServerError.TooManyRequests) || (error === ServerError.InternalServerError)) {
-                this.taskExecutor.clear();
-            } else {
-                console.error(`${error}: ${message}`);
-            }
-        });
 
         this.server.on('station_state_change', (serverState: PlaybackState) => {
             this.taskExecutor.push(() => this.applyServerState(serverState));
         });
-    }
 
-    bindViewActions() {
         this.viewManager.listenerView.on('muteButtonClick', () => {
             this.musicPlayer.muteUnmuteVolume().then(newVolume => {
                 this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
             });
         });
 
-        this.viewManager.listenerView.on('volumeSliderChange', newVolume => {
-            this.musicPlayer.setVolume(<number>newVolume).then(() => {
+        this.viewManager.listenerView.on('volumeSliderChange', (newVolume: number) => {
+            this.musicPlayer.setVolume(newVolume).then(() => {
                 this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
             });
         });
@@ -128,11 +128,37 @@ export class StationManager {
         });
     }
 
+    startSteadyState() {
+        this.bindSteadyStateActions();
+        this.taskExecutor.push(() => this.calculatePing());
+        this.taskExecutor.push(() => this.syncServerPlaybackState());
+        this.enableHeartbeat();
+    }
+
+    stopSteadyState() {
+        this.musicPlayer.removeListener('player_state_changed');
+        this.server.removeListener('station_state_change');
+        this.viewManager.listenerView.removeListener('muteButtonClick');
+        this.viewManager.listenerView.removeListener('volumeSliderChange');
+        this.viewManager.djView.removeListener('playPauseButtonClick');
+        this.viewManager.djView.removeListener('previousTrackButtonClick');
+        this.viewManager.djView.removeListener('nextTrackButtonClick');
+
+        this.disableHeartbeat();
+        this.taskExecutor.clear();
+    }
+
     enableHeartbeat() {
         this.heartbeatIntervalId = window.setInterval(() => {
             this.taskExecutor.push(() => this.calculatePing());
             this.taskExecutor.push(() => this.updateServerPlaybackState());
         }, SERVER_HEARTBEAT_INTERVAL_MS);
+    }
+
+    disableHeartbeat() {
+        if (this.heartbeatIntervalId) {
+            window.clearInterval(this.heartbeatIntervalId);
+        }
     }
 
     updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
@@ -338,8 +364,12 @@ export class StationServer {
         this.on(eventName, cbWrapper);
     }
 
-    removeListener(eventName: string, cb: Function) {
-        this.observers.get(eventName)!.remove(cb);
+    removeListener(eventName: string, cb?: Function) {
+        if (cb) {
+            this.observers.get(eventName)!.remove(cb);
+        } else {
+            this.observers.get(eventName)!.empty();
+        }
     }
 
     sendJoinRequest(deviceId: string): Promise<JoinResponse> {
@@ -451,6 +481,10 @@ export class StationMusicPlayer {
 
     on(eventName: string, cb: (...args: any[]) => void) {
         this.musicPlayer.on(eventName, cb);
+    }
+
+    removeListener(eventName: string) {
+        this.musicPlayer.removeListener(eventName);
     }
 
     getCurrentState(): Promise<PlaybackState | null> { return this.musicPlayer.getCurrentState(); }

@@ -134,6 +134,10 @@ class StationListenerView {
         this.observers.get(eventName)!.add(cb);
     }
 
+    removeListener(eventName: string) {
+        this.observers.get(eventName)!.empty();
+    }
+
     setState(updater: any) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
@@ -185,6 +189,10 @@ class StationDJView {
 
     on(eventName: string, cb: Function) {
         this.observers.get(eventName)!.add(cb);
+    }
+
+    removeListener(eventName: string) {
+        this.observers.get(eventName)!.empty();
     }
 
     setState(updater: any) {
