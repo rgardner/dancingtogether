@@ -257,7 +257,7 @@ test('station server fires notifications for station state changes', async () =>
 });
 
 test('station server fires notifications for errors', async () => {
-    expect.assertions(6);
+    expect.assertions(4);
     let mockWebSocketBridge = new MockWebSocketBridge();
     let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
 
@@ -269,21 +269,13 @@ test('station server fires notifications for errors', async () => {
 
     mockWebSocketBridge.fire(mockError1);
 
-    const mockError2 = { error: 'too_many_requests', message: 'request throttled' };
+    const mockError2 = { error: 'spotify_error', message: 'stream quality may be affected' };
     stationServer.onOnce('error', (error, message) => {
-        expect(error).toEqual(ServerError.TooManyRequests);
+        expect(error).toEqual(ServerError.SpotifyError);
         expect(message).toEqual(mockError2.message);
     });
 
     mockWebSocketBridge.fire(mockError2);
-
-    const mockError3 = { error: 'internal_server_error', message: 'an error occurred' };
-    stationServer.onOnce('error', (error, message) => {
-        expect(error).toEqual(ServerError.InternalServerError);
-        expect(message).toEqual(mockError3.message);
-    });
-
-    mockWebSocketBridge.fire(mockError3);
 });
 
 test.skip('station manager correctly adjusts client server time offset', async () => {
@@ -424,8 +416,8 @@ test('station manager correctly handles internal server error', async () => {
     stationManager.bindSteadyStateActions();
 
     mockWebSocketBridge.fire({
-        error: 'internal_server_error',
-        message: 'unknown error occurred',
+        error: 'spotify_error',
+        message: 'stream quality may be affected',
     });
 
     mockWebSocketBridge.fire({

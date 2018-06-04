@@ -76,7 +76,7 @@ export class StationManager {
             if (error === ServerError.PreconditionFailed) {
                 this.taskExecutor.clear();
                 this.taskExecutor.push(() => this.syncServerPlaybackState());
-            } else if ((error === ServerError.TooManyRequests) || (error === ServerError.InternalServerError)) {
+            } else if (error === ServerError.SpotifyError) {
                 Promise.resolve(this.stopSteadyState())
                     .then(() => wait(BACKOFF_TIME_MS))
                     .then(() => this.startSteadyState());
@@ -310,9 +310,8 @@ interface PongResponse {
 }
 
 export enum ServerError {
-    PreconditionFailed = 'precondition_failed',
-    TooManyRequests = 'too_many_requests',
-    InternalServerError = 'internal_server_error',
+    PreconditionFailed,
+    SpotifyError,
 }
 
 export class StationServer {
@@ -452,10 +451,8 @@ export class StationServer {
 function serverErrorFromString(error: string): ServerError {
     if (error === 'precondition_failed') {
         return ServerError.PreconditionFailed;
-    } else if (error === 'too_many_requests') {
-        return ServerError.TooManyRequests;
-    } else if (error === 'internal_server_error') {
-        return ServerError.InternalServerError;
+    } else if (error === 'spotify_error') {
+        return ServerError.SpotifyError;
     } else {
         console.assert();
         throw Error("Unknown server error");
