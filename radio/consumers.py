@@ -10,7 +10,7 @@ import aiohttp
 from asgiref.sync import async_to_sync
 import channels.auth
 from channels.db import database_sync_to_async
-from channels.generic.websocket import AsyncJsonWebsocketConsumer, JsonWebsocketConsumer
+from channels.generic.websocket import AsyncJsonWebsocketConsumer
 import dateutil.parser
 
 from . import models
