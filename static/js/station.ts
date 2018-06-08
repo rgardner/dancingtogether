@@ -229,6 +229,7 @@ export class StationManager {
                     const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                     if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
                         const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
+                        console.log(`Playback adjustment needed: local: ${localPosition}, server: ${serverPosition}, new local: ${newLocalPosition}`);
                         return this.musicPlayer.seek(newLocalPosition)
                             .then(() => Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]))
                             .then(() => {
