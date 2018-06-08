@@ -288,19 +288,20 @@ export class StationManager {
     }
 
     getAdjustedPlaybackPosition(serverState: PlaybackState): number {
-        let position = serverState.raw_position_ms;
+        const position = serverState.raw_position_ms;
+        let adjustment = 0;
         if (!serverState.paused) {
             const serverTimeOffset = this.getMedianClientServerTimeOffset();
-            position += ((new Date()).getTime() - (serverState.sample_time.getTime() + serverTimeOffset));
+            adjustment = ((new Date()).getTime() - (serverState.sample_time.getTime() - serverTimeOffset));
         }
 
-        return position;
+        return (position + adjustment);
     }
 
     adjustServerTimeOffset(startTime: Date, serverTime: Date, currentTime: Date) {
         this.roundTripTimes.push(currentTime.getTime() - startTime.getTime());
         const medianOneWayTime = Math.round(median(this.roundTripTimes.entries()) / 2);
-        const clientServerTimeOffset = currentTime.getTime() - medianOneWayTime - serverTime.getTime();
+        const clientServerTimeOffset = ((serverTime.getTime() + medianOneWayTime) - currentTime.getTime());
         this.clientServerTimeOffsets.push(clientServerTimeOffset);
     }
 }
