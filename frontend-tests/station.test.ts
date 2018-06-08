@@ -14,6 +14,7 @@ const MockContextUri = 'MockContextUri';
 const MockCurrentTrackUri = 'MockCurrentTrackUri';
 const MockServerEtag1 = new Date('2018-05-20T20:57:33.992Z');
 const MockServerEtag2 = new Date('2018-05-20T20:58:33.992Z');
+const Debug = false;
 
 beforeEach(() => {
     // Mock StationManager.getAdjustedPlaybackPosition, as it adjusts based on
@@ -282,7 +283,9 @@ test.skip('station manager correctly adjusts client server time offset', async (
     let stationManager = new StationManager(
         ListenerRole.None,
         new StationServer(MockStationId, new MockWebSocketBridge()),
-        new StationMusicPlayer(new MockMusicPlayer()));
+        new StationMusicPlayer(new MockMusicPlayer()),
+        Debug,
+    );
 
     let startTime = new Date('2018-05-31T00:00:01.000Z');
     let serverTime = new Date('2018-05-31T00:00:03.000Z');
@@ -308,7 +311,9 @@ test('station manager correctly adjusts playback state when server is paused', a
     let stationManager = new StationManager(
         ListenerRole.None,
         new StationServer(MockStationId, new MockWebSocketBridge()),
-        stationMusicPlayer);
+        stationMusicPlayer,
+        Debug,
+    );
 
     const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
@@ -329,7 +334,9 @@ test('station manager correctly adjusts playback state when server is playing', 
     let stationManager = new StationManager(
         ListenerRole.None,
         new StationServer(MockStationId, new MockWebSocketBridge()),
-        new StationMusicPlayer(mockMusicPlayer));
+        new StationMusicPlayer(mockMusicPlayer),
+        Debug,
+    );
 
     const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, false /*paused*/,
@@ -349,7 +356,7 @@ test('station manager correctly adjusts playback state when server is playing', 
 });
 
 function createStationManager(stationServer: StationServer, stationMusicPlayer: StationMusicPlayer): StationManager {
-    let stationManager = new StationManager(ListenerRole.None, stationServer, stationMusicPlayer);
+    let stationManager = new StationManager(ListenerRole.None, stationServer, stationMusicPlayer, Debug);
     stationManager.roundTripTimes.push(0);
     stationManager.clientServerTimeOffsets.push(0);
     return stationManager;
@@ -416,7 +423,9 @@ test('station manager correctly handles internal server error', async () => {
     let stationManager = new StationManager(
         ListenerRole.None,
         new StationServer(MockStationId, mockWebSocketBridge),
-        stationMusicPlayer);
+        stationMusicPlayer,
+        Debug,
+    );
 
     let initialPlaybackState = mockMusicPlayer.playbackState;
     stationManager.bindSteadyStateActions();

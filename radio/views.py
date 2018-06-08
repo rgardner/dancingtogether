@@ -41,6 +41,7 @@ def station(request, station_id):
             'is_dj': listener.is_dj,
             'is_admin': listener.is_admin,
             'player_name': settings.SPOTIFY_PLAYER_NAME,
+            'debug': settings.DEBUG,
         })
 
 

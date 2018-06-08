@@ -1,5 +1,5 @@
 import * as $ from 'jquery';
-import { ListenerRole, wait } from './util';
+import { CircularArray, ListenerRole, median, wait } from './util';
 import { PlaybackState } from './music_player';
 
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
@@ -10,10 +10,12 @@ export class ViewManager {
     listenerView = new StationListenerView();
     djView: StationDJView;
     adminView: StationAdminView;
+    debugView: StationDebugView;
 
-    constructor(listenerRole: ListenerRole) {
+    constructor(listenerRole: ListenerRole, debug: boolean) {
         this.djView = new StationDJView(listenerRole);
         this.adminView = new StationAdminView(listenerRole);
+        this.debugView = new StationDebugView(debug);
     }
 }
 
@@ -374,4 +376,54 @@ function msToTimeString(ms: number) {
     const secondsRemainder = Math.floor(seconds % 60).toString();
     const secondsRemainderPad = (secondsRemainder.length === 1) ? '0' + secondsRemainder : secondsRemainder;
     return `${minutes}:${secondsRemainderPad}`;
+}
+
+class StationDebugView {
+    private state = new class {
+        isEnabled = false;
+        roundTripTimes = new CircularArray<number>(5);
+        clientServerTimeOffsets = new CircularArray<number>(5);
+        logMessages = new CircularArray<string>(100);
+    };
+
+    constructor(debug: boolean) {
+        this.state.isEnabled = debug;
+        this.render();
+    }
+
+    setState(updater: any) {
+        // Merge previous state and new state
+        this.state = Object.assign({}, this.state, updater(this.state));
+        this.render();
+    }
+
+    render() {
+        if (this.state.isEnabled) {
+            $('#debug-view').show();
+        } else {
+            $('#debug-view').hide();
+            return;
+        }
+
+        $('#debug-view-round-trip-times').html();
+        if (this.state.roundTripTimes.length > 0) {
+            const medianRoundTripTime = median(this.state.roundTripTimes.array);
+            const joinedRoundTripTimes = this.state.roundTripTimes.array.map(time => `${time}ms`).join();
+            const content = `Round Trip Times: Median: ${medianRoundTripTime}ms. All: ${joinedRoundTripTimes}.`;
+            $('#debug-view-round-trip-times').html(content);
+        }
+
+        $('#debug-view-client-server-time-offests').html();
+        if (this.state.clientServerTimeOffsets.length > 0) {
+            const medianClientServerTimeOffset = median(this.state.clientServerTimeOffsets.array);
+            const joinedClientServerTimeOffsets = this.state.clientServerTimeOffsets.array.map(time => `${time}ms`).join();
+            const content = `Client Server Time Offsets: Median: ${medianClientServerTimeOffset}ms. All: ${joinedClientServerTimeOffsets}.`;
+            $('#debug-view-client-server-time-offsets').html(content);
+        }
+
+        $('#debug-log li').remove();
+        this.state.logMessages.array.forEach(logMessage => {
+            $('li').html(logMessage).appendTo($('#debug-log'));
+        });
+    }
 }

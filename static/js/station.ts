@@ -1,5 +1,5 @@
 import * as $ from 'jquery';
-import { ListenerRole, wait } from './util';
+import { CircularArray, ListenerRole, median, wait } from './util';
 import { MusicPlayer, PlaybackState, SpotifyMusicPlayer } from './music_player';
 import { ChannelWebSocketBridge, WebSocketBridge } from './websocket_bridge';
 import { ViewManager } from './station_view';
@@ -15,6 +15,7 @@ interface AppData {
     userIsAdmin: boolean;
     accessToken: string;
     stationId: number;
+    debug: boolean;
 }
 
 declare const APP_DATA: AppData;
@@ -31,7 +32,9 @@ window.onSpotifyWebPlaybackSDKReady = () => {
     new StationManager(
         listenerRole,
         new StationServer(APP_DATA.stationId, webSocketBridge),
-        new StationMusicPlayer(musicPlayer));
+        new StationMusicPlayer(musicPlayer),
+        APP_DATA.debug,
+    );
 };
 
 export class StationManager {
@@ -40,11 +43,13 @@ export class StationManager {
     serverEtag?: Date;
     heartbeatIntervalId?: number;
     viewManager: ViewManager;
-    roundTripTimes = new CircularArray2<number>(5);
-    clientServerTimeOffsets = new CircularArray2<number>(5);
+    roundTripTimes = new CircularArray<number>(5);
+    clientServerTimeOffsets = new CircularArray<number>(5);
 
-    constructor(listenerRole: ListenerRole, private server: StationServer, private musicPlayer: StationMusicPlayer) {
-        this.viewManager = new ViewManager(listenerRole);
+    constructor(
+        listenerRole: ListenerRole, private server: StationServer,
+        private musicPlayer: StationMusicPlayer, debug: boolean) {
+        this.viewManager = new ViewManager(listenerRole, debug);
         this.bindMusicPlayerActions();
         this.bindServerActions();
     }
@@ -304,6 +309,10 @@ export class StationManager {
         const medianOneWayTime = Math.round(median(this.roundTripTimes.entries()) / 2);
         const clientServerTimeOffset = ((serverTime.getTime() + medianOneWayTime) - currentTime.getTime());
         this.clientServerTimeOffsets.push(clientServerTimeOffset);
+        this.viewManager.debugView.setState(() => ({
+            roundTripTimes: this.roundTripTimes,
+            clientServerTimeOffsets: this.clientServerTimeOffsets,
+        }));
     }
 }
 
@@ -572,30 +581,6 @@ class TaskExecutor {
         this.tasksInFlight = 0;
         this.tasks = Promise.resolve();
     }
-}
-
-class CircularArray2<T> {
-    array: Array<T> = [];
-    position = 0;
-    constructor(readonly capacity: number) {
-    }
-
-    get length(): number {
-        return this.array.length;
-    }
-
-    entries(): Array<T> {
-        return this.array;
-    }
-
-    push(e: T) {
-        this.array[this.position % this.capacity] = e;
-        this.position++;
-    }
-}
-
-function median(arr: Array<number>): number {
-    return arr.concat().sort()[Math.floor(arr.length / 2)];
 }
 
 function timeout(ms: number): Promise<never> {

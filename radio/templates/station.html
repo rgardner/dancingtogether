@@ -58,6 +58,17 @@
 </div>
 </div>
 
+<div class="row">
+<div id="debug-view" class="col">
+    <div>
+        <span id="debug-view-round-trip-times"></span><br>
+        <span id="debug-view-client-server-time-offsets"></span><br>
+        <ul id="debug-log">
+        </ul>
+    </div>
+</div>
+</div>
+
 {% endblock %}{# content #}
 
 {% block extra_script %}
@@ -71,6 +82,7 @@
         userIsAdmin: {{ is_admin|yesno:"true,false" }},
         accessToken: "{{ access_token }}",
         stationId: {{ station_id }},
+        debug: {{ debug|yesno:"true,false" }},
     };
 </script>
 
