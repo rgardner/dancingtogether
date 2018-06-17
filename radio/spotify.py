@@ -13,8 +13,6 @@ from django.shortcuts import redirect
 from django.utils import timezone
 import requests
 
-from .exceptions import (AccessTokenExpired, SpotifyAccountNotPremium,
-                         SpotifyDeviceNotFound, SpotifyServerError)
 from .models import SpotifyCredentials
 
 logger = logging.getLogger(__name__)
@@ -177,70 +175,3 @@ def load_access_token(user_id) -> AccessToken:
     creds = SpotifyCredentials.objects.get(user_id=user_id)
     return AccessToken(creds.user, creds.refresh_token, creds.access_token,
                        creds.access_token_expiration_time)
-
-
-# Web API Client
-
-
-class SpotifyWebAPIClient:
-    throttled_until = None
-
-    async def player_play(self, session, user_id, access_token, device_id,
-                          context_uri, uri):
-        """
-        https://beta.developer.spotify.com/documentation/web-api/reference/player/start-a-users-playback/
-        """
-        headers = {'Authorization': f'Bearer {access_token}'}
-        query_params = {'device_id': device_id}
-        data = {'context_uri': context_uri, 'offset': {'uri': uri}}
-
-        for _ in range(5):
-            if self.is_throttled():
-                logger.warning(
-                    f'Spotify Web API request throttled until {self.throttled_until}'
-                )
-                return
-
-            async with session.put(
-                    settings.SPOTIFY_PLAYER_PLAY_API_URL,
-                    headers=headers,
-                    params=query_params,
-                    json=data) as resp:
-                if resp.status == requests.codes.accepted:
-                    # device is temporarily unavailable
-                    await asyncio.sleep(5)  # seconds
-                    continue
-                elif resp.status == requests.codes.no_content:
-                    # successful request
-                    return
-                elif resp.status == requests.codes.unauthorized:
-                    raise AccessTokenExpired()
-                elif resp.status == requests.codes.forbidden:
-                    raise SpotifyAccountNotPremium()
-                elif resp.status == requests.codes.not_found:
-                    raise SpotifyDeviceNotFound()
-                elif resp.status == requests.codes.too_many_requests:
-                    # API rate limit exceeded. This applies to all web playback calls
-                    self.start_throttling(
-                        timedelta(seconds=int(resp.headers['Retry-After'])))
-                    return
-                else:
-                    if requests.codes.server_error <= resp.status <= requests.codes.service_unavailable:
-                        self.start_throttling(timedelta(minutes=5))
-
-                    text = await resp.text()
-                    logger.error(
-                        f'user-{user_id} received unexpected Spotify Web API response {text}'
-                    )
-                    raise SpotifyServerError()
-
-    @classmethod
-    def start_throttling(cls, retry_after: timedelta):
-        logger.warning(
-            f'Spotify Web API throttle is now in effect for {retry_after}')
-        cls.throttled_until = datetime.now() + retry_after
-
-    @classmethod
-    def is_throttled(cls) -> bool:
-        return ((cls.throttled_until is not None)
-                and (datetime.now() < cls.throttled_until))

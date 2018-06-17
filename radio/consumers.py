@@ -15,9 +15,9 @@ import dateutil.parser
 
 from . import models
 from . import spotify
-from .exceptions import AccessTokenExpired, ClientError, SpotifyServerError
+from .exceptions import ClientError
 from .models import Listener, PendingListener, Station
-from .spotify import AccessToken, SpotifyWebAPIClient
+from .spotify import AccessToken
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +109,6 @@ def station_admin_required(func):
 
 
 class StationConsumer(AsyncJsonWebsocketConsumer):
-    def __init__(self, scope):
-        super().__init__(scope)
-        self.spotify_client = SpotifyWebAPIClient()
-
     # WebSocket event handlers
 
     async def connect(self):
@@ -268,9 +264,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             station_state = models.PlaybackState(station_id=station.id)
             await update_station_state(station_state, state)
             new_state = PlaybackState.from_station_state(station_state)
-            await self.group_send_start_resume_playback(
-                station.group_name, new_state.context_uri,
-                new_state.current_track_uri)
             await self.group_send_ensure_playback_state(
                 station.group_name, request_id, new_state)
 
@@ -284,9 +277,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                     logger.debug(
                         f'DJ {user} caused {station.group_name} to change context or track'
                     )
-                    await self.group_send_start_resume_playback(
-                        station.group_name, new_state.context_uri,
-                        new_state.current_track_uri)
 
                 await self.group_send_ensure_playback_state(
                     station.group_name, request_id, new_state)
@@ -304,11 +294,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         if hasattr(station, 'playbackstate'):
             station_state = PlaybackState.from_station_state(
                 station.playbackstate)
-
-            if (state is None) or needs_start_playback(state, station_state):
-                await self.start_resume_playback(
-                    self.user.id, self.device_id, station_state.context_uri,
-                    station_state.current_track_uri)
 
             await self.ensure_playback_state(request_id,
                                              station_state.as_dict())
@@ -369,16 +354,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 'email': email,
             })
 
-    async def group_send_start_resume_playback(self, group_name, context_uri,
-                                               current_track_uri):
-        await self.channel_layer.group_send(
-            group_name, {
-                'type': 'station.start_resume_playback',
-                'sender_user_id': self.user.id,
-                'context_uri': context_uri,
-                'current_track_uri': current_track_uri,
-            })
-
     async def group_send_ensure_playback_state(self, group_name, request_id,
                                                state: PlaybackState):
         await self.channel_layer.group_send(
@@ -417,35 +392,11 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
                 }
             })
 
-    async def station_start_resume_playback(self, event):
-        sender_user_id = event['sender_user_id']
-        if sender_user_id != self.user.id:
-            await self.start_resume_playback(self.user.id, self.device_id,
-                                             event['context_uri'],
-                                             event['current_track_uri'])
-
     async def station_ensure_playback_state(self, event: Dict[str, Any]):
         sender_user_id = event['sender_user_id']
         request_id = event[
             'request_id'] if sender_user_id == self.user.id else None
         await self.ensure_playback_state(request_id, event['state'])
-
-    # Utils
-
-    async def start_resume_playback(self, user_id, device_id, context_uri,
-                                    uri):
-        logger.debug(f'{self.user} starting playback...')
-        access_token = await get_access_token(user_id)
-        async with aiohttp.ClientSession() as session:
-            try:
-                await self.spotify_client.player_play(session, user_id,
-                                                      access_token, device_id,
-                                                      context_uri, uri)
-            except AccessTokenExpired:
-                access_token = await self.refresh_access_token()
-                await self.spotify_client.player_play(session, user_id,
-                                                      access_token, device_id,
-                                                      context_uri, uri)
 
     async def ensure_playback_state(self, request_id: Optional[str], state):
         message = {

@@ -24,6 +24,8 @@ export interface MusicPlayer {
     getVolume(): Promise<number>;
     setVolume(value: number): Promise<void>;
 
+    play(contextUri: string, currentTrackUri: string): Promise<void>;
+
     pause(): Promise<void>;
     resume(): Promise<void>;
     togglePlay(): Promise<void>;
@@ -36,6 +38,12 @@ export interface MusicPlayer {
 
 export class SpotifyMusicPlayer implements MusicPlayer {
     impl: Spotify.SpotifyPlayer;
+    deviceId?: string;
+    observers = new Map([
+        ['authentication_error', $.Callbacks()],
+        ['account_error', $.Callbacks()],
+        ['too_many_requests_error', $.Callbacks()],
+    ]);
 
     constructor(clientName: string, private accessToken: string, initialVolume: number) {
         this.impl = new Spotify.Player({
@@ -44,6 +52,9 @@ export class SpotifyMusicPlayer implements MusicPlayer {
             volume: initialVolume,
         });
 
+        this.impl.on('ready', ({ device_id }) => {
+            this.deviceId = device_id;
+        });
     }
 
     getAccessToken(): string { return this.accessToken; }
@@ -56,9 +67,15 @@ export class SpotifyMusicPlayer implements MusicPlayer {
             this.impl.on(eventName, playbackState => {
                 cb(<any>createPlaybackStateFromSpotify(playbackState));
             });
+        } else if (eventName === 'too_many_requests_error') {
+            this.observers.get(eventName)!.add(cb);
         } else {
             // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
             this.impl.on(eventName, cb);
+
+            if ((eventName === 'authentication_error') || (eventName === 'account_error')) {
+                this.observers.get(eventName)!.add(cb);
+            }
         }
     }
 
@@ -75,6 +92,63 @@ export class SpotifyMusicPlayer implements MusicPlayer {
 
     getVolume(): Promise<number> { return this.impl.getVolume(); }
     setVolume(value: number): Promise<void> { return this.impl.setVolume(value); }
+
+    play(contextUri: string, currentTrackUri: string): Promise<void> {
+        return this.playWithRetry(contextUri, currentTrackUri);
+    }
+
+    playWithRetry(contextUri: string, currentTrackUri: string, retryCount = 0): Promise<void> {
+        if (!this.deviceId) {
+            return Promise.reject('Spotify is not ready: no deviceId');
+        }
+
+        return this.putStartResumePlaybackRequest(contextUri, currentTrackUri)
+            .then(response => {
+                switch (response.status) {
+                    case 202:
+                        // device is temporarily unavailable
+                        ++retryCount;
+                        if (retryCount < 5) {
+                            return this.playWithRetry(contextUri, currentTrackUri, retryCount);
+                        } else {
+                            return Promise.reject('Device is unavailable after 5 retries');
+                        }
+                    case 204:
+                        // successful request
+                        break;
+                    case 401:
+                        this.observers.get('authentication_error')!.fire(response.json());
+                        break;
+                    case 403:
+                        this.observers.get('account_error')!.fire(response.json());
+                        break;
+                    case 429:
+                        this.observers.get('too_many_requests_error')!.fire(response.headers.get('Retry-After'));
+                        break;
+                    default:
+                        break;
+                }
+
+                return Promise.resolve();
+            });
+    }
+
+    putStartResumePlaybackRequest(contextUri: string, currentTrackUri: string): Promise<Response> {
+        const baseUrl = 'https://api.spotify.com/v1/me/player/play';
+        const queryParams = `device_id=${this.deviceId}`;
+        const url = `${baseUrl}?${queryParams}`;
+
+        return fetch(url, {
+            body: JSON.stringify({
+                'context_uri': contextUri,
+                'offset': { 'uri': currentTrackUri },
+            }),
+            headers: {
+                'Authorization': `Bearer ${this.getAccessToken()}`,
+            },
+            method: 'PUT',
+        });
+    }
 
     pause(): Promise<void> { return this.impl.pause(); }
     resume(): Promise<void> { return this.impl.resume(); }

@@ -219,52 +219,64 @@ export class StationManager {
             return Promise.resolve();
         }
 
-        return Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)])
-            .then(() => this.musicPlayer.getCurrentState())
+        return this.musicPlayer.getCurrentState()
             .then(clientState => {
-                if (!clientState) {
-                    return Promise.reject('Spotify not ready');
+                let changeTrackIfNeeded = Promise.resolve();
+                if (!clientState || (clientState.context_uri !== serverState.context_uri) ||
+                    (clientState.current_track_uri !== serverState.current_track_uri)) {
+                    changeTrackIfNeeded = this.musicPlayer.play(serverState.context_uri, serverState.current_track_uri);
                 }
 
-                if (serverState.paused) {
-                    const pauseIfNeeded = (clientState.paused ? Promise.resolve() : this.musicPlayer.pause());
-                    return pauseIfNeeded.then(() => this.musicPlayer.seek(serverState.raw_position_ms));
-                } else {
-                    const localPosition = clientState.raw_position_ms;
-                    const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                    if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
-                        const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
-                        console.log(`Playback adjustment needed: local: ${localPosition}, server: ${serverPosition}, new local: ${newLocalPosition}`);
-                        return this.musicPlayer.seek(newLocalPosition)
-                            .then(() => Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]))
-                            .then(() => {
-                                const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                                if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
-                                    return this.musicPlayer.freeze(localPosition - serverPosition);
-                                } else {
-                                    return this.musicPlayer.resume();
-                                }
-                            });
-                    } else if (clientState.paused) {
-                        return this.musicPlayer.resume();
-                    } else {
+                return changeTrackIfNeeded
+                    .then(() => {
+                        return Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)]);
+                    })
+                    .then(() => this.musicPlayer.getCurrentState())
+                    .then(clientState => {
+                        if (!clientState) {
+                            return Promise.reject('Spotify not ready');
+                        }
+
+                        if (serverState.paused) {
+                            const pauseIfNeeded = (clientState.paused ? Promise.resolve() : this.musicPlayer.pause());
+                            return pauseIfNeeded.then(() => this.musicPlayer.seek(serverState.raw_position_ms));
+                        } else {
+                            const localPosition = clientState.raw_position_ms;
+                            const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                            if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
+                                const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
+                                console.log(`Playback adjustment needed: local: ${localPosition}, server: ${serverPosition}, new local: ${newLocalPosition}`);
+                                return this.musicPlayer.seek(newLocalPosition)
+                                    .then(() => Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]))
+                                    .then(() => {
+                                        const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                                        if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
+                                            return this.musicPlayer.freeze(localPosition - serverPosition);
+                                        } else {
+                                            return this.musicPlayer.resume();
+                                        }
+                                    });
+                            } else if (clientState.paused) {
+                                return this.musicPlayer.resume();
+                            } else {
+                                return Promise.resolve();
+                            }
+                        }
+                    })
+                    .then(() => this.musicPlayer.getCurrentState())
+                    .then(clientState => {
+                        if (!clientState) {
+                            return Promise.reject('Spotify not ready');
+                        }
+
+                        this.clientEtag = clientState.sample_time;
+                        this.serverEtag = serverState.etag;
                         return Promise.resolve();
-                    }
-                }
-            })
-            .then(() => this.musicPlayer.getCurrentState())
-            .then(clientState => {
-                if (!clientState) {
-                    return Promise.reject('Spotify not ready');
-                }
-
-                this.clientEtag = clientState.sample_time;
-                this.serverEtag = serverState.etag;
-                return Promise.resolve();
-            })
-            .catch((e: any) => {
-                console.error(e);
-                this.taskExecutor.push(() => this.syncServerPlaybackState());
+                    })
+                    .catch((e: any) => {
+                        console.error(e);
+                        this.taskExecutor.push(() => this.syncServerPlaybackState());
+                    });
             });
     }
 
@@ -442,6 +454,7 @@ export class StationServer {
     }
 
     onMessage(action: any) {
+        console.log('Received: ', action);
         if (action.error) {
             this.observers.get('error')!.fire(serverErrorFromString(action.error), action.message);
         } else if (action.join) {
@@ -541,6 +554,10 @@ export class StationMusicPlayer {
                 resolve(newVolume);
             });
         });
+    }
+
+    play(contextUri: string, currentTrackUri: string): Promise<void> {
+        return this.musicPlayer.play(contextUri, currentTrackUri);
     }
 
     pause(): Promise<void> { return this.musicPlayer.pause(); }
