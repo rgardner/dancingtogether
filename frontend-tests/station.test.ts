@@ -9,7 +9,7 @@ import {
 
 const MockStationId = 1;
 const MockStationName = 'MockStationName';
-const MockDeviceId = 'MockDeviceId';
+const MockCrossSiteRequestForgeryToken = 'MockCrossSiteRequestForgeryToken';
 const MockContextUri = 'MockContextUri';
 const MockCurrentTrackUri = 'MockCurrentTrackUri';
 const MockServerEtag1 = new Date('2018-05-20T20:57:33.992Z');
@@ -24,6 +24,8 @@ beforeEach(() => {
         return serverState.raw_position_ms;
     });
     StationManager.prototype.getAdjustedPlaybackPosition = getAdjustedPlaybackPosition.bind(StationManager);
+
+    fetch.resetMocks();
 });
 
 class MockMusicPlayer implements MusicPlayer {
@@ -60,6 +62,10 @@ class MockMusicPlayer implements MusicPlayer {
     getVolume(): Promise<number> { return Promise.reject(); }
 
     setVolume(_value: number): Promise<void> { return Promise.reject(); }
+
+    play(_contextUri: string, _currentTrackUri: string): Promise<void> {
+        return Promise.reject();
+    }
 
     pause(): Promise<void> {
         this.playbackState.paused = true;
@@ -134,30 +140,14 @@ class MockWebSocketBridge implements WebSocketBridge {
     }
 }
 
-test('station server can join a station', async () => {
-    expect.assertions(2);
-    let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
-
-    mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual({
-            'command': 'join',
-            'station': MockStationId,
-            'device_id': MockDeviceId,
-        });
-
-        mockWebSocketBridge.fire({ 'join': MockStationName });
-    });
-
-    await expect(stationServer.sendJoinRequest(MockDeviceId)).resolves.toEqual({
-        'stationName': MockStationName,
-    });
-});
+function createStationServer(mockWebSocketBridge: MockWebSocketBridge) {
+    return new StationServer(MockStationId, MockCrossSiteRequestForgeryToken, mockWebSocketBridge);
+}
 
 test('station server can send a ping', async () => {
     expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
+    let stationServer = createStationServer(mockWebSocketBridge);
 
     mockWebSocketBridge.receiveData().then(data => {
         expect(data).toEqual(expect.objectContaining({
@@ -180,111 +170,99 @@ test('station server can send a ping', async () => {
 
 test('station server can send a playback state', async () => {
     expect.assertions(2);
-    let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
+    let stationServer = createStationServer(new MockWebSocketBridge());
 
-    const mockPlaybackState = new PlaybackState(
+    // Mock server response
+    const sampleTime = new Date();
+    const responsePlaybackState = new ServerPlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
-        0 /*raw_position_ms*/, new Date(), null);
-    const mockServerEtag = MockServerEtag1;
-    mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual(expect.objectContaining({
-            'command': 'player_state_change',
-            'request_id': expect.any(Number),
-            'state': mockPlaybackState,
-            'etag': mockServerEtag,
-        }));
-        let responsePlaybackState = mockPlaybackState;
-        responsePlaybackState.etag = MockServerEtag2;
-        mockWebSocketBridge.fire({
-            'type': 'ensure_playback_state',
-            'request_id': data.request_id,
-            'state': responsePlaybackState,
-        });
-    });
+        1000 /*raw_position_ms*/, sampleTime, MockServerEtag2);
+    fetch.mockResponseOnce(JSON.stringify({
+        'playbackstate': responsePlaybackState,
+    }));
 
-    let expectedResponsePlaybackState = mockPlaybackState;
-    expectedResponsePlaybackState.etag = MockServerEtag2;
-    await expect(stationServer.sendPlaybackState(mockPlaybackState, mockServerEtag))
+    const currentPlaybackState = new ServerPlaybackState(
+        MockContextUri, MockCurrentTrackUri, true /*paused*/,
+        1000 /*raw_position_ms*/, sampleTime);
+
+    const expectedResponsePlaybackState = new PlaybackState(
+        MockContextUri, MockCurrentTrackUri, true /*paused*/,
+        1000 /*raw_position_ms*/, sampleTime, MockServerEtag2);
+    await expect(stationServer.sendPlaybackState(currentPlaybackState))
         .resolves.toEqual(expectedResponsePlaybackState);
+
+    expect(fetch.mock.calls.length).toEqual(1);
 });
 
-test('station server can resync the playback state', async () => {
+test('station server can get the playback state', async () => {
     expect.assertions(2);
-    let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
+    let stationServer = createStationServer(new MockWebSocketBridge());
 
-    const mockPlaybackState = new PlaybackState(
+    // Mock server response
+    const sampleTime = new Date();
+    const responsePlaybackState = new ServerPlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
-        0 /*raw_position_ms*/, new Date(), null);
-    mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual(expect.objectContaining({
-            'command': 'get_playback_state',
-            'request_id': expect.any(Number),
-            'state': mockPlaybackState,
-        }));
-        let responsePlaybackState = mockPlaybackState;
-        responsePlaybackState.etag = MockServerEtag1;
-        mockWebSocketBridge.fire({
-            'type': 'ensure_playback_state',
-            'request_id': data.request_id,
-            'state': responsePlaybackState,
-        });
-    });
+        1000 /*raw_position_ms*/, sampleTime, MockServerEtag2);
+    fetch.mockResponseOnce(JSON.stringify({
+        'playbackstate': responsePlaybackState,
+    }));
 
-    let expectedResponsePlaybackState = mockPlaybackState;
-    expectedResponsePlaybackState.etag = MockServerEtag1;
-    await expect(stationServer.sendSyncRequest(mockPlaybackState))
+    const expectedResponsePlaybackState = new PlaybackState(
+        MockContextUri, MockCurrentTrackUri, true /*paused*/,
+        1000 /*raw_position_ms*/, sampleTime, MockServerEtag2);
+    await expect(stationServer.getPlaybackState())
         .resolves.toEqual(expectedResponsePlaybackState);
+
+    expect(fetch.mock.calls.length).toEqual(1);
 });
 
 test('station server fires notifications for station state changes', async () => {
     expect.assertions(1);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
+    let stationServer = createStationServer(mockWebSocketBridge);
 
+    const sampleTime = new Date();
     const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
-        0 /*raw_position_ms*/, new Date(), MockServerEtag1);
+        0 /*raw_position_ms*/, sampleTime, MockServerEtag1);
 
-    stationServer.on('station_state_change', data => {
+    stationServer.on('playback_state_changed', data => {
         expect(data).toEqual(mockPlaybackState);
     });
-
     mockWebSocketBridge.fire({
-        'type': 'ensure_playback_state',
-        'state': mockPlaybackState,
+        'type': 'playback_state_changed',
+        'playbackstate': new ServerPlaybackState(
+            MockContextUri, MockCurrentTrackUri, true /*paused*/,
+            0 /*raw_position_ms*/, sampleTime, MockServerEtag1
+        ),
     });
 });
 
 test('station server fires notifications for errors', async () => {
-    expect.assertions(4);
+    expect.assertions(2);
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationServer = new StationServer(MockStationId, mockWebSocketBridge);
+    let stationServer = createStationServer(mockWebSocketBridge);
 
-    const mockError1 = { error: 'precondition_failed', message: 'out of sync' };
+    const mockError1 = { error: 'client_error', message: 'failed to join station' };
     stationServer.onOnce('error', (error, message) => {
-        expect(error).toEqual(ServerError.PreconditionFailed);
+        expect(error).toEqual(ServerError.ClientError);
         expect(message).toEqual(mockError1.message);
     });
 
     mockWebSocketBridge.fire(mockError1);
-
-    const mockError2 = { error: 'spotify_error', message: 'stream quality may be affected' };
-    stationServer.onOnce('error', (error, message) => {
-        expect(error).toEqual(ServerError.SpotifyError);
-        expect(message).toEqual(mockError2.message);
-    });
-
-    mockWebSocketBridge.fire(mockError2);
 });
 
+function createStationManager(stationServer: StationServer, stationMusicPlayer: StationMusicPlayer): StationManager {
+    let stationManager = new StationManager(ListenerRole.None, MockStationName, stationServer, stationMusicPlayer, Debug);
+    stationManager.roundTripTimes.push(0);
+    stationManager.clientServerTimeOffsets.push(0);
+    return stationManager;
+}
+
 test.skip('station manager correctly adjusts client server time offset', async () => {
-    let stationManager = new StationManager(
-        ListenerRole.None,
-        new StationServer(MockStationId, new MockWebSocketBridge()),
+    let stationManager = createStationManager(
+        createStationServer(new MockWebSocketBridge()),
         new StationMusicPlayer(new MockMusicPlayer()),
-        Debug,
     );
 
     let startTime = new Date('2018-05-31T00:00:01.000Z');
@@ -308,11 +286,9 @@ function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, pl
 test('station manager correctly adjusts playback state when server is paused', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
     let stationMusicPlayer = new StationMusicPlayer(mockMusicPlayer);
-    let stationManager = new StationManager(
-        ListenerRole.None,
-        new StationServer(MockStationId, new MockWebSocketBridge()),
+    let stationManager = createStationManager(
+        createStationServer(new MockWebSocketBridge()),
         stationMusicPlayer,
-        Debug,
     );
 
     const mockPlaybackState = new PlaybackState(
@@ -323,19 +299,18 @@ test('station manager correctly adjusts playback state when server is paused', a
     mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;
     mockMusicPlayer.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
 
-    await expect(stationManager.applyServerState(mockPlaybackState)).resolves.toBeUndefined();
+    await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
 
     verify_music_player_playback_state(mockMusicPlayer, mockPlaybackState);
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
+
 test('station manager correctly adjusts playback state when server is playing', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
-    let stationManager = new StationManager(
-        ListenerRole.None,
-        new StationServer(MockStationId, new MockWebSocketBridge()),
+    let stationManager = createStationManager(
+        createStationServer(new MockWebSocketBridge()),
         new StationMusicPlayer(mockMusicPlayer),
-        Debug,
     );
 
     const mockPlaybackState = new PlaybackState(
@@ -346,7 +321,7 @@ test('station manager correctly adjusts playback state when server is playing', 
     mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;
     mockMusicPlayer.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
 
-    await expect(stationManager.applyServerState(mockPlaybackState)).resolves.toBeUndefined();
+    await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
 
     const expectedPlaybackState = Object.assign({}, mockPlaybackState, {
         raw_position_ms: mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS,
@@ -355,18 +330,11 @@ test('station manager correctly adjusts playback state when server is playing', 
     expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
-function createStationManager(stationServer: StationServer, stationMusicPlayer: StationMusicPlayer): StationManager {
-    let stationManager = new StationManager(ListenerRole.None, stationServer, stationMusicPlayer, Debug);
-    stationManager.roundTripTimes.push(0);
-    stationManager.clientServerTimeOffsets.push(0);
-    return stationManager;
-}
-
-test('station manager correctly handles precondition failed', async () => {
+test.skip('station manager correctly handles precondition failed', async () => {
     let mockWebSocketBridge = new MockWebSocketBridge();
     let mockMusicPlayer = new MockMusicPlayer();
     let stationManager = createStationManager(
-        new StationServer(MockStationId, mockWebSocketBridge),
+        createStationServer(mockWebSocketBridge),
         new StationMusicPlayer(mockMusicPlayer));
 
     const mockPlaybackState = new PlaybackState(
@@ -406,40 +374,17 @@ test('station manager correctly handles precondition failed', async () => {
         });
     });
 
-    mockWebSocketBridge.fire({
-        error: 'precondition_failed',
-        message: 'out of sync',
-    });
-
     await expect(donePromise).resolves.toBeUndefined();
 });
 
-test('station manager correctly handles internal server error', async () => {
-    expect.assertions(4);
-
-    let mockMusicPlayer = new MockMusicPlayer();
-    let stationMusicPlayer = new StationMusicPlayer(mockMusicPlayer);
-    let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationManager = new StationManager(
-        ListenerRole.None,
-        new StationServer(MockStationId, mockWebSocketBridge),
-        stationMusicPlayer,
-        Debug,
-    );
-
-    let initialPlaybackState = mockMusicPlayer.playbackState;
-    stationManager.bindSteadyStateActions();
-
-    mockWebSocketBridge.fire({
-        error: 'spotify_error',
-        message: 'stream quality may be affected',
-    });
-
-    mockWebSocketBridge.fire({
-        'type': 'ensure_playback_state',
-        'state': new PlaybackState(MockContextUri, MockCurrentTrackUri, true /*paused*/, 0, new Date()),
-    });
-    await wait(50).then(() => {
-        verify_music_player_playback_state(mockMusicPlayer, initialPlaybackState);
-    });
-});
+class ServerPlaybackState {
+    constructor(
+        public context_uri: string,
+        public current_track_uri: string,
+        public paused: boolean,
+        public raw_position_ms: number,
+        public sample_time: Date,
+        public last_updated_time?: Date,
+    ) {
+    }
+}

@@ -7,7 +7,6 @@ import { ViewManager } from './station_view';
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
-const BACKOFF_TIME_MS = 120000;
 
 interface AppData {
     spotifyConnectPlayerName: string;
@@ -15,6 +14,7 @@ interface AppData {
     userIsAdmin: boolean;
     accessToken: string;
     stationId: number;
+    stationTitle: string;
     debug: boolean;
 }
 
@@ -31,7 +31,8 @@ window.onSpotifyWebPlaybackSDKReady = () => {
 
     new StationManager(
         listenerRole,
-        new StationServer(APP_DATA.stationId, webSocketBridge),
+        APP_DATA.stationTitle,
+        new StationServer(APP_DATA.stationId, getCrossSiteRequestForgeryToken(), webSocketBridge),
         new StationMusicPlayer(musicPlayer),
         APP_DATA.debug,
     );
@@ -47,16 +48,16 @@ export class StationManager {
     clientServerTimeOffsets = new CircularArray<number>(5);
 
     constructor(
-        listenerRole: ListenerRole, private server: StationServer,
-        private musicPlayer: StationMusicPlayer, debug: boolean) {
-        this.viewManager = new ViewManager(listenerRole, debug);
+        private listenerRole: ListenerRole, stationTitle: string,
+        private server: StationServer, private musicPlayer: StationMusicPlayer,
+        debug: boolean) {
+        this.viewManager = new ViewManager(listenerRole, stationTitle, debug);
         this.bindMusicPlayerActions();
         this.bindServerActions();
     }
 
     bindMusicPlayerActions() {
-        this.musicPlayer.on('ready', ({ device_id }) => {
-            this.taskExecutor.push(() => this.server.sendJoinRequest(device_id));
+        this.musicPlayer.on('ready', () => {
             this.startSteadyState();
 
             this.viewManager.stationView.setState(() => ({ isConnected: true }));
@@ -78,16 +79,7 @@ export class StationManager {
 
     bindServerActions() {
         this.server.on('error', (error: ServerError, message: string) => {
-            if (error === ServerError.PreconditionFailed) {
-                this.taskExecutor.clear();
-                this.taskExecutor.push(() => this.syncServerPlaybackState());
-            } else if (error === ServerError.SpotifyError) {
-                Promise.resolve(this.stopSteadyState())
-                    .then(() => wait(BACKOFF_TIME_MS))
-                    .then(() => this.startSteadyState());
-            } else {
-                console.error(`${error}: ${message}`);
-            }
+            console.error(`${error}: ${message}`);
         });
     }
 
@@ -104,8 +96,8 @@ export class StationManager {
             }
         });
 
-        this.server.on('station_state_change', (serverState: PlaybackState) => {
-            this.taskExecutor.push(() => this.applyServerState(serverState));
+        this.server.on('playback_state_changed', (serverState: PlaybackState) => {
+            this.taskExecutor.push(() => this.applyServerPlaybackState(serverState));
         });
 
         this.viewManager.listenerView.on('muteButtonClick', () => {
@@ -142,7 +134,7 @@ export class StationManager {
 
     stopSteadyState() {
         this.musicPlayer.removeListener('player_state_changed');
-        this.server.removeListener('station_state_change');
+        this.server.removeListener('playback_state_changed');
         this.viewManager.listenerView.removeListener('muteButtonClick');
         this.viewManager.listenerView.removeListener('volumeSliderChange');
         this.viewManager.djView.removeListener('playPauseButtonClick');
@@ -156,7 +148,9 @@ export class StationManager {
     enableHeartbeat() {
         this.heartbeatIntervalId = window.setInterval(() => {
             this.taskExecutor.push(() => this.calculatePing());
-            this.taskExecutor.push(() => this.updateServerPlaybackState());
+            if ((this.listenerRole & ListenerRole.DJ) === ListenerRole.DJ) {
+                this.taskExecutor.push(() => this.updateServerPlaybackState());
+            }
         }, SERVER_HEARTBEAT_INTERVAL_MS);
     }
 
@@ -177,32 +171,22 @@ export class StationManager {
 
                 return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
                     .then(serverState => {
-                        return this.applyServerState(<PlaybackState>serverState);
+                        return this.applyServerPlaybackState(<PlaybackState>serverState);
                     })
-                    .catch(() => {
-                        return this.syncServerPlaybackState(playbackState);
+                    .catch(e => {
+                        console.error(e);
+                        this.taskExecutor.clear();
+                        this.taskExecutor.push(() => this.syncServerPlaybackState());
                     });
             });
     }
 
-    syncServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
-        return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
-            .then(state => {
-                if ((!state && this.clientEtag) || (state && (this.clientEtag && (state.sample_time <= this.clientEtag)))) {
-                    return Promise.resolve();
+    syncServerPlaybackState(): Promise<void> {
+        return Promise.race([this.server.getPlaybackState(), timeout(5000)])
+            .then(serverState => {
+                if (serverState) {
+                    return this.applyServerPlaybackState(serverState);
                 }
-
-                if (state) {
-                    state.sample_time = new Date(state.sample_time.getTime() + this.getMedianClientServerTimeOffset());
-                }
-
-                return Promise.race([this.server.sendSyncRequest(state || undefined), timeout(5000)])
-                    .then(serverState => {
-                        return this.applyServerState(<PlaybackState>serverState);
-                    })
-                    .catch(() => {
-                        return this.syncServerPlaybackState(playbackState);
-                    });
             });
     }
 
@@ -214,7 +198,7 @@ export class StationManager {
             .catch(console.error);
     }
 
-    applyServerState(serverState: PlaybackState): Promise<void> {
+    applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
         if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
             return Promise.resolve();
         }
@@ -328,18 +312,13 @@ export class StationManager {
     }
 }
 
-interface JoinResponse {
-    stationName: string;
-}
-
 interface PongResponse {
     startTime: Date;
     serverTime: Date;
 }
 
 export enum ServerError {
-    PreconditionFailed,
-    SpotifyError,
+    ClientError,
 }
 
 export class StationServer {
@@ -348,15 +327,15 @@ export class StationServer {
         ['error', $.Callbacks()],
         ['join', $.Callbacks()],
         ['pong', $.Callbacks()],
-        ['ensure_playback_state', $.Callbacks()],
-        ['station_state_change', $.Callbacks()],
+        ['playback_state_changed', $.Callbacks()],
     ]);
 
-    constructor(private stationId: number, private webSocketBridge: WebSocketBridge) {
+    constructor(private stationId: number, private csrftoken: string, private webSocketBridge: WebSocketBridge) {
         // Correctly decide between ws:// and wss://
-        const wsScheme = window.location.protocol == 'https:' ? 'wss' : 'ws';
-        const wsPath = wsScheme + '://' + window.location.host + '/station/stream/';
-        this.webSocketBridge.connect(wsPath);
+        const wsScheme = ((window.location.protocol === 'https:') ? 'wss' : 'ws');
+        const wsBaseUrl = wsScheme + '://' + window.location.host;
+        const wsUrl = `${wsBaseUrl}/api/stations/${stationId}/stream/`;
+        this.webSocketBridge.connect(wsUrl);
         this.bindWebSocketBridgeActions();
     }
 
@@ -365,10 +344,8 @@ export class StationServer {
     }
 
     // Public events
-    // station_state_change: (state: PlaybackState)
-    // error: (error: string, message: string)
-    //     client_error
-    //     precondition_failed
+    // playback_state_change: (state: PlaybackState)
+    // error: (error: ServerError, message: string)
     on(eventName: string, cb: Function) {
         this.observers.get(eventName)!.add(cb);
     }
@@ -399,19 +376,6 @@ export class StationServer {
         }
     }
 
-    sendJoinRequest(deviceId: string): Promise<JoinResponse> {
-        return new Promise(resolve => {
-            this.onOnce('join', (stationName: string) => {
-                resolve({ stationName });
-            });
-            this.webSocketBridge.send({
-                'command': 'join',
-                'station': this.stationId,
-                'device_id': deviceId,
-            });
-        });
-    }
-
     sendPingRequest(): Promise<PongResponse> {
         return new Promise(resolve => {
             this.onOnce('pong', (pongResponse: PongResponse) => {
@@ -425,30 +389,48 @@ export class StationServer {
     }
 
     sendPlaybackState(playbackState: PlaybackState, serverEtag?: Date): Promise<PlaybackState> {
-        return new Promise(resolve => {
-            const thisRequestId = ++this.requestId;
-            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState) => {
-                resolve(serverPlaybackState);
-            });
-            this.webSocketBridge.send({
-                'command': 'player_state_change',
-                'request_id': thisRequestId,
-                'state': playbackState,
-                'etag': serverEtag,
-            });
+        const url = `/api/v1/stations/${this.stationId}/`;
+
+        let headers = new Headers();
+        headers.append('X-CSRFToken', this.csrftoken);
+        addConditionalRequestHeader(headers, playbackState);
+        headers.append('Content-Type', 'application/json');
+
+        return fetch(url, {
+            body: JSON.stringify({
+                'playbackstate': playbackState
+            }),
+            credentials: 'include',
+            headers: headers,
+            method: 'PATCH',
+        }).then(response => {
+            if (response.status === 200) {
+                return response.json();
+            } else if (response.status === 412) {
+                throw new Error('Conditional station playback state update failed');
+            } else {
+                return response.json().then(data => Promise.reject(data));
+            }
+        }).then((data: any) => {
+            return createPlaybackStateFromServer(data.playbackstate);
         });
     }
 
-    sendSyncRequest(playbackState?: PlaybackState): Promise<PlaybackState> {
-        return new Promise(resolve => {
-            const thisRequestId = ++this.requestId;
-            this.onRequest('ensure_playback_state', thisRequestId, (serverPlaybackState: PlaybackState) => {
-                resolve(serverPlaybackState);
-            });
-            this.webSocketBridge.send({
-                'command': 'get_playback_state',
-                'request_id': thisRequestId,
-                'state': playbackState,
+    getPlaybackState(): Promise<PlaybackState | undefined> {
+        const url = `/api/v1/stations/${this.stationId}/`;
+        return fetch(url, {
+            credentials: 'include',
+        }).then(response => {
+            return response.json().then(data => {
+                if (response.ok) {
+                    if (data.playbackstate) {
+                        return createPlaybackStateFromServer(data.playbackstate);
+                    } else {
+                        return undefined;
+                    }
+                } else {
+                    throw new Error(data);
+                }
             });
         });
     }
@@ -459,14 +441,9 @@ export class StationServer {
             this.observers.get('error')!.fire(serverErrorFromString(action.error), action.message);
         } else if (action.join) {
             this.observers.get('join')!.fire(action.join);
-        } else if (action.type === 'ensure_playback_state') {
-            const requestId = action.request_id;
-            const serverPlaybackState = createPlaybackStateFromServer(action.state);
-            if (requestId) {
-                this.observers.get(action.type)!.fire(requestId, serverPlaybackState);
-            } else {
-                this.observers.get('station_state_change')!.fire(serverPlaybackState);
-            }
+        } else if (action.type === 'playback_state_changed') {
+            const serverPlaybackState = createPlaybackStateFromServer(action.playbackstate);
+            this.observers.get(action.type)!.fire(serverPlaybackState);
         } else if (action.type === 'pong') {
             const pong: PongResponse = {
                 startTime: new Date(action.start_time),
@@ -478,13 +455,11 @@ export class StationServer {
 }
 
 function serverErrorFromString(error: string): ServerError {
-    if (error === 'precondition_failed') {
-        return ServerError.PreconditionFailed;
-    } else if (error === 'spotify_error') {
-        return ServerError.SpotifyError;
+    if (error === 'client_error') {
+        return ServerError.ClientError;
     } else {
         console.assert();
-        throw Error("Unknown server error");
+        throw Error(`Unknown server error: ${error}`);
     }
 }
 
@@ -495,7 +470,13 @@ function createPlaybackStateFromServer(state: any) {
         state.paused,
         state.raw_position_ms,
         new Date(state.sample_time),
-        new Date(state.etag));
+        new Date(state.last_updated_time));
+}
+
+function addConditionalRequestHeader(headers: Headers, playbackState: PlaybackState) {
+    if (playbackState.etag) {
+        headers.append('If-Unmodified-Since', playbackState.etag.toISOString());
+    }
 }
 
 export class StationMusicPlayer {
@@ -611,4 +592,30 @@ function retry(condition: () => Promise<boolean>): Promise<void> {
             return retry(condition);
         }));
     });
+}
+
+function getCrossSiteRequestForgeryToken(): string {
+    const csrftoken = getCookie('csrftoken');
+    if (!csrftoken) {
+        console.assert(false, 'Cannot obtain csrftoken');
+        throw new Error('Cannot obtain csrftoken');
+    }
+
+    return csrftoken;
+}
+
+function getCookie(name: string) {
+    var cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        var cookies = document.cookie.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = $.trim(cookies[i]);
+            // Does this cookie string begin with the name we want?
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
 }

@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 
-from .models import Listener
+from .models import Listener, Station
 from . import spotify
 
 logger = logging.getLogger(__name__)
@@ -29,14 +29,16 @@ def index(request):
 @spotify.authorization_required
 @spotify.fresh_access_token_required
 def station(request, station_id):
+    station = get_object_or_404(Station, id=station_id)
     listener = get_object_or_404(
-        Listener, user_id=request.user.id, station_id=station_id)
+        Listener, user_id=request.user.id, station=station)
     access_token = spotify.load_access_token(request.user.id).token
     return render(
         request,
         'station.html',
         context={
             'station_id': station_id,
+            'station_title': station.title,
             'access_token': access_token,
             'is_dj': listener.is_dj,
             'is_admin': listener.is_admin,

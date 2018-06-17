@@ -6,7 +6,6 @@ import json
 import re
 import socket
 
-from django.utils import timezone
 import requests
 
 TEST_ACCESS_TOKEN = 'test_access_token'
@@ -14,7 +13,6 @@ TEST_ACCESS_TOKEN = 'test_access_token'
 
 class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
     TOKEN_PATTERN = re.compile(r'/api/token')
-    PLAYER_PLAY_PATERN = re.compile(r'player/play')
 
     # BaseHTTPRequestHandler
 
@@ -31,22 +29,6 @@ class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
             }
             response_content = json.dumps(response_data)
             self.wfile.write(response_content.encode('utf-8'))
-
-    def do_PUT(self):
-        if re.search(self.PLAYER_PLAY_PATERN, self.path):
-            self.send_response(requests.codes.no_content)
-            self.end_headers()
-
-
-class MockSpotifyServerErrorHandler(BaseHTTPRequestHandler):
-    PLAYER_PLAY_PATERN = re.compile(r'player/play')
-
-    # BaseHTTPRequestHandler
-
-    def do_PUT(self):
-        if re.search(self.PLAYER_PLAY_PATERN, self.path):
-            self.send_response(requests.codes.service_unavailable)
-            self.end_headers()
 
 
 def get_free_port():

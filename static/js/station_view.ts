@@ -5,14 +5,15 @@ import { PlaybackState } from './music_player';
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
 export class ViewManager {
-    stationView = new StationView();
+    stationView: StationView;
     musicPositionView = new MusicPositionView();
     listenerView = new StationListenerView();
     djView: StationDJView;
     adminView: StationAdminView;
     debugView: StationDebugView;
 
-    constructor(listenerRole: ListenerRole, debug: boolean) {
+    constructor(listenerRole: ListenerRole, stationTitle: string, debug: boolean) {
+        this.stationView = new StationView(stationTitle);
         this.djView = new StationDJView(listenerRole);
         this.adminView = new StationAdminView(listenerRole);
         this.debugView = new StationDebugView(debug);
@@ -21,13 +22,14 @@ export class ViewManager {
 
 class StationView {
     private state = new class {
-        stationName = '';
+        stationTitle = '';
         playbackState?: PlaybackState;
         isConnected = false;
         errorMessage?: string;
     };
 
-    constructor() {
+    constructor(stationTitle: string) {
+        this.state.stationTitle = stationTitle;
         this.render();
     }
 
@@ -38,7 +40,7 @@ class StationView {
     }
 
     render() {
-        $('#station-name').html(this.state.stationName);
+        $('#station-title').html(this.state.stationTitle);
 
         $('#connection-status').removeClass().empty();
         if (this.state.isConnected) {

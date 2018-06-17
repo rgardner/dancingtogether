@@ -12,7 +12,7 @@
     <span id="connection-status-error" class="bg-danger"></span><br>
 
     <div>
-        <h1 id="station-name"></h1>
+        <h1 id="station-title"></h1>
         <div id="album-art"></div>
         <span id="playback-track-title"></span><br>
         <span id="playback-track-artist"></span><br>
@@ -82,6 +82,7 @@
         userIsAdmin: {{ is_admin|yesno:"true,false" }},
         accessToken: "{{ access_token }}",
         stationId: {{ station_id }},
+        stationTitle: "{{ station_title }}",
         debug: {{ debug|yesno:"true,false" }},
     };
 </script>
