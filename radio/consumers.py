@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone
 import enum
 import logging
@@ -13,7 +12,7 @@ from django.db.models import signals
 from . import models, spotify
 from .api.serializers import PlaybackStateSerializer
 from .exceptions import ClientError
-from .models import Listener, PendingListener, Station
+from .models import Listener, Station
 from .spotify import AccessToken
 
 logger = logging.getLogger(__name__)
@@ -85,13 +84,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
             elif command == 'refresh_access_token':
                 await self.refresh_access_token()
-
-            elif command == 'get_listeners':
-                await self.get_listeners(content['request_id'])
-
-            elif command == 'send_listener_invite':
-                await self.send_listener_invite(content['request_id'],
-                                                content['listener_email'])
 
         except ClientError as e:
             await self.send_json({'error': e.code, 'message': e.message})
@@ -171,32 +163,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             'access_token': access_token.token,
         })
         return access_token
-
-    @station_join_required
-    @station_admin_required
-    async def get_listeners(self, request_id):
-        listeners = await get_listeners(self.station_id)
-        pending_listeners = await get_pending_listeners(self.station_id)
-        filter_user = lambda user: { 'id': user.id, 'username': user.username, 'email': user.email }
-        await self.send_json({
-            'type':
-            'get_listeners_result',
-            'request_id':
-            request_id,
-            'listeners': [filter_user(l.user) for l in listeners],
-            'pending_listeners':
-            [filter_user(l.user) for l in pending_listeners],
-        })
-
-    @station_join_required
-    @station_admin_required
-    async def send_listener_invite(self, request_id, listener_email):
-        await self.send_json({
-            'type': 'send_listener_invite_result',
-            'request_id': request_id,
-            'result': 'not_implemented',
-            'is_new_user': False,
-        })
 
     # Playback State Change Notification Management
 
@@ -306,16 +272,6 @@ def get_listener_or_error(station_id, user):
         raise ClientError('forbidden', 'This station is not available')
 
     return listener
-
-
-@database_sync_to_async
-def get_listeners(station_id):
-    return Listener.objects.filter(station_id=station_id)
-
-
-@database_sync_to_async
-def get_pending_listeners(station_id):
-    return PendingListener.objects.filter(room_id=station_id)
 
 
 @database_sync_to_async

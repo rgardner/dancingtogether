@@ -30,7 +30,11 @@ window.onSpotifyWebPlaybackSDKReady = () => {
         listenerRole,
         APP_DATA.stationTitle,
         new StationServer(APP_DATA.stationId, getCrossSiteRequestForgeryToken(), webSocketBridge),
-        new StationMusicPlayer(musicPlayer),
+        new StationMusicPlayer(
+            APP_DATA.spotifyConnectPlayerName,
+            APP_DATA.accessToken,
+            StationMusicPlayer.getCachedVolume()
+        ),
         APP_DATA.debug,
     );
 };
@@ -318,6 +322,14 @@ export enum ServerError {
     ClientError,
 }
 
+export interface Listener {
+    userId: number,
+    userName: string,
+    userEmail: string,
+    isDJ: boolean,
+    isAdmin: boolean,
+}
+
 export class StationServer {
     requestId = 0;
     observers = new Map([
@@ -432,6 +444,21 @@ export class StationServer {
         });
     }
 
+    getListeners(): Promise<Array<Listener>> {
+        const url = `/api/v1/stations/${this.stationId}/listeners/`;
+        return fetch(url, {
+            credentials: 'include',
+        }).then(response => {
+            return response.json().then(data => {
+                if (response.ok) {
+                    return data;
+                } else {
+                    throw new Error(data);
+                }
+            });
+        });
+    }
+
     onMessage(action: any) {
         console.log('Received: ', action);
         if (action.error) {
@@ -478,8 +505,10 @@ function addConditionalRequestHeader(headers: Headers, playbackState: PlaybackSt
 
 export class StationMusicPlayer {
     volumeBeforeMute = 0.8;
+    public musicPlayer: MusicPlayer;
 
-    constructor(private musicPlayer: MusicPlayer) {
+    constructor(clientName: string, accessToken: string, initialVolume: number) {
+        this.musicPlayer = new SpotifyMusicPlayer(clientName, accessToken, initialVolume);
         this.musicPlayer.connect();
     }
 

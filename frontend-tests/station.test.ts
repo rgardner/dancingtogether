@@ -1,10 +1,10 @@
 import * as $ from 'jquery';
-import { ListenerRole, wait } from '../static/js/util';
-import { MusicPlayer, PlaybackState } from '../static/js/music_player';
+import { ListenerRole } from '../static/js/util';
+import { SpotifyMusicPlayer, MusicPlayer, PlaybackState } from '../static/js/music_player';
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
-    SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer, StationServer,
-    ServerError,
+    Listener, SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer,
+    StationServer, ServerError,
 } from '../static/js/station'
 
 const MockStationId = 1;
@@ -16,6 +16,8 @@ const MockServerEtag1 = new Date('2018-05-20T20:57:33.992Z');
 const MockServerEtag2 = new Date('2018-05-20T20:58:33.992Z');
 const Debug = false;
 
+SpotifyMusicPlayer = jest.fn();
+
 beforeEach(() => {
     // Mock StationManager.getAdjustedPlaybackPosition, as it adjusts based on
     // the client/server time offset via Date.getTime, which is
@@ -25,6 +27,7 @@ beforeEach(() => {
     });
     StationManager.prototype.getAdjustedPlaybackPosition = getAdjustedPlaybackPosition.bind(StationManager);
 
+    SpotifyMusicPlayer.mockClear();
     fetch.resetMocks();
 });
 
@@ -252,6 +255,29 @@ test('station server fires notifications for errors', async () => {
     mockWebSocketBridge.fire(mockError1);
 });
 
+function createListener(userId: number): Listener {
+    return {
+        'userId': userId,
+        'userName': 'MockUserName',
+        'userEmail': 'MockUserEmail',
+        isDJ: false,
+        isAdmin: false,
+    };
+}
+
+test('station server can get listeners', async () => {
+    expect.assertions(2);
+    let stationServer = createStationServer(new MockWebSocketBridge());
+
+    // Mock server response
+    const responseListeners = [createListener(1), createListener(2)];
+    fetch.mockResponseOnce(JSON.stringify(responseListeners));
+
+    await expect(stationServer.getListeners()).resolves.toEqual(responseListeners);
+
+    expect(fetch.mock.calls.length).toEqual(1);
+});
+
 function createStationManager(stationServer: StationServer, stationMusicPlayer: StationMusicPlayer): StationManager {
     let stationManager = new StationManager(ListenerRole.None, MockStationName, stationServer, stationMusicPlayer, Debug);
     stationManager.roundTripTimes.push(0);
@@ -259,10 +285,20 @@ function createStationManager(stationServer: StationServer, stationMusicPlayer: 
     return stationManager;
 }
 
-test.skip('station manager correctly adjusts client server time offset', async () => {
-    let stationManager = createStationManager(
+function createStationMusicPlayer() {
+    return new StationMusicPlayer('MockClientName', 'MockAccessToken', 0.8);
+}
+
+test('station manager correctly adjusts client server time offset', async () => {
+    let mockMusicPlayer = new MockMusicPlayer();
+    SpotifyMusicPlayer.mockImplementation(() => mockMusicPlayer);
+
+    let stationManager = new StationManager(
+        ListenerRole.None,
+        MockStationName,
         createStationServer(new MockWebSocketBridge()),
-        new StationMusicPlayer(new MockMusicPlayer()),
+        createStationMusicPlayer(),
+        Debug,
     );
 
     let startTime = new Date('2018-05-31T00:00:01.000Z');
@@ -273,7 +309,7 @@ test.skip('station manager correctly adjusts client server time offset', async (
     expect(stationManager.roundTripTimes.length).toBe(1);
     expect(stationManager.roundTripTimes.entries()).toEqual([1000]);
     expect(stationManager.clientServerTimeOffsets.length).toBe(1);
-    expect(stationManager.clientServerTimeOffsets.entries()).toEqual([-1500]);
+    expect(stationManager.clientServerTimeOffsets.entries()).toEqual([1500]);
 });
 
 function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, playbackState: PlaybackState) {
@@ -285,10 +321,11 @@ function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, pl
 
 test('station manager correctly adjusts playback state when server is paused', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
-    let stationMusicPlayer = new StationMusicPlayer(mockMusicPlayer);
+    SpotifyMusicPlayer.mockImplementation(() => mockMusicPlayer);
+
     let stationManager = createStationManager(
         createStationServer(new MockWebSocketBridge()),
-        stationMusicPlayer,
+        createStationMusicPlayer(),
     );
 
     const mockPlaybackState = new PlaybackState(
@@ -308,9 +345,11 @@ test('station manager correctly adjusts playback state when server is paused', a
 
 test('station manager correctly adjusts playback state when server is playing', async () => {
     let mockMusicPlayer = new MockMusicPlayer();
+    SpotifyMusicPlayer.mockImplementation(() => mockMusicPlayer);
+
     let stationManager = createStationManager(
         createStationServer(new MockWebSocketBridge()),
-        new StationMusicPlayer(mockMusicPlayer),
+        createStationMusicPlayer(),
     );
 
     const mockPlaybackState = new PlaybackState(

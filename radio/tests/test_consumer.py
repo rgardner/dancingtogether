@@ -63,65 +63,6 @@ async def test_admin_commands_require_admin(user1, station1):
         assert response['error'] == 'forbidden'
 
 
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_get_listeners(user1, station1):
-    """
-    Assert get_listeners works as expected.
-    """
-    await create_listener(user1, station1, is_admin=True)
-
-    async with disconnecting(StationCommunicator(station1.id,
-                                                 user1)) as communicator:
-        request_id = 1
-        await communicator.get_listeners(request_id)
-        response = await communicator.receive_json_from()
-        assert response == {
-            'type':
-            'get_listeners_result',
-            'request_id':
-            request_id,
-            'listeners': [{
-                'id': user1.id,
-                'username': user1.username,
-                'email': user1.email
-            }],
-            'pending_listeners': [],
-        }
-
-
-@pytest.mark.skip(reason='not implemented')
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_send_listener_invite(user1, user2, station1):
-    """
-    Assert send_listener_invite works as expected.
-    """
-    await create_listener(user1, station1, is_admin=True)
-
-    async with disconnecting(StationCommunicator(station1.id,
-                                                 user1)) as communicator:
-        request_id = 1
-        await communicator.send_listener_invite(request_id, user2.email)
-        response = await communicator.receive_json_from()
-        assert response == {
-            'type': 'send_listener_invite_result',
-            'request_id': request_id,
-            'result': 'success',
-            'is_new_user': False,
-        }
-
-        request_id = 2
-        await communicator.send_listener_invite(request_id, NON_USER_EMAIL)
-        response = await communicator.receive_json_from()
-        assert response == {
-            'type': 'send_listener_invite_result',
-            'request_id': request_id,
-            'result': 'success',
-            'is_new_user': True,
-        }
-
-
 @pytest.mark.skip(reason='Test bug: deserialization not working')
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
@@ -265,17 +206,4 @@ class StationCommunicator(WebsocketCommunicator):
     async def refresh_access_token(self):
         await self.send_json_to({
             'command': 'refresh_access_token',
-        })
-
-    async def get_listeners(self, request_id):
-        await self.send_json_to({
-            'command': 'get_listeners',
-            'request_id': request_id,
-        })
-
-    async def send_listener_invite(self, request_id, listener_email):
-        await self.send_json_to({
-            'command': 'send_listener_invite',
-            'request_id': request_id,
-            'listener_email': listener_email,
         })

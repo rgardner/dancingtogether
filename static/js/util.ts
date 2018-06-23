@@ -1,5 +1,5 @@
 export enum ListenerRole {
-    None,
+    None = 0,
     DJ = 1 << 1,
     Admin = 1 << 2,
 }
