@@ -1,8 +1,9 @@
 import logging
 
+from django.contrib import auth
 from rest_framework import serializers
 
-from ..models import PlaybackState, Station
+from ..models import Listener, PlaybackState, Station
 
 logger = logging.getLogger(__name__)
 
@@ -35,3 +36,17 @@ class StationSerializer(serializers.HyperlinkedModelSerializer):
             PlaybackStateSerializer().update(instance.playbackstate,
                                              validated_data['playbackstate'])
         return instance
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = auth.get_user_model()
+        fields = ('id', 'username')
+
+
+class ListenerSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
+
+    class Meta:
+        model = Listener
+        fields = ('user', 'is_admin', 'is_dj')

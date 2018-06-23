@@ -5,8 +5,8 @@ from django.http import Http404
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 
-from ..models import PlaybackState, Station
-from .serializers import StationSerializer
+from ..models import Listener, PlaybackState, Station
+from .serializers import ListenerSerializer, StationSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ class StationViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, pk=None):
         response = super().retrieve(request, pk)
+        response['Cache-Control'] = 'no-cache'
         self.add_response_headers(response, pk)
         return response
 
@@ -47,3 +48,10 @@ class StationViewSet(viewsets.ModelViewSet):
         if status.is_success(response.status_code):
             playback_state = self.get_playback_state(pk)
             response['Last-Modified'] = playback_state.last_updated_time
+
+
+class ListenerViewSet(viewsets.ModelViewSet):
+    serializer_class = ListenerSerializer
+
+    def get_queryset(self):
+        return Listener.objects.filter(station=self.kwargs['station_pk'])
