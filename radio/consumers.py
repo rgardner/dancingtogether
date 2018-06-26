@@ -2,18 +2,16 @@ from datetime import datetime, timezone
 import enum
 import logging
 
-import aiohttp
 from asgiref.sync import async_to_sync
 import channels.auth
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db.models import signals
 
-from . import models, spotify
+from . import models
 from .api.serializers import PlaybackStateSerializer
 from .exceptions import ClientError
 from .models import Listener, Station
-from .spotify import AccessToken
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +79,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         try:
             if command == 'ping':
                 await self.send_pong(content['start_time'])
-
-            elif command == 'refresh_access_token':
-                await self.refresh_access_token()
 
         except ClientError as e:
             await self.send_json({'error': e.code, 'message': e.message})
@@ -153,16 +148,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             'server_time':
             datetime.now(timezone.utc).isoformat(),
         })
-
-    async def refresh_access_token(self) -> AccessToken:
-        access_token = await get_access_token(self.user.id)
-        async with aiohttp.ClientSession() as session:
-            await access_token.refresh(session)
-        await self.send_json({
-            'type': 'access_token_change',
-            'access_token': access_token.token,
-        })
-        return access_token
 
     # Playback State Change Notification Management
 
@@ -277,8 +262,3 @@ def get_listener_or_error(station_id, user):
 @database_sync_to_async
 def save_station_playback_state(station_state):
     station_state.save()
-
-
-@database_sync_to_async
-def get_access_token(user_id):
-    return spotify.load_access_token(user_id)

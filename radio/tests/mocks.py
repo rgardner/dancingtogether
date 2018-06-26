@@ -24,7 +24,7 @@ class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             response_data = {
-                'access_token': 'test_access_token',
+                'access_token': TEST_ACCESS_TOKEN,
                 'expires_in': timedelta(hours=1).seconds,
             }
             response_content = json.dumps(response_data)

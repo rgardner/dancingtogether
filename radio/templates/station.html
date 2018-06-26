@@ -77,12 +77,13 @@
 <script>
     'use strict';
     const APP_DATA = {
-        spotifyConnectPlayerName: '{{ player_name }}',
-        userIsDJ: {{ is_dj|yesno:"true,false" }},
-        userIsAdmin: {{ is_admin|yesno:"true,false" }},
-        accessToken: "{{ access_token }}",
+        userId: {{ user_id }},
         stationId: {{ station_id }},
         stationTitle: "{{ station_title }}",
+        userIsDJ: {{ is_dj|yesno:"true,false" }},
+        userIsAdmin: {{ is_admin|yesno:"true,false" }},
+        spotifyConnectPlayerName: '{{ player_name }}',
+        accessToken: "{{ access_token }}",
         debug: {{ debug|yesno:"true,false" }},
     };
 </script>

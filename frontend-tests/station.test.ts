@@ -1,12 +1,14 @@
 import * as $ from 'jquery';
 import { ListenerRole } from '../static/js/util';
-import { SpotifyMusicPlayer, MusicPlayer, PlaybackState } from '../static/js/music_player';
+import {
+    MusicPlayer, PlaybackState, PlayerInit, createSpotifyMusicPlayer,
+} from '../static/js/music_player';
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
-    Listener, SEEK_OVERCORRECT_MS, StationManager, StationMusicPlayer,
-    StationServer, ServerError,
+    Listener, SEEK_OVERCORRECT_MS, StationManager, StationServer, ServerError,
 } from '../static/js/station'
 
+const MockUserId = 1;
 const MockStationId = 1;
 const MockStationName = 'MockStationName';
 const MockCrossSiteRequestForgeryToken = 'MockCrossSiteRequestForgeryToken';
@@ -14,9 +16,14 @@ const MockContextUri = 'MockContextUri';
 const MockCurrentTrackUri = 'MockCurrentTrackUri';
 const MockServerEtag1 = new Date('2018-05-20T20:57:33.992Z');
 const MockServerEtag2 = new Date('2018-05-20T20:58:33.992Z');
+const MockPlayerName = 'MockPlayerName';
+const MockAccessToken1 = 'MockAccessToken1';
+const MockAccessToken2 = 'MockAccessToken2';
+const MockAccessTokenExpirationTime1 = new Date('2018-05-20T20:59:33.992Z');
+const MockAccessTokenExpirationTime2 = new Date('2018-05-20T21:60:33.992Z');
 const Debug = false;
 
-SpotifyMusicPlayer = jest.fn();
+createSpotifyMusicPlayer = jest.fn();
 
 beforeEach(() => {
     // Mock StationManager.getAdjustedPlaybackPosition, as it adjusts based on
@@ -27,17 +34,22 @@ beforeEach(() => {
     });
     StationManager.prototype.getAdjustedPlaybackPosition = getAdjustedPlaybackPosition.bind(StationManager);
 
-    SpotifyMusicPlayer.mockClear();
+    createSpotifyMusicPlayer.mockClear();
     fetch.resetMocks();
 });
 
 class MockMusicPlayer implements MusicPlayer {
+    getOAuthToken: (cb: (accessToken: string) => void) => void;
     public playbackState = new PlaybackState('', '', true, 0, new Date());
     observers = new Map([
         ['player_state_changed', $.Callbacks()],
     ]);
 
     // MusicPlayer
+
+    constructor(options: PlayerInit) {
+        this.getOAuthToken = options.getOAuthToken;
+    }
 
     getAccessToken() { return ''; }
     setAccessToken(_value: string) { }
@@ -98,6 +110,12 @@ class MockMusicPlayer implements MusicPlayer {
     nextTrack(): Promise<void> { return Promise.reject("not implemented"); }
 
     // Mock functions
+
+    requestOAuthToken(): Promise<string> {
+        return new Promise(resolve => {
+            this.getOAuthToken(resolve);
+        });
+    }
 
     fire(eventName, payload) {
         this.observers.get(eventName).fire(payload);
@@ -278,27 +296,26 @@ test('station server can get listeners', async () => {
     expect(fetch.mock.calls.length).toEqual(1);
 });
 
-function createStationManager(stationServer: StationServer, stationMusicPlayer: StationMusicPlayer): StationManager {
-    let stationManager = new StationManager(ListenerRole.None, MockStationName, stationServer, stationMusicPlayer, Debug);
-    stationManager.roundTripTimes.push(0);
-    stationManager.clientServerTimeOffsets.push(0);
-    return stationManager;
+function createStationManager(stationServer: StationServer): StationManager {
+    return new StationManager(
+        MockUserId, ListenerRole.None, MockStationName, stationServer,
+        MockPlayerName, MockAccessToken1, MockAccessTokenExpirationTime1, Debug);
 }
 
-function createStationMusicPlayer() {
-    return new StationMusicPlayer('MockClientName', 'MockAccessToken', 0.8);
+function addDefaultNetworkTimes(stationManager: StationManager) {
+    stationManager.roundTripTimes.push(0);
+    stationManager.clientServerTimeOffsets.push(0);
 }
 
 test('station manager correctly adjusts client server time offset', async () => {
-    let mockMusicPlayer = new MockMusicPlayer();
-    SpotifyMusicPlayer.mockImplementation(() => mockMusicPlayer);
+    let mockMusicPlayer: MusicPlayer = undefined;
+    createSpotifyMusicPlayer.mockImplementation(options => {
+        mockMusicPlayer = new MockMusicPlayer(options);
+        return mockMusicPlayer;
+    });
 
-    let stationManager = new StationManager(
-        ListenerRole.None,
-        MockStationName,
+    let stationManager = createStationManager(
         createStationServer(new MockWebSocketBridge()),
-        createStationMusicPlayer(),
-        Debug,
     );
 
     let startTime = new Date('2018-05-31T00:00:01.000Z');
@@ -320,13 +337,14 @@ function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, pl
 }
 
 test('station manager correctly adjusts playback state when server is paused', async () => {
-    let mockMusicPlayer = new MockMusicPlayer();
-    SpotifyMusicPlayer.mockImplementation(() => mockMusicPlayer);
+    let mockMusicPlayer: MockMusicPlayer = undefined;
+    createSpotifyMusicPlayer.mockImplementation(options => {
+        mockMusicPlayer = new MockMusicPlayer(options);
+        return mockMusicPlayer;
+    });
 
-    let stationManager = createStationManager(
-        createStationServer(new MockWebSocketBridge()),
-        createStationMusicPlayer(),
-    );
+    let stationManager = createStationManager(createStationServer(new MockWebSocketBridge()));
+    addDefaultNetworkTimes(stationManager);
 
     const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
@@ -344,13 +362,14 @@ test('station manager correctly adjusts playback state when server is paused', a
 
 
 test('station manager correctly adjusts playback state when server is playing', async () => {
-    let mockMusicPlayer = new MockMusicPlayer();
-    SpotifyMusicPlayer.mockImplementation(() => mockMusicPlayer);
+    let mockMusicPlayer: MockMusicPlayer = undefined;
+    createSpotifyMusicPlayer.mockImplementation(options => {
+        mockMusicPlayer = new MockMusicPlayer(options);
+        return mockMusicPlayer;
+    });
 
-    let stationManager = createStationManager(
-        createStationServer(new MockWebSocketBridge()),
-        createStationMusicPlayer(),
-    );
+    let stationManager = createStationManager(createStationServer(new MockWebSocketBridge()));
+    addDefaultNetworkTimes(stationManager);
 
     const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, false /*paused*/,
@@ -370,11 +389,15 @@ test('station manager correctly adjusts playback state when server is playing', 
 });
 
 test.skip('station manager correctly handles precondition failed', async () => {
+    let mockMusicPlayer: MockMusicPlayer = undefined;
+    createSpotifyMusicPlayer.mockImplementation(options => {
+        mockMusicPlayer = new MockMusicPlayer(options);
+        return mockMusicPlayer;
+    });
+
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let mockMusicPlayer = new MockMusicPlayer();
-    let stationManager = createStationManager(
-        createStationServer(mockWebSocketBridge),
-        new StationMusicPlayer(mockMusicPlayer));
+    let stationManager = createStationManager(createStationServer(mockWebSocketBridge));
+    addDefaultNetworkTimes(stationManager);
 
     const mockPlaybackState = new PlaybackState(
         MockContextUri, MockCurrentTrackUri, true /*paused*/,
@@ -414,6 +437,23 @@ test.skip('station manager correctly handles precondition failed', async () => {
     });
 
     await expect(donePromise).resolves.toBeUndefined();
+});
+
+test('station manager requests a fresh access token when needed', async () => {
+    let mockMusicPlayer: MockMusicPlayer = undefined;
+    createSpotifyMusicPlayer.mockImplementation(options => {
+        mockMusicPlayer = new MockMusicPlayer(options);
+        return mockMusicPlayer;
+    });
+
+    createStationManager(createStationServer(new MockWebSocketBridge()));
+
+    fetch.mockResponseOnce(JSON.stringify({
+        'token': MockAccessToken2,
+        'token_expiration_time': MockAccessTokenExpirationTime2,
+    }));
+
+    await expect(mockMusicPlayer.requestOAuthToken()).resolves.toEqual(MockAccessToken2);
 });
 
 class ServerPlaybackState {

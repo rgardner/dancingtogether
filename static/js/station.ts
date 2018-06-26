@@ -1,6 +1,6 @@
 import * as $ from 'jquery';
 import { CircularArray, ListenerRole, median, wait } from './util';
-import { MusicPlayer, PlaybackState, SpotifyMusicPlayer } from './music_player';
+import { MusicPlayer, PlaybackState, createSpotifyMusicPlayer } from './music_player';
 import { ChannelWebSocketBridge, WebSocketBridge } from './websocket_bridge';
 import { ViewManager } from './station_view';
 
@@ -9,12 +9,14 @@ export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
 
 interface AppData {
-    spotifyConnectPlayerName: string;
-    userIsDJ: boolean;
-    userIsAdmin: boolean;
-    accessToken: string;
+    userId: number;
     stationId: number;
     stationTitle: string;
+    userIsDJ: boolean;
+    userIsAdmin: boolean;
+    spotifyConnectPlayerName: string;
+    accessToken: string;
+    accessTokenExpirationTime: Date;
     debug: boolean;
 }
 
@@ -27,15 +29,15 @@ window.onSpotifyWebPlaybackSDKReady = () => {
     let webSocketBridge = new ChannelWebSocketBridge();
 
     new StationManager(
+        APP_DATA.userId,
         listenerRole,
         APP_DATA.stationTitle,
         new StationServer(APP_DATA.stationId, getCrossSiteRequestForgeryToken(), webSocketBridge),
-        new StationMusicPlayer(
-            APP_DATA.spotifyConnectPlayerName,
-            APP_DATA.accessToken,
-            StationMusicPlayer.getCachedVolume()
-        ),
+        APP_DATA.spotifyConnectPlayerName,
+        APP_DATA.accessToken,
+        APP_DATA.accessTokenExpirationTime,
         APP_DATA.debug,
+        StationMusicPlayer.getCachedVolume(),
     );
 };
 
@@ -44,14 +46,23 @@ export class StationManager {
     clientEtag?: Date;
     serverEtag?: Date;
     heartbeatIntervalId?: number;
+    musicPlayer: StationMusicPlayer;
     viewManager: ViewManager;
     roundTripTimes = new CircularArray<number>(5);
     clientServerTimeOffsets = new CircularArray<number>(5);
 
     constructor(
-        private listenerRole: ListenerRole, stationTitle: string,
-        private server: StationServer, private musicPlayer: StationMusicPlayer,
-        debug: boolean) {
+        private userId: number, private listenerRole: ListenerRole,
+        stationTitle: string, private server: StationServer,
+        clientName: string, private accessToken: string,
+        private accessTokenExpirationTime: Date, debug: boolean,
+        initialVolume?: number) {
+        this.musicPlayer = new StationMusicPlayer(
+            createSpotifyMusicPlayer({
+                clientName: clientName,
+                getOAuthToken: cb => this.getOAuthToken(cb),
+                initialVolume: initialVolume,
+            }));
         this.viewManager = new ViewManager(listenerRole, stationTitle, debug);
         this.bindMusicPlayerActions();
         this.bindServerActions();
@@ -199,6 +210,24 @@ export class StationManager {
             .catch(console.error);
     }
 
+    getOAuthToken(cb: (accessToken: string) => void) {
+        let refreshTokenIfNeeded = Promise.resolve(this.accessToken);
+        if ((new Date()) > this.accessTokenExpirationTime) {
+            refreshTokenIfNeeded = this.refreshOAuthToken();
+        }
+
+        refreshTokenIfNeeded.then(accessToken => cb(accessToken));
+    }
+
+    refreshOAuthToken(): Promise<string> {
+        return Promise.race([this.server.refreshOAuthToken(this.userId), timeout(5000)])
+            .then(response => {
+                this.accessToken = response.accessToken;
+                this.accessTokenExpirationTime = response.accessTokenExpirationTime;
+                return this.accessToken;
+            });
+    }
+
     applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
         if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
             return Promise.resolve();
@@ -318,6 +347,11 @@ interface PongResponse {
     serverTime: Date;
 }
 
+interface OAuthTokenResponse {
+    accessToken: string;
+    accessTokenExpirationTime: Date;
+}
+
 export enum ServerError {
     ClientError,
 }
@@ -397,12 +431,30 @@ export class StationServer {
         });
     }
 
+    refreshOAuthToken(userId: number): Promise<OAuthTokenResponse> {
+        const url = `/api/v1/users/${userId}/accesstoken/refresh/`;
+        return fetch(url, {
+            credentials: 'include',
+            method: 'POST',
+        }).then(response => {
+            return response.json().then(data => {
+                if (response.ok) {
+                    return {
+                        accessToken: data.token,
+                        accessTokenExpirationTime: new Date(data.token_expiration_time),
+                    };
+                } else {
+                    throw new Error(data);
+                }
+            });
+        });
+    }
+
     sendPlaybackState(playbackState: PlaybackState, serverEtag?: Date): Promise<PlaybackState> {
         const url = `/api/v1/stations/${this.stationId}/`;
 
         let headers = new Headers();
         headers.append('X-CSRFToken', this.csrftoken);
-        addConditionalRequestHeader(headers, playbackState);
         headers.append('Content-Type', 'application/json');
 
         return fetch(url, {
@@ -497,18 +549,10 @@ function createPlaybackStateFromServer(state: any) {
         new Date(state.last_updated_time));
 }
 
-function addConditionalRequestHeader(headers: Headers, playbackState: PlaybackState) {
-    if (playbackState.etag) {
-        headers.append('If-Unmodified-Since', playbackState.etag.toISOString());
-    }
-}
-
 export class StationMusicPlayer {
     volumeBeforeMute = 0.8;
-    public musicPlayer: MusicPlayer;
 
-    constructor(clientName: string, accessToken: string, initialVolume: number) {
-        this.musicPlayer = new SpotifyMusicPlayer(clientName, accessToken, initialVolume);
+    constructor(public musicPlayer: MusicPlayer) {
         this.musicPlayer.connect();
     }
 

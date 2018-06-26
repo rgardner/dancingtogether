@@ -137,6 +137,11 @@ class AccessToken:
                 logger.error(await resp.text())
 
     @staticmethod
+    def from_db_model(creds: SpotifyCredentials):
+        return AccessToken(creds.user, creds.refresh_token, creds.access_token,
+                           creds.access_token_expiration_time)
+
+    @staticmethod
     def request_refresh_and_access_token(code, user):
         data = {
             'grant_type': 'authorization_code',
@@ -173,5 +178,4 @@ def save_access_token(access_token: AccessToken):
 
 def load_access_token(user_id) -> AccessToken:
     creds = SpotifyCredentials.objects.get(user_id=user_id)
-    return AccessToken(creds.user, creds.refresh_token, creds.access_token,
-                       creds.access_token_expiration_time)
+    return AccessToken.from_db_model(creds)

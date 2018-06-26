@@ -37,12 +37,13 @@ def station(request, station_id):
         request,
         'station.html',
         context={
+            'user_id': request.user.id,
             'station_id': station_id,
             'station_title': station.title,
-            'access_token': access_token,
             'is_dj': listener.is_dj,
             'is_admin': listener.is_admin,
             'player_name': settings.SPOTIFY_PLAYER_NAME,
+            'access_token': access_token,
             'debug': settings.DEBUG,
         })
 

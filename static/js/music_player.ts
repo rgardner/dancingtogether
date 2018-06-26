@@ -11,9 +11,6 @@ export class PlaybackState {
 }
 
 export interface MusicPlayer {
-    getAccessToken(): string;
-    setAccessToken(value: string): void;
-
     connect(): Promise<boolean>;
 
     on(eventName: string, cb: (...args: any[]) => void): void;
@@ -36,8 +33,19 @@ export interface MusicPlayer {
     nextTrack(): Promise<void>;
 }
 
-export class SpotifyMusicPlayer implements MusicPlayer {
+export interface PlayerInit {
+    clientName: string;
+    getOAuthToken(cb: (token: string) => void): void;
+    initialVolume?: number;
+}
+
+export function createSpotifyMusicPlayer(options: PlayerInit): MusicPlayer {
+    return new SpotifyMusicPlayer(options);
+}
+
+class SpotifyMusicPlayer implements MusicPlayer {
     impl: Spotify.SpotifyPlayer;
+    getOAuthToken: (cb: (accessToken: string) => void) => void;
     deviceId?: string;
     observers = new Map([
         ['authentication_error', $.Callbacks()],
@@ -45,20 +53,18 @@ export class SpotifyMusicPlayer implements MusicPlayer {
         ['too_many_requests_error', $.Callbacks()],
     ]);
 
-    constructor(clientName: string, private accessToken: string, initialVolume: number) {
+    constructor(options: PlayerInit) {
         this.impl = new Spotify.Player({
-            name: clientName,
-            getOAuthToken: cb => { cb(this.getAccessToken()); },
-            volume: initialVolume,
+            name: options.clientName,
+            getOAuthToken: options.getOAuthToken,
+            volume: options.initialVolume,
         });
+        this.getOAuthToken = options.getOAuthToken;
 
         this.impl.on('ready', ({ device_id }) => {
             this.deviceId = device_id;
         });
     }
-
-    getAccessToken(): string { return this.accessToken; }
-    setAccessToken(value: string) { this.accessToken = value; }
 
     connect(): Promise<boolean> { return this.impl.connect(); }
 
@@ -138,15 +144,19 @@ export class SpotifyMusicPlayer implements MusicPlayer {
         const queryParams = `device_id=${this.deviceId}`;
         const url = `${baseUrl}?${queryParams}`;
 
-        return fetch(url, {
-            body: JSON.stringify({
-                'context_uri': contextUri,
-                'offset': { 'uri': currentTrackUri },
-            }),
-            headers: {
-                'Authorization': `Bearer ${this.getAccessToken()}`,
-            },
-            method: 'PUT',
+        return new Promise(resolve => {
+            this.getOAuthToken(resolve);
+        }).then(accessToken => {
+            return fetch(url, {
+                body: JSON.stringify({
+                    'context_uri': contextUri,
+                    'offset': { 'uri': currentTrackUri },
+                }),
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+                method: 'PUT',
+            });
         });
     }
 

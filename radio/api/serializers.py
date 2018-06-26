@@ -3,7 +3,7 @@ import logging
 from django.contrib import auth
 from rest_framework import serializers
 
-from ..models import Listener, PlaybackState, Station
+from ..models import Listener, PlaybackState, SpotifyCredentials, Station
 
 logger = logging.getLogger(__name__)
 
@@ -50,3 +50,8 @@ class ListenerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Listener
         fields = ('user', 'is_admin', 'is_dj')
+
+
+class AccessTokenSerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=256)
+    token_expiration_time = serializers.DateTimeField()
