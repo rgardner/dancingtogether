@@ -1,51 +1,102 @@
 import logging
 
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.cache import never_cache
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse_lazy
+from django.views import View, generic
+from django.views.generic.edit import CreateView, DeleteView
 
-from .models import Listener, Station
 from . import spotify
+from .forms import StationForm
+from .models import Listener, Station
 
 logger = logging.getLogger(__name__)
 
 
-@login_required
-def index(request):
-    stations = request.user.stations.all()
-    pending_stations = request.user.pending_stations.all()
-    return render(
-        request,
-        'station_index.html',
-        context={
-            'stations': stations,
-            'pending_stations': pending_stations,
-        })
+class ListenerRequiredMixin:
+    user_check_failure_path = ''
+
+    def dispatch(self, request, *args, **kwargs):
+        get_object_or_404(
+            Listener, user=self.request.user, station_id=kwargs['pk'])
+        return super().dispatch(request, *args, **kwargs)
 
 
-@login_required
-@spotify.authorization_required
-@spotify.fresh_access_token_required
-def station(request, station_id):
-    station = get_object_or_404(Station, id=station_id)
-    listener = get_object_or_404(
-        Listener, user_id=request.user.id, station=station)
-    access_token = spotify.load_access_token(request.user.id).token
-    return render(
-        request,
-        'station.html',
-        context={
-            'user_id': request.user.id,
-            'station_id': station_id,
-            'station_title': station.title,
-            'is_dj': listener.is_dj,
-            'is_admin': listener.is_admin,
-            'player_name': settings.SPOTIFY_PLAYER_NAME,
-            'access_token': access_token,
-            'debug': settings.DEBUG,
-        })
+class IndexView(LoginRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        view = ListStationsView.as_view()
+        return view(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        view = CreateStationView.as_view()
+        return view(request, *args, **kwargs)
+
+
+class ListStationsView(generic.ListView):
+    model = Station
+    context_object_name = 'stations'
+    template_name = 'radio/index.html'
+
+    def get_queryset(self):
+        station_ids = Listener.objects.filter(
+            user=self.request.user).values_list(
+                'station_id', flat=True)
+        return Station.objects.filter(id__in=station_ids)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['form'] = StationForm
+        return context
+
+
+class CreateStationView(CreateView):
+    model = Station
+    form_class = StationForm
+    template_engine = 'radio/index.html'
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+
+        # Creator is automatically an admin and DJ of this station
+        Listener.objects.create(
+            user=self.request.user,
+            station=self.object,
+            is_admin=True,
+            is_dj=True)
+
+        return response
+
+
+class DetailStationView(LoginRequiredMixin, ListenerRequiredMixin,
+                        spotify.AuthorizationRequiredMixin,
+                        spotify.FressAccessTokenRequiredMixin,
+                        generic.DetailView):
+    model = Station
+    template_name = 'radio/detail.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        context['user_id'] = self.request.user.id
+        context['debug'] = settings.DEBUG,
+
+        listener = get_object_or_404(
+            Listener, user=self.request.user, station=context['object'])
+        context['is_dj'] = listener.is_dj,
+        context['is_admin'] = listener.is_admin,
+
+        context['player_name'] = settings.SPOTIFY_PLAYER_NAME,
+        context['access_token'] = spotify.load_access_token(
+            self.request.user.id).token
+
+        return context
+
+
+class DeleteStationView(LoginRequiredMixin, ListenerRequiredMixin, DeleteView):
+    model = Station
+    success_url = reverse_lazy('radio:index')
 
 
 def oauth_callback(request):

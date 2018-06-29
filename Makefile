@@ -7,7 +7,7 @@ build:
 
 .PHONY: db-makemigrations
 db-makemigrations:
-	docker-compse run web python3 manage.py makemigrations
+	docker-compose run web python3 manage.py makemigrations
 
 .PHONY: db-migrate
 db-migrate:

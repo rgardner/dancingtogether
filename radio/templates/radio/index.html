@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% load bootstrap4 %}
+
+{% block content %}
+
+<h1>Stations</h1>
+
+{% if stations %}
+    <table class="table table-striped">
+    {% for station in stations %}
+        <tr>
+            <td><a href="{% url 'radio:detail' station.id %}">{{ station.title }}</a></td>
+            <td>
+                <form action="{% url 'radio:delete' station.id %}" method="post">
+                    {% csrf_token %}
+                    {% bootstrap_button content='delete' button_type='submit' button_class='btn-warning' %}
+                </form>
+            </td>
+        </tr>
+    {% endfor %}
+    </table>
+{% endif %}
+
+<h2>Create new station</h2>
+
+<form action="{% url 'radio:index' %}" method="post">
+    {% csrf_token %}
+    {% bootstrap_form form %}
+    {% bootstrap_button content='submit' button_type='submit' %}
+</form>
+
+{% endblock %}{# content #}

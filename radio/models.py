@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.urls import reverse
 from django.utils import timezone
 
 
@@ -19,10 +20,6 @@ class Station(models.Model):
 
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name='stations', through='Listener')
-    pending_members = models.ManyToManyField(
-        settings.AUTH_USER_MODEL,
-        related_name='pending_stations',
-        through='PendingListener')
 
     def __str__(self):
         return self.title
@@ -35,6 +32,9 @@ class Station(models.Model):
     def admin_group_name(self):
         return f'station-admin-{self.id}'
 
+    def get_absolute_url(self):
+        return reverse('radio:detail', kwargs={'pk': self.pk})
+
 
 class Listener(models.Model):
     user = models.ForeignKey(
@@ -43,12 +43,6 @@ class Listener(models.Model):
 
     is_admin = models.BooleanField()
     is_dj = models.BooleanField()
-
-
-class PendingListener(models.Model):
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    room = models.ForeignKey(Station, on_delete=models.CASCADE)
 
 
 class PlaybackState(models.Model):

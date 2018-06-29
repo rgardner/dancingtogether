@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+from functools import wraps
 import hashlib
 import logging
 import time
@@ -20,28 +21,24 @@ logger = logging.getLogger(__name__)
 # View decorators
 
 
-def authorization_required(view_func):
-    def _wrapped_view_func(request, *args, **kwargs):
+class AuthorizationRequiredMixin:
+    def dispatch(self, request, *args, **kwargs):
         if not hasattr(request.user, 'spotifycredentials'):
             return request_spotify_authorization(request)
-        else:
-            return view_func(request, *args, **kwargs)
 
-    return _wrapped_view_func
+        return super().dispatch(request, *args, **kwargs)
 
 
-def fresh_access_token_required(view_func):
+class FressAccessTokenRequiredMixin:
     """Ensures the access token is fresh and caches it in the session."""
 
-    def _wrapped_view_func(request, *args, **kwargs):
+    def dispatch(self, request, *args, **kwargs):
         access_token = load_access_token(request.user)
         if access_token.has_expired():
             async_to_sync(access_token.refresh)()
 
         request.session['access_token'] = access_token.token
-        return view_func(request, *args, **kwargs)
-
-    return _wrapped_view_func
+        return super().dispatch(request, *args, **kwargs)
 
 
 # Spotify OAuth Common

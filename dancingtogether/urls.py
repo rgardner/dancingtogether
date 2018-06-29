@@ -26,5 +26,5 @@ urlpatterns = [
     path('login/', accounts.views.LoginView.as_view()),
     path('logout/', accounts.views.LogoutView.as_view()),
     path('api/v1/', include('radio.api.urls')),
-    path('stations/', include('radio.urls')),
+    path('stations/', include('radio.urls', namespace='radio')),
 ]

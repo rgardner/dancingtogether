@@ -78,8 +78,8 @@
     'use strict';
     const APP_DATA = {
         userId: {{ user_id }},
-        stationId: {{ station_id }},
-        stationTitle: "{{ station_title }}",
+        stationId: {{ station.id }},
+        stationTitle: "{{ station.title }}",
         userIsDJ: {{ is_dj|yesno:"true,false" }},
         userIsAdmin: {{ is_admin|yesno:"true,false" }},
         spotifyConnectPlayerName: '{{ player_name }}',
