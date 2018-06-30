@@ -8,6 +8,23 @@ Dancing Together keeps the jammin' in sync. Pause it, skip it, rewind it,
 enjoy it!
 
 
+## Features
+
+* Create your own radio station and invite friends via email
+* As the DJ, you can change the music from any Spotify app using the "Connect
+  to a device" feature with the "Dancing Together" device
+* Listeners are automatically kept in sync with playback changes
+* Listeners cannot change the radio station music
+
+
+## Limitations
+
+* The Dancing Together website only has simple playback controls, it does not
+  support setting the current track or playlist directly. To do this, use the
+  "Connect to a device" feature on any Spotify app
+* There can be only one DJ at a time. This can cause sync issues
+
+
 ## Development
 
 ### Installation and First Time Setup
