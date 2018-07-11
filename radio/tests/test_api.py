@@ -1,8 +1,9 @@
+from http import HTTPStatus
+
 from django.contrib import auth
 from django.test import TestCase, override_settings
 from django.utils import timezone
 import pytest
-from rest_framework import status
 from rest_framework.test import APITestCase
 
 from ..models import SpotifyCredentials
@@ -37,7 +38,7 @@ class AccessTokenTests(APITestCase):
 
         # As user1, attempt to refresh user2's access token
         response = self.client.post('/api/v1/users/2/accesstoken/refresh/')
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == HTTPStatus.FORBIDDEN.value
 
 
 def create_user1(password):

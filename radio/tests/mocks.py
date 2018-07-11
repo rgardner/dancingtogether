@@ -1,12 +1,11 @@
 from contextlib import closing
 from datetime import timedelta
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from threading import Thread
 import json
 import re
 import socket
-
-import requests
+from threading import Thread
 
 TEST_ACCESS_TOKEN = 'test_access_token'
 
@@ -18,7 +17,7 @@ class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if re.search(self.TOKEN_PATTERN, self.path):
-            self.send_response(requests.codes.ok)
+            self.send_response(HTTPStatus.OK.value)
 
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
