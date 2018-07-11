@@ -54,7 +54,7 @@ class ListStationsView(generic.ListView):
 class CreateStationView(CreateView):
     model = Station
     form_class = StationForm
-    template_engine = 'radio/index.html'
+    template_name = 'radio/index.html'
 
     def form_valid(self, form):
         response = super().form_valid(form)

@@ -194,7 +194,8 @@ REST_FRAMEWORK = {
 
 # View settings
 
-LOGIN_REDIRECT_URL = '/stations'
+LOGIN_REDIRECT_URL = '/stations/'
+LOGOUT_REDIRECT_URL = '/'
 
 django_heroku.settings(locals(), logging=False)
 if 'DATABASE_URL' in os.environ:

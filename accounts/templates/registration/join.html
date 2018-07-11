@@ -5,7 +5,7 @@
 {% block content %}
 
 <div id="login-form">
-  <h1>Please sign in</h1>
+  <h1>Create an account</h1>
 
   {% if next %}
     {% if user.is_authenticated %}
@@ -15,16 +15,14 @@
     {% endif %}
   {% endif %}
 
-  <form method="post" action="{% url 'login' %}" class="form-signin">
+  <form method="post" action="{% url 'join' %}" class="form-signup">
     {% csrf_token %}
     {% bootstrap_form form layout='inline' %}
     {% buttons %}
-      <button type="submit" value="login" class="btn btn-lg btn-primary btn-block">Sign in</button>
+      <button type="submit" value="login" class="btn btn-lg btn-primary btn-block">Create account</button>
       <input type="hidden" name="next" value="{{ next }}" /?>
     {% endbuttons %}
   </form>
-
-  <p><a href="{% url 'password_reset' %}">Forgot your password?</a></p>
 </div>
 
 {% endblock %}{# content #}
