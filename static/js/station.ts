@@ -183,42 +183,39 @@ export class StationManager {
         }
     }
 
-    updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
-        return (playbackState ? Promise.resolve(playbackState) : this.musicPlayer.getCurrentState())
-            .then(state => {
-                if (!state || (this.clientEtag && (state.sample_time <= this.clientEtag))) {
-                    return Promise.resolve();
-                }
+    async updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
+        if (!playbackState) {
+            const tempPlaybackState = await this.musicPlayer.getCurrentState();
+            playbackState = (tempPlaybackState ? tempPlaybackState : undefined);
+        }
 
-                state.sample_time = new Date(state.sample_time.getTime() + this.getMedianClientServerTimeOffset());
+        if (!playbackState || (this.clientEtag && (playbackState.sample_time <= this.clientEtag))) {
+            return;
+        }
 
-                return Promise.race([this.server.sendPlaybackState(state, this.serverEtag), timeout(5000)])
-                    .then(serverState => {
-                        return this.applyServerPlaybackState(<PlaybackState>serverState);
-                    })
-                    .catch(e => {
-                        console.error(e);
-                        this.taskExecutor.clear();
-                        this.taskExecutor.push(() => this.syncServerPlaybackState());
-                    });
-            });
+        // Convert sample time from client time to server time
+        playbackState.sample_time = new Date(playbackState.sample_time.getTime() + this.getMedianClientServerTimeOffset());
+
+        try {
+            const serverState: PlaybackState = await Promise.race([this.server.sendPlaybackState(playbackState, this.serverEtag), timeout(5000)]);
+            await this.applyServerPlaybackState(serverState);
+        } catch (e) {
+            console.error(e);
+            this.taskExecutor.clear();
+            this.taskExecutor.push(() => this.syncServerPlaybackState());
+        }
     }
 
-    syncServerPlaybackState(): Promise<void> {
-        return Promise.race([this.server.getPlaybackState(), timeout(5000)])
-            .then(serverState => {
-                if (serverState) {
-                    return this.applyServerPlaybackState(serverState);
-                }
-            });
+    async syncServerPlaybackState(): Promise<void> {
+        const serverState = await Promise.race([this.server.getPlaybackState(), timeout(5000)]);
+        if (serverState) {
+            return this.applyServerPlaybackState(serverState);
+        }
     }
 
-    calculatePing(): Promise<void> {
-        return Promise.race([this.server.sendPingRequest(), timeout(5000)])
-            .then((pong: PongResponse) => {
-                this.adjustServerTimeOffset(pong.startTime, pong.serverTime, new Date());
-            })
-            .catch(console.error);
+    async calculatePing(): Promise<void> {
+        const pong = await Promise.race([this.server.sendPingRequest(), timeout(5000)]);
+        this.adjustServerTimeOffset(pong.startTime, pong.serverTime, new Date());
     }
 
     getOAuthToken(cb: (accessToken: string) => void) {
@@ -230,79 +227,68 @@ export class StationManager {
         refreshTokenIfNeeded.then(accessToken => cb(accessToken));
     }
 
-    refreshOAuthToken(): Promise<string> {
-        return Promise.race([this.server.refreshOAuthToken(this.userId), timeout(5000)])
-            .then(response => {
-                this.accessToken = response.accessToken;
-                this.accessTokenExpirationTime = response.accessTokenExpirationTime;
-                return this.accessToken;
-            });
+    async refreshOAuthToken(): Promise<string> {
+        const response = await Promise.race([this.server.refreshOAuthToken(this.userId), timeout(5000)]);
+        this.accessToken = response.accessToken;
+        this.accessTokenExpirationTime = response.accessTokenExpirationTime;
+        return this.accessToken;
     }
 
-    applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
+    async applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
         if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
-            return Promise.resolve();
+            return;
         }
 
-        return this.musicPlayer.getCurrentState()
-            .then(clientState => {
-                let changeTrackIfNeeded = Promise.resolve();
-                if (!clientState || (clientState.context_uri !== serverState.context_uri) ||
-                    (clientState.current_track_uri !== serverState.current_track_uri)) {
-                    changeTrackIfNeeded = this.musicPlayer.play(serverState.context_uri, serverState.current_track_uri);
+        try {
+            let clientState = await this.musicPlayer.getCurrentState();
+            if (!clientState || (clientState.context_uri !== serverState.context_uri) ||
+                (clientState.current_track_uri !== serverState.current_track_uri)) {
+                await this.musicPlayer.play(serverState.context_uri, serverState.current_track_uri);
+            }
+
+            await Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)]);
+
+            clientState = await this.musicPlayer.getCurrentState();
+            if (!clientState) {
+                throw new Error('Spotify not ready');
+            }
+
+            if (serverState.paused) {
+                if (clientState.paused) {
+                    await this.musicPlayer.pause();
                 }
 
-                return changeTrackIfNeeded
-                    .then(() => {
-                        return Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)]);
-                    })
-                    .then(() => this.musicPlayer.getCurrentState())
-                    .then(clientState => {
-                        if (!clientState) {
-                            return Promise.reject('Spotify not ready');
-                        }
+                await this.musicPlayer.seek(serverState.raw_position_ms);
+            } else {
+                const localPosition = clientState.raw_position_ms;
+                const serverPosition = this.getAdjustedPlaybackPosition(serverState);
+                if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
+                    const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
+                    console.log(`Playback adjustment needed: local: ${localPosition}, server: ${serverPosition}, new local: ${newLocalPosition}`);
+                    await this.musicPlayer.seek(newLocalPosition);
+                    await Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]);
+                    const serverPositionAfterSeek = this.getAdjustedPlaybackPosition(serverState);
+                    if (((newLocalPosition > serverPositionAfterSeek) && (newLocalPosition < (serverPositionAfterSeek + MAX_SEEK_ERROR_MS)))) {
+                        await this.musicPlayer.freeze(localPosition - serverPositionAfterSeek);
+                    } else {
+                        await this.musicPlayer.resume();
+                    }
+                } else if (clientState.paused) {
+                    await this.musicPlayer.resume();
+                }
+            }
 
-                        if (serverState.paused) {
-                            const pauseIfNeeded = (clientState.paused ? Promise.resolve() : this.musicPlayer.pause());
-                            return pauseIfNeeded.then(() => this.musicPlayer.seek(serverState.raw_position_ms));
-                        } else {
-                            const localPosition = clientState.raw_position_ms;
-                            const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                            if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
-                                const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
-                                console.log(`Playback adjustment needed: local: ${localPosition}, server: ${serverPosition}, new local: ${newLocalPosition}`);
-                                return this.musicPlayer.seek(newLocalPosition)
-                                    .then(() => Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]))
-                                    .then(() => {
-                                        const serverPosition = this.getAdjustedPlaybackPosition(serverState);
-                                        if (((newLocalPosition > serverPosition) && (newLocalPosition < (serverPosition + MAX_SEEK_ERROR_MS)))) {
-                                            return this.musicPlayer.freeze(localPosition - serverPosition);
-                                        } else {
-                                            return this.musicPlayer.resume();
-                                        }
-                                    });
-                            } else if (clientState.paused) {
-                                return this.musicPlayer.resume();
-                            } else {
-                                return Promise.resolve();
-                            }
-                        }
-                    })
-                    .then(() => this.musicPlayer.getCurrentState())
-                    .then(clientState => {
-                        if (!clientState) {
-                            return Promise.reject('Spotify not ready');
-                        }
+            clientState = await this.musicPlayer.getCurrentState();
+            if (!clientState) {
+                throw new Error('Spotify not ready');
+            }
 
-                        this.clientEtag = clientState.sample_time;
-                        this.serverEtag = serverState.etag;
-                        return Promise.resolve();
-                    })
-                    .catch((e: any) => {
-                        console.error(e);
-                        this.taskExecutor.push(() => this.syncServerPlaybackState());
-                    });
-            });
+            this.clientEtag = clientState.sample_time;
+            this.serverEtag = serverState.etag;
+        } catch (e) {
+            console.error(e);
+            this.taskExecutor.push(() => this.syncServerPlaybackState());
+        }
     }
 
     showListeners(): Promise<void> {
@@ -328,24 +314,22 @@ export class StationManager {
         }
     }
 
-    currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
-        return this.musicPlayer.getCurrentState().then(state => {
-            if (state) {
-                return state.current_track_uri === expectedState.current_track_uri;
-            } else {
-                return false;
-            }
-        });
+    async currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
+        const state = await this.musicPlayer.getCurrentState();
+        if (state) {
+            return state.current_track_uri === expectedState.current_track_uri;
+        } else {
+            return false;
+        }
     }
 
-    currentPositionReady(expectedPosition: number): Promise<boolean> {
-        return this.musicPlayer.getCurrentState().then(state => {
-            if (state) {
-                return state.raw_position_ms >= expectedPosition;
-            } else {
-                return false;
-            }
-        });
+    async currentPositionReady(expectedPosition: number): Promise<boolean> {
+        const state = await this.musicPlayer.getCurrentState();
+        if (state) {
+            return state.raw_position_ms >= expectedPosition;
+        } else {
+            return false;
+        }
     }
 
     getMedianClientServerTimeOffset(): number {
@@ -458,9 +442,7 @@ export class StationServer {
 
     sendPingRequest(): Promise<PongResponse> {
         return new Promise(resolve => {
-            this.onOnce('pong', (pongResponse: PongResponse) => {
-                resolve(pongResponse);
-            });
+            this.onOnce('pong', resolve);
             this.webSocketBridge.send({
                 'command': 'ping',
                 'start_time': new Date(),
@@ -468,84 +450,80 @@ export class StationServer {
         });
     }
 
-    refreshOAuthToken(userId: number): Promise<OAuthTokenResponse> {
+    async refreshOAuthToken(userId: number): Promise<OAuthTokenResponse> {
         const url = `/api/v1/users/${userId}/accesstoken/refresh/`;
-        return fetch(url, {
+        const response = await fetch(url, {
             credentials: 'include',
             method: 'POST',
-        }).then(response => {
-            return response.json().then(data => {
-                if (response.ok) {
-                    return {
-                        accessToken: data.token,
-                        accessTokenExpirationTime: new Date(data.token_expiration_time),
-                    };
-                } else {
-                    throw new Error(data);
-                }
-            });
         });
+
+        if (response.ok) {
+            const data = await response.json();
+            return {
+                accessToken: data.token,
+                accessTokenExpirationTime: new Date(data.token_expiration_time),
+            };
+        } else {
+            throw new Error(await response.text());
+        }
     }
 
-    sendPlaybackState(playbackState: PlaybackState, serverEtag?: Date): Promise<PlaybackState> {
+    async sendPlaybackState(playbackState: PlaybackState, serverEtag?: Date): Promise<PlaybackState> {
         const url = `/api/v1/stations/${this.stationId}/`;
 
         let headers = new Headers();
         headers.append('X-CSRFToken', this.csrftoken);
         headers.append('Content-Type', 'application/json');
 
-        return fetch(url, {
+        const response = await fetch(url, {
             body: JSON.stringify({
                 'playbackstate': playbackState
             }),
             credentials: 'include',
             headers: headers,
             method: 'PATCH',
-        }).then(response => {
-            if (response.status === 200) {
-                return response.json();
-            } else if (response.status === 412) {
-                throw new Error('Conditional station playback state update failed');
-            } else {
-                return response.json().then(data => Promise.reject(data));
-            }
-        }).then((data: any) => {
+        });
+
+        if (response.status === 200) {
+            const data = await response.json();
             return createPlaybackStateFromServer(data.playbackstate);
-        });
+        } else if (response.status === 412) {
+            throw new Error('Conditional station playback state update failed');
+        } else {
+            throw new Error(await response.text());
+        }
     }
 
-    getPlaybackState(): Promise<PlaybackState | undefined> {
+    async getPlaybackState(): Promise<PlaybackState | undefined> {
         const url = `/api/v1/stations/${this.stationId}/`;
-        return fetch(url, {
+        const response = await fetch(url, {
             credentials: 'include',
-        }).then(response => {
-            return response.json().then(data => {
-                if (response.ok) {
-                    if (data.playbackstate) {
-                        return createPlaybackStateFromServer(data.playbackstate);
-                    } else {
-                        return undefined;
-                    }
-                } else {
-                    throw new Error(data);
-                }
-            });
         });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.playbackstate) {
+                return createPlaybackStateFromServer(data.playbackstate);
+            } else {
+                return undefined;
+            }
+        } else {
+            throw new Error(await response.text());
+        }
     }
 
-    getListeners(): Promise<Array<Listener>> {
+    async getListeners(): Promise<Array<Listener>> {
         const url = `/api/v1/stations/${this.stationId}/listeners/`;
-        return fetch(url, {
+        const response = await fetch(url, {
             credentials: 'include',
-        }).then(response => {
-            return response.json().then(data => {
-                if (response.ok) {
-                    return data.map(createListenerFromServer);
-                } else {
-                    throw new Error(data);
-                }
-            });
         });
+
+        if (response.ok) {
+            const data = await response.json();
+            return data.map(createListenerFromServer);
+        } else {
+            throw new Error(await response.text());
+        }
     }
 
     async inviteListener(username: string, isAdmin: boolean, isDJ: boolean): Promise<Listener> {
@@ -572,7 +550,7 @@ export class StationServer {
         } else if (data.non_field_errors.some((s: string) => (s === "The fields user, station must make a unique set."))) {
             throw new ListenerAlreadyExistsError();
         } else {
-            throw new Error(JSON.stringify(data));
+            throw new Error(await response.text());
         }
     }
 
@@ -663,29 +641,24 @@ export class StationMusicPlayer {
         return this.musicPlayer.setVolume(value);
     }
 
-    muteUnmuteVolume() {
-        return new Promise(resolve => {
-            this.getVolume().then(volume => {
-                // BUG: Spotify API returns null instead of 0.0.
-                // Tracked by https://github.com/rgardner/dancingtogether/issues/12
+    async muteUnmuteVolume(): Promise<number> {
+        const volume = await this.getVolume();
 
-                let newVolume = 0.0;
-                if ((volume === 0.0) || (volume === null)) {
-                    // currently muted, so unmute
-                    newVolume = this.volumeBeforeMute;
-                } else {
-                    // currently unmuted, so mute and store current volume for restore
-                    this.volumeBeforeMute = volume;
-                    newVolume = 0.0;
-                }
+        // BUG: Spotify API returns null instead of 0.0.
+        // Tracked by https://github.com/rgardner/dancingtogether/issues/12
 
-                return newVolume;
-            }).then(newVolume => {
-                return this.setVolume(newVolume).then(() => Promise.resolve(newVolume));
-            }).then(newVolume => {
-                resolve(newVolume);
-            });
-        });
+        let newVolume = 0.0;
+        if ((volume === 0.0) || (volume === null)) {
+            // currently muted, so unmute
+            newVolume = this.volumeBeforeMute;
+        } else {
+            // currently unmuted, so mute and store current volume for restore
+            this.volumeBeforeMute = volume;
+            newVolume = 0.0;
+        }
+
+        await this.setVolume(newVolume);
+        return newVolume;
     }
 
     play(contextUri: string, currentTrackUri: string): Promise<void> {
@@ -696,12 +669,10 @@ export class StationMusicPlayer {
     resume(): Promise<void> { return this.musicPlayer.resume(); }
     togglePlay(): Promise<void> { return this.musicPlayer.togglePlay(); }
 
-    freeze(duration: number): Promise<void> {
-        return this.musicPlayer.pause().then(() => {
-            return wait(duration)
-        }).then(() => {
-            return this.musicPlayer.resume();
-        });
+    async freeze(duration: number): Promise<void> {
+        await this.musicPlayer.pause();
+        await wait(duration);
+        await this.musicPlayer.resume();
     }
 
     seek(positionMS: number): Promise<void> { return this.musicPlayer.seek(positionMS); }
@@ -737,12 +708,12 @@ function timeout(ms: number): Promise<never> {
     return wait(ms).then(Promise.reject);
 }
 
-function retry(condition: () => Promise<boolean>): Promise<void> {
-    return condition().then(b => {
-        return (b ? Promise.resolve() : wait(250).then(() => {
-            return retry(condition);
-        }));
-    });
+async function retry(condition: () => Promise<boolean>): Promise<void> {
+    const b = await condition();
+    if (!b) {
+        await wait(250);
+        await retry(condition);
+    }
 }
 
 function getCrossSiteRequestForgeryToken(): string {
@@ -768,5 +739,6 @@ function getCookie(name: string) {
             }
         }
     }
+
     return cookieValue;
 }

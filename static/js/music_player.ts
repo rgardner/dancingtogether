@@ -90,10 +90,9 @@ class SpotifyMusicPlayer implements MusicPlayer {
         this.impl.removeListener(eventName);
     }
 
-    getCurrentState(): Promise<PlaybackState | null> {
-        return this.impl.getCurrentState().then(state => {
-            return (state ? createPlaybackStateFromSpotify(state) : null);
-        });
+    async getCurrentState(): Promise<PlaybackState | null> {
+        const state = await this.impl.getCurrentState();
+        return (state ? createPlaybackStateFromSpotify(state) : null);
     }
 
     getVolume(): Promise<number> { return this.impl.getVolume(); }
@@ -103,40 +102,36 @@ class SpotifyMusicPlayer implements MusicPlayer {
         return this.playWithRetry(contextUri, currentTrackUri);
     }
 
-    playWithRetry(contextUri: string, currentTrackUri: string, retryCount = 0): Promise<void> {
+    async playWithRetry(contextUri: string, currentTrackUri: string, retryCount = 0): Promise<void> {
         if (!this.deviceId) {
             return Promise.reject('Spotify is not ready: no deviceId');
         }
 
-        return this.putStartResumePlaybackRequest(contextUri, currentTrackUri)
-            .then(response => {
-                switch (response.status) {
-                    case 202:
-                        // device is temporarily unavailable
-                        ++retryCount;
-                        if (retryCount < 5) {
-                            return this.playWithRetry(contextUri, currentTrackUri, retryCount);
-                        } else {
-                            return Promise.reject('Device is unavailable after 5 retries');
-                        }
-                    case 204:
-                        // successful request
-                        break;
-                    case 401:
-                        this.observers.get('authentication_error')!.fire(response.json());
-                        break;
-                    case 403:
-                        this.observers.get('account_error')!.fire(response.json());
-                        break;
-                    case 429:
-                        this.observers.get('too_many_requests_error')!.fire(response.headers.get('Retry-After'));
-                        break;
-                    default:
-                        break;
+        const response = await this.putStartResumePlaybackRequest(contextUri, currentTrackUri);
+        switch (response.status) {
+            case 202:
+                // device is temporarily unavailable
+                ++retryCount;
+                if (retryCount < 5) {
+                    return this.playWithRetry(contextUri, currentTrackUri, retryCount);
+                } else {
+                    throw new Error('Device is unavailable after 5 retries');
                 }
-
-                return Promise.resolve();
-            });
+            case 204:
+                // successful request
+                break;
+            case 401:
+                this.observers.get('authentication_error')!.fire(response.json());
+                break;
+            case 403:
+                this.observers.get('account_error')!.fire(response.json());
+                break;
+            case 429:
+                this.observers.get('too_many_requests_error')!.fire(response.headers.get('Retry-After'));
+                break;
+            default:
+                break;
+        }
     }
 
     putStartResumePlaybackRequest(contextUri: string, currentTrackUri: string): Promise<Response> {
