@@ -66,6 +66,7 @@ export class StationManager {
         this.viewManager = new ViewManager(listenerRole, stationTitle, debug);
         this.bindMusicPlayerActions();
         this.bindServerActions();
+        this.bindViewActions();
     }
 
     bindMusicPlayerActions() {
@@ -92,6 +93,12 @@ export class StationManager {
     bindServerActions() {
         this.server.on('error', (error: ServerError, message: string) => {
             console.error(`${error}: ${message}`);
+        });
+    }
+
+    bindViewActions() {
+        this.viewManager.adminView.on('invite_listener', (username: string) => {
+            this.taskExecutor.push(() => this.inviteListener(username));
         });
     }
 
@@ -139,6 +146,10 @@ export class StationManager {
 
     startSteadyState() {
         this.bindSteadyStateActions();
+        if ((this.listenerRole & ListenerRole.Admin) === ListenerRole.Admin) {
+            this.taskExecutor.push(() => this.showListeners());
+        }
+
         this.taskExecutor.push(() => this.calculatePing());
         this.taskExecutor.push(() => this.syncServerPlaybackState());
         this.enableHeartbeat();
@@ -294,6 +305,29 @@ export class StationManager {
             });
     }
 
+    showListeners(): Promise<void> {
+        return Promise.race([this.server.getListeners(), timeout(5000)])
+            .then(listeners => {
+                this.viewManager.adminView.setState(() => ({
+                    listeners: listeners,
+                }));
+            });
+    }
+
+    async inviteListener(username: string): Promise<void> {
+        try {
+            const listener = await Promise.race([this.server.inviteListener(username, false, false), timeout(5000)]);
+            this.viewManager.adminView.showListenerInviteResult(username);
+            this.viewManager.adminView.setState((prevState: any) => ({
+                listeners: prevState.listeners.concat([listener]),
+            }));
+        } catch (e) {
+            const result = ((e instanceof ListenerAlreadyExistsError) ? ServerError.ListenerAlreadyExistsError
+                : ServerError.Unknown);
+            this.viewManager.adminView.showListenerInviteResult(username, result);
+        }
+    }
+
     currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
         return this.musicPlayer.getCurrentState().then(state => {
             if (state) {
@@ -354,14 +388,17 @@ interface OAuthTokenResponse {
 
 export enum ServerError {
     ClientError,
+    ListenerAlreadyExistsError,
+    Unknown,
 }
 
+class ListenerAlreadyExistsError extends Error { }
+
 export interface Listener {
-    userId: number,
-    userName: string,
-    userEmail: string,
-    isDJ: boolean,
+    username: string,
+    stationId: number,
     isAdmin: boolean,
+    isDJ: boolean,
 }
 
 export class StationServer {
@@ -503,12 +540,40 @@ export class StationServer {
         }).then(response => {
             return response.json().then(data => {
                 if (response.ok) {
-                    return data;
+                    return data.map(createListenerFromServer);
                 } else {
                     throw new Error(data);
                 }
             });
         });
+    }
+
+    async inviteListener(username: string, isAdmin: boolean, isDJ: boolean): Promise<Listener> {
+        const url = `/api/v1/stations/${this.stationId}/listeners/`;
+        let headers = new Headers();
+        headers.append('X-CSRFToken', this.csrftoken);
+        headers.append('Content-Type', 'application/json');
+
+        const response = await fetch(url, {
+            body: JSON.stringify({
+                'user': username,
+                'station': this.stationId,
+                'is_admin': isAdmin,
+                'is_dj': isDJ,
+            }),
+            credentials: 'include',
+            headers: headers,
+            method: 'POST',
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            return createListenerFromServer(<ServerListener>data);
+        } else if (data.non_field_errors.some((s: string) => (s === "The fields user, station must make a unique set."))) {
+            throw new ListenerAlreadyExistsError();
+        } else {
+            throw new Error(JSON.stringify(data));
+        }
     }
 
     onMessage(action: any) {
@@ -547,6 +612,22 @@ function createPlaybackStateFromServer(state: any) {
         state.raw_position_ms,
         new Date(state.sample_time),
         new Date(state.last_updated_time));
+}
+
+export interface ServerListener {
+    user: string,
+    station: number,
+    is_admin: boolean,
+    is_dj: boolean,
+}
+
+function createListenerFromServer(listener: ServerListener): Listener {
+    return {
+        'username': listener.user,
+        'stationId': listener.station,
+        'isAdmin': listener.is_admin,
+        'isDJ': listener.is_dj,
+    }
 }
 
 export class StationMusicPlayer {

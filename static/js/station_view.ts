@@ -1,6 +1,9 @@
 import * as $ from 'jquery';
-import { CircularArray, ListenerRole, median, wait } from './util';
 import { PlaybackState } from './music_player';
+import { ServerError } from './station';
+import {
+    CircularArray, ListenerRole, median, wait
+} from './util';
 
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
@@ -249,7 +252,6 @@ class StationAdminView {
         isEnabled = false;
         isReady = false;
         listeners: Array<Listener> = [];
-        pendingListeners: Array<Listener> = [];
         inviteSentMessage = '';
     };
     observers = new Map([
@@ -272,41 +274,20 @@ class StationAdminView {
         this.render();
     }
 
-    addOrRemoveListener(listenerChangeType: string, listener: Listener) {
-        if (listenerChangeType === 'join') {
-            this.setState((prevState: any) => {
-                let listeners = prevState.listeners;
-                const listenerIdx = listeners.findIndex((l: Listener) => l.id == listener.id);
-                if (listenerIdx === -1) {
-                    listeners.push(listener);
-                } else {
-                    listeners[listenerIdx] = listener;
-                }
-                return { listeners: listeners };
-            });
-        } else if (listenerChangeType === 'leave') {
-            this.setState((prevState: any) => {
-                let listeners = prevState.listeners;
-                listeners.splice(listeners.indexOf(listener), 1);
-                return { listeners: listeners };
-            });
-        }
-    }
-
-    showListenerInviteResult(result: string, isNewUser: boolean, listenerEmail: string) {
+    showListenerInviteResult(username: string, error?: ServerError) {
         $('#invite-listener-email').val('');
 
         let message = '';
-        if (result === 'ok') {
-            message = (isNewUser ? 'Invite sent to new user!' : 'Invite sent!');
-        } else if (result === 'err_user_exists') {
-            message = `Error: ${listenerEmail} is already a listener`;
+        if (!error) {
+            message = `${username} is now a listener`;
+        } else if (error === ServerError.ListenerAlreadyExistsError) {
+            message = `Error: ${username} is already a listener`;
         } else {
-            message = `An error occurred while inviting ${listenerEmail}`;
+            message = `An error occurred while inviting ${username}`;
         }
 
         this.setState(() => ({ inviteSentMessage: message }));
-        wait(10000).then(() => this.setState({ inviteSentMessage: '' }));
+        wait(10000).then(() => this.setState(() => ({ inviteSentMessage: '' })));
     }
 
     bindUIActions() {
@@ -320,9 +301,9 @@ class StationAdminView {
         $('#invite-listener-form').submit(e => {
             e.preventDefault();
             if (this.state.isEnabled) {
-                const listenerEmail = $('#invite-listener-email').val() as string;
-                if (listenerEmail.length !== 0) {
-                    this.observers.get('invite_listener')!.fire(listenerEmail);
+                const username = $('#invite-listener-username').val() as string;
+                if (username.length > 0) {
+                    this.observers.get('invite_listener')!.fire(username);
                 }
             }
         });
@@ -343,13 +324,9 @@ class StationAdminView {
             this.makeListenerTableRow(username, email).appendTo('#listeners-table');
         });
 
-        $('#pending-listeners-table tr').remove();
-        this.state.pendingListeners.forEach(({ username, email }) => {
-            this.makeListenerTableRow(username, email).appendTo('#pending-listeners-table');
-        });
-
         if (this.state.inviteSentMessage) {
             $('#admin-invite-sent').html(this.state.inviteSentMessage);
+            $('#admin-invite-sent').show();
         } else {
             $('#admin-invite-sent').hide();
         }

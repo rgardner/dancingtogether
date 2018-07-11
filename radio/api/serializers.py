@@ -38,18 +38,17 @@ class StationSerializer(serializers.HyperlinkedModelSerializer):
         return instance
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = auth.get_user_model()
-        fields = ('id', 'username')
-
-
 class ListenerSerializer(serializers.ModelSerializer):
-    user = UserSerializer()
+    user = serializers.SlugRelatedField(
+        queryset=auth.get_user_model().objects.all(),
+        slug_field='username',
+    )
+    station = serializers.PrimaryKeyRelatedField(
+        queryset=Station.objects.all())
 
     class Meta:
         model = Listener
-        fields = ('user', 'is_admin', 'is_dj')
+        fields = ('user', 'station', 'is_admin', 'is_dj')
 
 
 class AccessTokenSerializer(serializers.Serializer):

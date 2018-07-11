@@ -6,8 +6,47 @@ from django.utils import timezone
 import pytest
 from rest_framework.test import APITestCase
 
-from ..models import SpotifyCredentials
+from ..models import SpotifyCredentials, Station
 from . import mocks
+
+MOCK_USERNAME2 = 'MockUsername2'
+
+
+class ListenerTests(APITestCase):
+    def setUp(self):
+        password = 'testpassword'
+        self.user1 = create_user1(password)
+        assert self.client.login(
+            username=self.user1.username, password=password)
+        create_spotify_credentials(self.user1)
+
+    def tearDown(self):
+        self.client.logout()
+
+    def test_can_create_listener(self):
+        station_id = create_station().id
+        username2 = create_user2().username
+
+        data = {
+            'user': username2,
+            'station': station_id,
+            'is_admin': False,
+            'is_dj': False,
+        }
+        response = self.client.post('/api/v1/stations/1/listeners/', data=data)
+        assert response.status_code == HTTPStatus.CREATED.value
+
+    def test_cannot_create_listener_for_nonexistent_user(self):
+        station_id = create_station().id
+
+        data = {
+            'user': 'NonexistentUsername',
+            'station': station_id,
+            'is_admin': False,
+            'is_dj': False,
+        }
+        response = self.client.post('/api/v1/stations/1/listeners/', data=data)
+        assert response.status_code == HTTPStatus.BAD_REQUEST.value
 
 
 class AccessTokenTests(APITestCase):
@@ -48,7 +87,11 @@ def create_user1(password):
 
 def create_user2():
     return auth.get_user_model().objects.create_user(
-        username='testuser2', email='testuser2@example.com')
+        username=MOCK_USERNAME2, email='testuser2@example.com')
+
+
+def create_station():
+    return Station.objects.create(title='Station1')
 
 
 def create_spotify_credentials(user):

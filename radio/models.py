@@ -44,6 +44,9 @@ class Listener(models.Model):
     is_admin = models.BooleanField()
     is_dj = models.BooleanField()
 
+    class Meta:
+        unique_together = (('user', 'station'), )
+
 
 class PlaybackState(models.Model):
     station = models.OneToOneField(Station, on_delete=models.CASCADE)

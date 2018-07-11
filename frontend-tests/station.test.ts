@@ -6,9 +6,11 @@ import {
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
     Listener, SEEK_OVERCORRECT_MS, StationManager, StationServer, ServerError,
+    ServerListener,
 } from '../static/js/station'
 
 const MockUserId = 1;
+const MockUsername1 = 'MockUserName1';
 const MockStationId = 1;
 const MockStationName = 'MockStationName';
 const MockCrossSiteRequestForgeryToken = 'MockCrossSiteRequestForgeryToken';
@@ -273,25 +275,47 @@ test('station server fires notifications for errors', async () => {
     mockWebSocketBridge.fire(mockError1);
 });
 
-function createListener(userId: number): Listener {
+function createServerListener(listener: Listener) {
     return {
-        'userId': userId,
-        'userName': 'MockUserName',
-        'userEmail': 'MockUserEmail',
-        isDJ: false,
-        isAdmin: false,
+        user: listener.username,
+        station: listener.stationId,
+        is_admin: listener.isAdmin,
+        is_dj: listener.isDJ,
     };
 }
 
 test('station server can get listeners', async () => {
-    expect.assertions(2);
     let stationServer = createStationServer(new MockWebSocketBridge());
 
     // Mock server response
-    const responseListeners = [createListener(1), createListener(2)];
+    const listener = {
+        username: MockUsername1,
+        stationId: MockStationId,
+        isAdmin: false,
+        isDJ: false,
+    };
+    const responseListeners = [createServerListener(listener)];
     fetch.mockResponseOnce(JSON.stringify(responseListeners));
 
-    await expect(stationServer.getListeners()).resolves.toEqual(responseListeners);
+    await expect(stationServer.getListeners()).resolves.toEqual([listener]);
+
+    expect(fetch.mock.calls.length).toEqual(1);
+});
+
+test('station server can invite listeners', async () => {
+    let stationServer = createStationServer(new MockWebSocketBridge());
+
+    // Mock server response
+    const listener = {
+        username: MockUsername1,
+        stationId: MockStationId,
+        isAdmin: false,
+        isDJ: false,
+    };
+    fetch.mockResponseOnce(JSON.stringify(createServerListener(listener)));
+
+    await expect(stationServer.inviteListener(listener.username, listener.isAdmin, listener.isDJ))
+        .resolves.toEqual(listener);
 
     expect(fetch.mock.calls.length).toEqual(1);
 });
