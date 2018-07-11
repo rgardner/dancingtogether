@@ -1,6 +1,5 @@
 import logging
 
-from asgiref.sync import async_to_sync
 import dateutil
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -51,7 +50,7 @@ class RefreshAccessToken(APIView):
 
     def post(self, request, format=None, user_pk=None):
         access_token = self.get_object()
-        async_to_sync(access_token.refresh)()
+        access_token.refresh()
         spotify.save_access_token(access_token)
 
         serializer = AccessTokenSerializer(access_token)

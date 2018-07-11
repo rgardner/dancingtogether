@@ -1,4 +1,3 @@
-from asgiref.sync import async_to_sync
 from django.contrib import auth
 from django.test import override_settings
 from django.utils import timezone
@@ -20,7 +19,7 @@ def test_refresh_access_token(user1):
             SPOTIFY_TOKEN_API_URL=f'http://localhost:{port}/api/token'):
 
         access_token = spotify.load_access_token(user1.id)
-        async_to_sync(access_token.refresh)()
+        access_token.refresh()
         assert access_token.token == mocks.TEST_ACCESS_TOKEN
 
 

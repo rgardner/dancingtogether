@@ -95,7 +95,6 @@ Dancing Together is a Django app running on Heroku.
 | ----------        | ------                                      | ----                                       |
 | Django            | URL routing, database                       | https://docs.djangoproject.com/en/2.0/     |
 | Requests          | Service-to-service calls (e.g. Spotify API) | http://docs.python-requests.org/en/master/ |
-| aiohttp           | Async service-to-service calls              | http://aiohttp.readthedocs.io/en/stable/   |
 | channels          | Django websockets                           | https://channels.readthedocs.io/en/latest/ |
 | django-heroku     | Simple Heroku-specific configuration        | https://github.com/heroku/django-heroku    |
 | python-dateutil   | Parsing ISO 1601 date times                 | https://labix.org/python-dateutil          |

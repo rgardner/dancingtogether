@@ -2,13 +2,12 @@ import asyncio
 from datetime import datetime, timedelta
 from functools import wraps
 import hashlib
+from http import HTTPStatus
 import logging
 import time
 from typing import Tuple
 import urllib.parse
 
-import aiohttp
-from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -35,7 +34,8 @@ class FressAccessTokenRequiredMixin:
     def dispatch(self, request, *args, **kwargs):
         access_token = load_access_token(request.user)
         if access_token.has_expired():
-            async_to_sync(access_token.refresh)()
+            access_token.refresh()
+            save_access_token(access_token)
 
         request.session['access_token'] = access_token.token
         return super().dispatch(request, *args, **kwargs)
@@ -107,31 +107,23 @@ class AccessToken:
     def has_expired(self):
         return timezone.now() > self.token_expiration_time
 
-    async def refresh(self, session=None):
-        if session is None:
-            async with aiohttp.ClientSession() as this_session:
-                await self._refresh(this_session)
-        else:
-            await self._refresh(session)
-
-    async def _refresh(self, session):
+    def refresh(self):
         data = {
             'grant_type': 'refresh_token',
             'refresh_token': self.refresh_token,
             'client_id': settings.SPOTIFY_CLIENT_ID,
             'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
-        async with session.post(
-                settings.SPOTIFY_TOKEN_API_URL, data=data) as resp:
-            if resp.status == requests.codes.ok:
-                resp_data = await resp.json()
-                self._access_token = resp_data['access_token']
-                expires_in = int(resp_data['expires_in'])
-                expires_in = timedelta(seconds=expires_in)
-                self._access_token_expiration_time = timezone.now() + expires_in
-                save_access_token(self)
-            else:
-                logger.error(await resp.text())
+        response = requests.post(settings.SPOTIFY_TOKEN_API_URL, data=data)
+        if response.status_code == HTTPStatus.OK.value:
+            response_data = response.json()
+            self._access_token = response_data['access_token']
+            expires_in = int(response_data['expires_in'])
+            expires_in = timedelta(seconds=expires_in)
+            self._access_token_expiration_time = timezone.now() + expires_in
+        else:
+            logger.error(response.text)
+            response.raise_for_status()
 
     @staticmethod
     def from_db_model(creds: SpotifyCredentials):
