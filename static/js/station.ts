@@ -631,7 +631,7 @@ export class StationMusicPlayer {
     }
 
     static setCachedVolume(volume: number) {
-        localStorage['musicVolume'] = volume;
+        localStorage.setItem('musicVolume', volume.toString());
     }
 
     getVolume(): Promise<number> { return this.musicPlayer.getVolume(); }
