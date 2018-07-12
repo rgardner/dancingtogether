@@ -1,6 +1,6 @@
 import * as $ from 'jquery';
 import { PlaybackState } from './music_player';
-import { ServerError } from './station';
+import { Listener, ServerError } from './station';
 import {
     CircularArray, ListenerRole, median, wait
 } from './util';
@@ -241,21 +241,17 @@ class StationDJView {
     }
 }
 
-interface Listener {
-    id: number;
-    username: string;
-    email: string;
-}
-
 class StationAdminView {
     private state = new class {
         isEnabled = false;
         isReady = false;
         listeners: Array<Listener> = [];
         inviteSentMessage = '';
+        listenerDeleteMessage = '';
     };
     observers = new Map([
         ['invite_listener', $.Callbacks()],
+        ['delete_listener', $.Callbacks()],
     ]);
 
     constructor(listenerRole: ListenerRole) {
@@ -290,6 +286,11 @@ class StationAdminView {
         wait(10000).then(() => this.setState(() => ({ inviteSentMessage: '' })));
     }
 
+    showListenerDeleteResult(message: string) {
+        this.setState(() => ({ listenerDeleteMessage: message }));
+        wait(10000).then(() => this.setState(() => ({ listenerDeleteMessage: '' })));
+    }
+
     bindUIActions() {
         $('#invite-listener-email').keyup(e => {
             // Also submit form if the user hits the enter key
@@ -320,8 +321,8 @@ class StationAdminView {
         $('#admin-view :input,:button').prop('disabled', false);
 
         $('#listeners-table tr').remove();
-        this.state.listeners.forEach(({ username, email }) => {
-            this.makeListenerTableRow(username, email).appendTo('#listeners-table');
+        this.state.listeners.forEach((listener) => {
+            this.makeListenerTableRow(listener.username, listener.id).appendTo('#listeners-table');
         });
 
         if (this.state.inviteSentMessage) {
@@ -330,16 +331,24 @@ class StationAdminView {
         } else {
             $('#admin-invite-sent').hide();
         }
+
+        if (this.state.listenerDeleteMessage) {
+            $('#admin-listener-delete-message').html(`Listener delete failed: ${this.state.listenerDeleteMessage}`);
+            $('#admin-listener-delete-message').show();
+        } else {
+            $('#admin-listener-delete-message').hide();
+        }
     }
 
-    makeListenerTableRow(username: string, email: string) {
+    makeListenerTableRow(username: string, listenerId: number) {
         let $row = $('<tr>');
         $('<td>').html(username).appendTo($row);
-        $('<td>').html(email).appendTo($row);
-        $('<button', {
+        $('<button>', {
             type: 'submit',
             class: 'btn btn-warning btn-sm',
-            value: email,
+            click: () => {
+                this.observers.get('delete_listener')!.fire(listenerId);
+            },
         }).html('Remove').appendTo($('<td>')).appendTo($row);
         return $row;
     }

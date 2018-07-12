@@ -48,7 +48,7 @@ class ListenerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Listener
-        fields = ('user', 'station', 'is_admin', 'is_dj')
+        fields = ('id', 'user', 'station', 'is_admin', 'is_dj')
 
 
 class AccessTokenSerializer(serializers.Serializer):

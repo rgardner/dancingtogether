@@ -6,7 +6,7 @@ from django.utils import timezone
 import pytest
 from rest_framework.test import APITestCase
 
-from ..models import SpotifyCredentials, Station
+from ..models import Listener, SpotifyCredentials, Station
 from . import mocks
 
 MOCK_USERNAME2 = 'MockUsername2'
@@ -47,6 +47,15 @@ class ListenerTests(APITestCase):
         }
         response = self.client.post('/api/v1/stations/1/listeners/', data=data)
         assert response.status_code == HTTPStatus.BAD_REQUEST.value
+
+    def test_can_delete_listener(self):
+        station = create_station()
+        user = create_user2()
+        listener_id = create_listener(station, user).id
+
+        response = self.client.delete(
+            f'/api/v1/stations/1/listeners/{listener_id}/')
+        assert response.status_code == HTTPStatus.NO_CONTENT.value
 
 
 class AccessTokenTests(APITestCase):
@@ -92,6 +101,11 @@ def create_user2():
 
 def create_station():
     return Station.objects.create(title='Station1')
+
+
+def create_listener(station, user):
+    return Listener.objects.create(
+        station=station, user=user, is_admin=False, is_dj=True)
 
 
 def create_spotify_credentials(user):

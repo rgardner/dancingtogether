@@ -100,6 +100,10 @@ export class StationManager {
         this.viewManager.adminView.on('invite_listener', (username: string) => {
             this.taskExecutor.push(() => this.inviteListener(username));
         });
+
+        this.viewManager.adminView.on('delete_listener', (listenerId: number) => {
+            this.taskExecutor.push(() => this.deleteListener(listenerId));
+        });
     }
 
     bindSteadyStateActions() {
@@ -314,6 +318,17 @@ export class StationManager {
         }
     }
 
+    async deleteListener(listenerId: number): Promise<void> {
+        try {
+            const listener = await Promise.race([this.server.deleteListener(listenerId), timeout(5000)]);
+            this.viewManager.adminView.setState((prevState: any) => ({
+                listeners: prevState.listeners.filter((listener: Listener) => (listener.id !== listenerId)),
+            }));
+        } catch (e) {
+            this.viewManager.adminView.showListenerDeleteResult(e.message);
+        }
+    }
+
     async currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
         const state = await this.musicPlayer.getCurrentState();
         if (state) {
@@ -379,6 +394,7 @@ export enum ServerError {
 class ListenerAlreadyExistsError extends Error { }
 
 export interface Listener {
+    id: number;
     username: string,
     stationId: number,
     isAdmin: boolean,
@@ -554,6 +570,23 @@ export class StationServer {
         }
     }
 
+    async deleteListener(listenerId: number): Promise<void> {
+        const url = `/api/v1/stations/${this.stationId}/listeners/${listenerId}/`;
+
+        let headers = new Headers();
+        headers.append('X-CSRFToken', this.csrftoken);
+
+        const response = await fetch(url, {
+            credentials: 'include',
+            headers: headers,
+            method: 'DELETE',
+        });
+
+        if (!response.ok) {
+            throw new Error(await response.text());
+        }
+    }
+
     onMessage(action: any) {
         console.log('Received: ', action);
         if (action.error) {
@@ -593,14 +626,16 @@ function createPlaybackStateFromServer(state: any) {
 }
 
 export interface ServerListener {
-    user: string,
-    station: number,
-    is_admin: boolean,
-    is_dj: boolean,
+    id: number;
+    user: string;
+    station: number;
+    is_admin: boolean;
+    is_dj: boolean;
 }
 
 function createListenerFromServer(listener: ServerListener): Listener {
     return {
+        'id': listener.id,
         'username': listener.user,
         'stationId': listener.station,
         'isAdmin': listener.is_admin,
