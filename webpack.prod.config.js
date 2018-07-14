@@ -5,6 +5,8 @@ var config = require('./webpack.base.config.js');
 
 config.mode = 'production';
 
+config.devtool = 'source-map';
+
 config.output.path = require('path').resolve('./assets/dist');
 
 config.plugins = config.plugins.concat([

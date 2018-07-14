@@ -5,7 +5,6 @@ module.exports = {
     entry: {
         station: './static/js/station.ts',
     },
-    devtool: 'inline-source-map',
     plugins: [],
     mode: 'none',
     module: {
