@@ -80,14 +80,14 @@ class DetailStationView(LoginRequiredMixin, ListenerRequiredMixin,
         context = super().get_context_data(**kwargs)
 
         context['user_id'] = self.request.user.id
-        context['debug'] = settings.DEBUG,
+        context['debug'] = settings.DEBUG
 
         listener = get_object_or_404(
             Listener, user=self.request.user, station=context['object'])
-        context['is_dj'] = listener.is_dj,
-        context['is_admin'] = listener.is_admin,
+        context['is_dj'] = listener.is_dj
+        context['is_admin'] = listener.is_admin
 
-        context['player_name'] = settings.SPOTIFY_PLAYER_NAME,
+        context['player_name'] = settings.SPOTIFY_PLAYER_NAME
         context['access_token'] = spotify.load_access_token(
             self.request.user.id).token
 
