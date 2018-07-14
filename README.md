@@ -54,6 +54,10 @@ $ # Attach to running containers to enable easy debugging with `pdb`
 $ make attach
 ```
 
+**NOTE**: Do not use seed data in production. This creates two accounts,
+'primary' and 'secondary', each with password 'testpassword'.
+
+
 ### Testing
 
 ```sh

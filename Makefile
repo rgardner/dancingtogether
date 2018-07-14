@@ -13,12 +13,16 @@ db-makemigrations:
 db-migrate:
 	docker-compose run web python3 manage.py migrate
 
+.PHONY: db-seed
+db-seed:
+	docker-compose run web python3 manage.py loaddata
+
 .PHONY: db-createsuperuser
 db-createsuperuser:
 	docker-compose run web python3 manage.py createsuperuser
 
 .PHONY: db-setup
-db-setup: db-migrate db-createsuperuser
+db-setup: db-migrate db-seed
 
 .PHONY: run
 run:

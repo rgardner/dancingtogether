@@ -1,0 +1,92 @@
+[
+    {
+        "model": "accounts.user",
+        "pk": 1,
+        "fields": {
+            "password": "pbkdf2_sha256$100000$VPAGb1m0YC1H$ow98uFDx2ItBFS72O9WQqdOaVOz/OhL5Y8T3Z7gzW2E=",
+            "last_login": null,
+            "is_superuser": true,
+            "username": "primary",
+            "first_name": "",
+            "last_name": "",
+            "email": "",
+            "is_staff": false,
+            "is_active": true,
+            "date_joined": "2018-07-14T19:20:31Z",
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
+        "model": "accounts.user",
+        "pk": 2,
+        "fields": {
+            "password": "pbkdf2_sha256$100000$5mtpN1j3DErN$DeEmWX1wM8xy2N/YZ2EZeoNHSn9HGEr2LwrjBtNDxOo=",
+            "last_login": null,
+            "is_superuser": false,
+            "username": "secondary",
+            "first_name": "",
+            "last_name": "",
+            "email": "",
+            "is_staff": false,
+            "is_active": true,
+            "date_joined": "2018-07-14T19:20:55.201Z",
+            "groups": [],
+            "user_permissions": []
+        }
+    },
+    {
+        "model": "radio.station",
+        "pk": 1,
+        "fields": {
+            "title": "DJPrimary"
+        }
+    },
+    {
+        "model": "radio.station",
+        "pk": 2,
+        "fields": {
+            "title": "DJSecondary"
+        }
+    },
+    {
+        "model": "radio.listener",
+        "pk": 1,
+        "fields": {
+            "user": 1,
+            "station": 1,
+            "is_admin": false,
+            "is_dj": true
+        }
+    },
+    {
+        "model": "radio.listener",
+        "pk": 2,
+        "fields": {
+            "user": 2,
+            "station": 1,
+            "is_admin": false,
+            "is_dj": false
+        }
+    },
+    {
+        "model": "radio.listener",
+        "pk": 3,
+        "fields": {
+            "user": 1,
+            "station": 1,
+            "is_admin": false,
+            "is_dj": false
+        }
+    },
+    {
+        "model": "radio.listener",
+        "pk": 4,
+        "fields": {
+            "user": 2,
+            "station": 2,
+            "is_admin": false,
+            "is_dj": true
+        }
+    }
+]
