@@ -4,7 +4,7 @@ var config = require('./webpack.base.config');
 
 config.mode = 'development';
 
-config.devtool = 'inline-source-map';
+config.devtool = 'eval-source-map';
 
 config.plugins = [
     new BundleTracker({ filename: './webpack-stats.json' }),
