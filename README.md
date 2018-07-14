@@ -95,13 +95,32 @@ $ make deploy
 
 Dancing Together is a Django app running on Heroku.
 
-| Dependency        | How Used                                    | Docs                                       |
-| ----------        | ------                                      | ----                                       |
-| Django            | URL routing, database                       | https://docs.djangoproject.com/en/2.0/     |
-| Requests          | Service-to-service calls (e.g. Spotify API) | http://docs.python-requests.org/en/master/ |
-| channels          | Django websockets                           | https://channels.readthedocs.io/en/latest/ |
-| django-heroku     | Simple Heroku-specific configuration        | https://github.com/heroku/django-heroku    |
-| python-dateutil   | Parsing ISO 1601 date times                 | https://labix.org/python-dateutil          |
-| Pipenv            | Python packing tool                         | https://docs.pipenv.org/                   |
-| Django REST framework | Provides serialization and REST routing | http://www.django-rest-framework.org/      |
-| django-bootstrap4 | Easy template styling                       | http://django-bootstrap4.readthedocs.io/en/latest/ |
+This project uses the [Pipenv](https://docs.pipenv.org/) Python packaging tool
+to manage dependencies, manage virtual environments, and produce deterministic
+builds.
+
+### App Dependencies
+
+| Dependency            | How Used                                              | Docs                                                                 |
+| ----------            | ------                                                | ----                                                                 |
+| Django                | URL routing, database                                 | https://docs.djangoproject.com/en/2.0/                               |
+| Requests              | Service-to-service calls (e.g. Spotify API)           | http://docs.python-requests.org/en/master/                           |
+| channels_redis        | Admin notifications when a listener joins the station | https://channels.readthedocs.io/en/latest/topics/channel_layers.html |
+| django-bootstrap4     | Easy Bootstrap 4 template styling                     | http://django-bootstrap4.readthedocs.io/en/latest/                   |
+| django-heroku         | Heroku-specific logging/db configuration              | https://github.com/heroku/django-heroku                              |
+| channels              | Websockets for station change notifications           | https://channels.readthedocs.io/en/latest/                           |
+| django-webpack-loader | Loads the frontend webpack                            | https://github.com/owais/django-webpack-loader                       |
+| djangorestframework   | Provides serialization and REST routing               | http://www.django-rest-framework.org/                                |
+| drf-nested-routers    | Used for /stations/1/listeners/ routing               | https://github.com/alanjds/drf-nested-routers                        |
+
+### Additional Development Depedencies
+
+| Dependency      | How Used                                    | Docs                                            |
+| ----------      | ------                                      | ----                                            |
+| pycodestyle     | Pep8 style checking                         | https://pycodestyle.readthedocs.io/en/latest/   |
+| mypy            | Optional static type checking               | http://mypy-lang.org/                           |
+| yapf            | Python code formatting                      | https://github.com/google/yapf                  |
+| pylint          | Python code analysis                        | https://www.pylint.org/                         |
+| pytest-django   | Test fixture support and writing unit tests | https://pytest-django.readthedocs.io/en/latest/ |
+| pytest-asyncio  | Websocket consumer tests                    | https://github.com/pytest-dev/pytest-asyncio    |
+| python-dateutil | Parsing server ping response                | https://labix.org/python-dateutil               |
