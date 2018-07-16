@@ -15,7 +15,7 @@ db-migrate:
 
 .PHONY: db-seed
 db-seed:
-	docker-compose run web python3 manage.py loaddata
+	docker-compose run web python3 manage.py loaddata initial_data.json
 
 .PHONY: db-createsuperuser
 db-createsuperuser:

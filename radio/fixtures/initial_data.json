@@ -10,7 +10,7 @@
             "first_name": "",
             "last_name": "",
             "email": "",
-            "is_staff": false,
+            "is_staff": true,
             "is_active": true,
             "date_joined": "2018-07-14T19:20:31Z",
             "groups": [],
@@ -55,7 +55,7 @@
         "fields": {
             "user": 1,
             "station": 1,
-            "is_admin": false,
+            "is_admin": true,
             "is_dj": true
         }
     },
@@ -74,7 +74,7 @@
         "pk": 3,
         "fields": {
             "user": 1,
-            "station": 1,
+            "station": 2,
             "is_admin": false,
             "is_dj": false
         }
@@ -85,7 +85,7 @@
         "fields": {
             "user": 2,
             "station": 2,
-            "is_admin": false,
+            "is_admin": true,
             "is_dj": true
         }
     }
