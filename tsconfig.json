@@ -4,13 +4,15 @@
         "module": "commonjs",
         "sourceMap": true,
         "strict": true,
-        "target": "es2016"
+        "target": "es2016",
+        "jsx": "react"
     },
     "files": [
-        "static/js/util.ts",
+        "static/js/components/StationDebug.tsx",
         "static/js/music_player.ts",
-        "static/js/websocket_bridge.ts",
-        "static/js/station.ts",
-        "static/js/station_view.ts"
+        "static/js/station.tsx",
+        "static/js/station_view.ts",
+        "static/js/util.ts",
+        "static/js/websocket_bridge.ts"
     ]
 }

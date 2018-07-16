@@ -1,8 +1,12 @@
 import * as $ from 'jquery';
+import * as React from 'react';
+import * as ReactDOM from 'react-dom';
+
 import { CircularArray, ListenerRole, median, wait } from './util';
 import { MusicPlayer, PlaybackState, createSpotifyMusicPlayer } from './music_player';
 import { ChannelWebSocketBridge, WebSocketBridge } from './websocket_bridge';
 import { ViewManager } from './station_view';
+import { StationDebug } from './components/StationDebug';
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
@@ -28,172 +32,214 @@ window.onSpotifyWebPlaybackSDKReady = () => {
     if (APP_DATA.userIsAdmin) listenerRole |= ListenerRole.Admin;
     let webSocketBridge = new ChannelWebSocketBridge();
 
-    new StationManager(
-        APP_DATA.userId,
-        listenerRole,
-        APP_DATA.stationTitle,
-        new StationServer(APP_DATA.stationId, getCrossSiteRequestForgeryToken(), webSocketBridge),
-        APP_DATA.spotifyConnectPlayerName,
-        APP_DATA.accessToken,
-        APP_DATA.accessTokenExpirationTime,
-        APP_DATA.debug,
-        StationMusicPlayer.getCachedVolume(),
+    ReactDOM.render(
+        <StationManager
+            userId={APP_DATA.userId}
+            listenerRole={listenerRole}
+            stationTitle={APP_DATA.stationTitle}
+            server={new StationServer(APP_DATA.stationId, getCrossSiteRequestForgeryToken(), webSocketBridge)}
+            clientName={APP_DATA.spotifyConnectPlayerName}
+            accessToken={APP_DATA.accessToken}
+            accessTokenExpirationTime={APP_DATA.accessTokenExpirationTime}
+            debug={APP_DATA.debug}
+            initialVolume={StationMusicPlayer.getCachedVolume()}
+        />,
+        document.getElementById('station')
     );
 };
 
-export class StationManager {
-    taskExecutor = new TaskExecutor();
+interface IStationManagerProps {
+    userId: number;
+    listenerRole: ListenerRole;
+    stationTitle: string;
+    server: StationServer;
+    clientName: string;
+    accessToken: string;
+    accessTokenExpirationTime: Date;
+    debug: boolean;
+    initialVolume?: number;
+}
+
+interface IStationManagerState {
+    taskExecutor: TaskExecutor;
     clientEtag?: Date;
     serverEtag?: Date;
     heartbeatIntervalId?: number;
     musicPlayer: StationMusicPlayer;
+    accessToken: string;
+    accessTokenExpirationTime: Date;
     viewManager: ViewManager;
-    roundTripTimes = new CircularArray<number>(5);
-    clientServerTimeOffsets = new CircularArray<number>(5);
+    roundTripTimes: CircularArray<number>;
+    clientServerTimeOffsets: CircularArray<number>;
+}
 
-    constructor(
-        private userId: number, private listenerRole: ListenerRole,
-        stationTitle: string, private server: StationServer,
-        clientName: string, private accessToken: string,
-        private accessTokenExpirationTime: Date, debug: boolean,
-        initialVolume?: number) {
-        this.musicPlayer = new StationMusicPlayer(
-            createSpotifyMusicPlayer({
-                clientName: clientName,
-                getOAuthToken: cb => this.getOAuthToken(cb),
-                initialVolume: initialVolume,
-            }));
-        this.viewManager = new ViewManager(listenerRole, stationTitle, debug);
+export class StationManager extends React.Component<IStationManagerProps, IStationManagerState> {
+    constructor(props: any) {
+        super(props);
+        this.state = {
+            taskExecutor: new TaskExecutor(),
+            musicPlayer: new StationMusicPlayer(
+                createSpotifyMusicPlayer({
+                    clientName: this.props.clientName,
+                    getOAuthToken: cb => this.getOAuthToken(cb),
+                    initialVolume: this.props.initialVolume,
+                })),
+            accessToken: props.accessToken,
+            accessTokenExpirationTime: props.accessTokenExpirationTime,
+            viewManager: new ViewManager(this.props.listenerRole, this.props.stationTitle, this.props.debug),
+            roundTripTimes: new CircularArray<number>(5),
+            clientServerTimeOffsets: new CircularArray<number>(5),
+        }
+
         this.bindMusicPlayerActions();
         this.bindServerActions();
         this.bindViewActions();
     }
 
+    public render() {
+        return (
+            <div className="row">
+                {this.props.debug &&
+                    <StationDebug
+                        roundTripTimes={this.state.roundTripTimes}
+                        clientServerTimeOffsets={this.state.clientServerTimeOffsets}
+                    />}
+            </div>
+        );
+    }
+
     bindMusicPlayerActions() {
-        this.musicPlayer.on('ready', () => {
+        this.state.musicPlayer.on('ready', () => {
             this.startSteadyState();
 
-            this.viewManager.stationView.setState(() => ({ isConnected: true }));
-            this.viewManager.listenerView.setState(() => ({ isReady: true }));
-            this.musicPlayer.getVolume().then(volume => {
-                this.viewManager.listenerView.setState(() => ({ volume: volume }));
+            this.state.viewManager.stationView.setState(() => ({ isConnected: true }));
+            this.state.viewManager.listenerView.setState(() => ({ isReady: true }));
+            this.state.musicPlayer.getVolume().then(volume => {
+                this.state.viewManager.listenerView.setState(() => ({ volume: volume }));
             });
-            this.viewManager.djView.setState(() => ({ isReady: true }));
+            this.state.viewManager.djView.setState(() => ({ isReady: true }));
         });
 
-        this.musicPlayer.on('initialization_error', ({ message }) => {
-            this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+        this.state.musicPlayer.on('initialization_error', ({ message }) => {
+            this.state.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
         });
 
-        this.musicPlayer.on('account_error', ({ message }) => {
-            this.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+        this.state.musicPlayer.on('account_error', ({ message }) => {
+            this.state.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
         });
     }
 
     bindServerActions() {
-        this.server.on('error', (error: ServerError, message: string) => {
+        this.props.server.on('error', (error: ServerError, message: string) => {
             console.error(`${error}: ${message}`);
         });
     }
 
     bindViewActions() {
-        this.viewManager.adminView.on('invite_listener', (username: string) => {
-            this.taskExecutor.push(() => this.inviteListener(username));
+        this.state.viewManager.adminView.on('invite_listener', (username: string) => {
+            this.state.taskExecutor.push(() => this.inviteListener(username));
         });
 
-        this.viewManager.adminView.on('delete_listener', (listenerId: number) => {
-            this.taskExecutor.push(() => this.deleteListener(listenerId));
+        this.state.viewManager.adminView.on('delete_listener', (listenerId: number) => {
+            this.state.taskExecutor.push(() => this.deleteListener(listenerId));
         });
     }
 
     bindSteadyStateActions() {
-        this.musicPlayer.on('player_state_changed', clientState => {
+        this.state.musicPlayer.on('player_state_changed', clientState => {
             if (clientState) {
-                if (this.clientEtag && (clientState.sample_time <= this.clientEtag)) {
+                if (this.state.clientEtag && (clientState.sample_time <= this.state.clientEtag)) {
                     return;
                 }
 
-                this.viewManager.stationView.setState(() => ({ playbackState: clientState }));
-                this.viewManager.musicPositionView.setState(() => ({ paused: clientState.paused, positionMS: clientState.raw_position_ms }));
-                this.viewManager.djView.setState(() => ({ playbackState: clientState }));
+                this.state.viewManager.stationView.setState(() => ({ playbackState: clientState }));
+                this.state.viewManager.musicPositionView.setState(() => ({ paused: clientState.paused, positionMS: clientState.raw_position_ms }));
+                this.state.viewManager.djView.setState(() => ({ playbackState: clientState }));
             }
         });
 
-        this.server.on('playback_state_changed', (serverState: PlaybackState) => {
-            this.taskExecutor.push(() => this.applyServerPlaybackState(serverState));
+        this.props.server.on('playback_state_changed', (serverState: PlaybackState) => {
+            this.state.taskExecutor.push(() => this.applyServerPlaybackState(serverState));
         });
 
-        this.viewManager.listenerView.on('muteButtonClick', () => {
-            this.musicPlayer.muteUnmuteVolume().then(newVolume => {
-                this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
+        this.state.viewManager.listenerView.on('muteButtonClick', () => {
+            this.state.musicPlayer.muteUnmuteVolume().then(newVolume => {
+                this.state.viewManager.listenerView.setState(() => ({ volume: newVolume }));
             });
         });
 
-        this.viewManager.listenerView.on('volumeSliderChange', (newVolume: number) => {
-            this.musicPlayer.setVolume(newVolume).then(() => {
-                this.viewManager.listenerView.setState(() => ({ volume: newVolume }));
+        this.state.viewManager.listenerView.on('volumeSliderChange', (newVolume: number) => {
+            this.state.musicPlayer.setVolume(newVolume).then(() => {
+                this.state.viewManager.listenerView.setState(() => ({ volume: newVolume }));
             });
         });
 
-        this.viewManager.djView.on('playPauseButtonClick', () => {
-            this.musicPlayer.togglePlay();
+        this.state.viewManager.djView.on('playPauseButtonClick', () => {
+            this.state.musicPlayer.togglePlay();
         });
 
-        this.viewManager.djView.on('previousTrackButtonClick', () => {
-            this.musicPlayer.previousTrack();
+        this.state.viewManager.djView.on('previousTrackButtonClick', () => {
+            this.state.musicPlayer.previousTrack();
         });
 
-        this.viewManager.djView.on('nextTrackButtonClick', () => {
-            this.musicPlayer.nextTrack();
+        this.state.viewManager.djView.on('nextTrackButtonClick', () => {
+            this.state.musicPlayer.nextTrack();
         });
     }
 
     startSteadyState() {
         this.bindSteadyStateActions();
-        if ((this.listenerRole & ListenerRole.Admin) === ListenerRole.Admin) {
-            this.taskExecutor.push(() => this.showListeners());
+        if ((this.props.listenerRole & ListenerRole.Admin) === ListenerRole.Admin) {
+            this.state.taskExecutor.push(() => this.showListeners());
         }
 
-        this.taskExecutor.push(() => this.calculatePing());
-        this.taskExecutor.push(() => this.syncServerPlaybackState());
+        this.state.taskExecutor.push(() => this.calculatePing());
+        this.state.taskExecutor.push(() => this.syncServerPlaybackState());
         this.enableHeartbeat();
     }
 
     stopSteadyState() {
-        this.musicPlayer.removeListener('player_state_changed');
-        this.server.removeListener('playback_state_changed');
-        this.viewManager.listenerView.removeListener('muteButtonClick');
-        this.viewManager.listenerView.removeListener('volumeSliderChange');
-        this.viewManager.djView.removeListener('playPauseButtonClick');
-        this.viewManager.djView.removeListener('previousTrackButtonClick');
-        this.viewManager.djView.removeListener('nextTrackButtonClick');
+        this.state.musicPlayer.removeListener('player_state_changed');
+        this.props.server.removeListener('playback_state_changed');
+        this.state.viewManager.listenerView.removeListener('muteButtonClick');
+        this.state.viewManager.listenerView.removeListener('volumeSliderChange');
+        this.state.viewManager.djView.removeListener('playPauseButtonClick');
+        this.state.viewManager.djView.removeListener('previousTrackButtonClick');
+        this.state.viewManager.djView.removeListener('nextTrackButtonClick');
 
         this.disableHeartbeat();
-        this.taskExecutor.clear();
+        this.state.taskExecutor.clear();
     }
 
     enableHeartbeat() {
-        this.heartbeatIntervalId = window.setInterval(() => {
-            this.taskExecutor.push(() => this.calculatePing());
-            if ((this.listenerRole & ListenerRole.DJ) === ListenerRole.DJ) {
-                this.taskExecutor.push(() => this.updateServerPlaybackState());
+        const heartbeatIntervalId = window.setInterval(() => {
+            this.state.taskExecutor.push(() => this.calculatePing());
+            if ((this.props.listenerRole & ListenerRole.DJ) === ListenerRole.DJ) {
+                this.state.taskExecutor.push(() => this.updateServerPlaybackState());
             }
         }, SERVER_HEARTBEAT_INTERVAL_MS);
+
+        this.setState({
+            heartbeatIntervalId
+        });
     }
 
     disableHeartbeat() {
-        if (this.heartbeatIntervalId) {
-            window.clearInterval(this.heartbeatIntervalId);
+        if (this.state.heartbeatIntervalId) {
+            window.clearInterval(this.state.heartbeatIntervalId);
+            this.setState({
+                heartbeatIntervalId: undefined,
+            });
         }
     }
 
     async updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
         if (!playbackState) {
-            const tempPlaybackState = await this.musicPlayer.getCurrentState();
+            const tempPlaybackState = await this.state.musicPlayer.getCurrentState();
             playbackState = (tempPlaybackState ? tempPlaybackState : undefined);
         }
 
-        if (!playbackState || (this.clientEtag && (playbackState.sample_time <= this.clientEtag))) {
+        if (!playbackState || (this.state.clientEtag && (playbackState.sample_time <= this.state.clientEtag))) {
             return;
         }
 
@@ -201,30 +247,30 @@ export class StationManager {
         playbackState.sample_time = new Date(playbackState.sample_time.getTime() + this.getMedianClientServerTimeOffset());
 
         try {
-            const serverState: PlaybackState = await Promise.race([this.server.sendPlaybackState(playbackState, this.serverEtag), timeout(5000)]);
+            const serverState: PlaybackState = await Promise.race([this.props.server.sendPlaybackState(playbackState, this.state.serverEtag), timeout(5000)]);
             await this.applyServerPlaybackState(serverState);
         } catch (e) {
             console.error(e);
-            this.taskExecutor.clear();
-            this.taskExecutor.push(() => this.syncServerPlaybackState());
+            this.state.taskExecutor.clear();
+            this.state.taskExecutor.push(() => this.syncServerPlaybackState());
         }
     }
 
     async syncServerPlaybackState(): Promise<void> {
-        const serverState = await Promise.race([this.server.getPlaybackState(), timeout(5000)]);
+        const serverState = await Promise.race([this.props.server.getPlaybackState(), timeout(5000)]);
         if (serverState) {
             return this.applyServerPlaybackState(serverState);
         }
     }
 
     async calculatePing(): Promise<void> {
-        const pong = await Promise.race([this.server.sendPingRequest(), timeout(5000)]);
+        const pong = await Promise.race([this.props.server.sendPingRequest(), timeout(5000)]);
         this.adjustServerTimeOffset(pong.startTime, pong.serverTime, new Date());
     }
 
     getOAuthToken(cb: (accessToken: string) => void) {
-        let refreshTokenIfNeeded = Promise.resolve(this.accessToken);
-        if ((new Date()) > this.accessTokenExpirationTime) {
+        let refreshTokenIfNeeded = Promise.resolve(this.props.accessToken);
+        if ((new Date()) > this.props.accessTokenExpirationTime) {
             refreshTokenIfNeeded = this.refreshOAuthToken();
         }
 
@@ -232,73 +278,77 @@ export class StationManager {
     }
 
     async refreshOAuthToken(): Promise<string> {
-        const response = await Promise.race([this.server.refreshOAuthToken(this.userId), timeout(5000)]);
-        this.accessToken = response.accessToken;
-        this.accessTokenExpirationTime = response.accessTokenExpirationTime;
-        return this.accessToken;
+        const response = await Promise.race([this.props.server.refreshOAuthToken(this.props.userId), timeout(5000)]);
+        this.setState({
+            accessToken: response.accessToken,
+            accessTokenExpirationTime: response.accessTokenExpirationTime,
+        });
+        return response.accessToken;
     }
 
     async applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
-        if (this.serverEtag && (<Date>serverState.etag <= this.serverEtag)) {
+        if (this.state.serverEtag && (serverState.etag! <= this.state.serverEtag)) {
             return;
         }
 
         try {
-            let clientState = await this.musicPlayer.getCurrentState();
+            let clientState = await this.state.musicPlayer.getCurrentState();
             if (!clientState || (clientState.context_uri !== serverState.context_uri) ||
                 (clientState.current_track_uri !== serverState.current_track_uri)) {
-                await this.musicPlayer.play(serverState.context_uri, serverState.current_track_uri);
+                await this.state.musicPlayer.play(serverState.context_uri, serverState.current_track_uri);
             }
 
             await Promise.race([retry(() => this.currentTrackReady(serverState)), timeout(5000)]);
 
-            clientState = await this.musicPlayer.getCurrentState();
+            clientState = await this.state.musicPlayer.getCurrentState();
             if (!clientState) {
                 throw new Error('Spotify not ready');
             }
 
             if (serverState.paused) {
                 if (clientState.paused) {
-                    await this.musicPlayer.pause();
+                    await this.state.musicPlayer.pause();
                 }
 
-                await this.musicPlayer.seek(serverState.raw_position_ms);
+                await this.state.musicPlayer.seek(serverState.raw_position_ms);
             } else {
                 const localPosition = clientState.raw_position_ms;
                 const serverPosition = this.getAdjustedPlaybackPosition(serverState);
                 if (Math.abs(localPosition - serverPosition) > MAX_SEEK_ERROR_MS) {
                     const newLocalPosition = serverPosition + SEEK_OVERCORRECT_MS;
                     console.log(`Playback adjustment needed: local: ${localPosition}, server: ${serverPosition}, new local: ${newLocalPosition}`);
-                    await this.musicPlayer.seek(newLocalPosition);
+                    await this.state.musicPlayer.seek(newLocalPosition);
                     await Promise.race([retry(() => this.currentPositionReady(newLocalPosition)), timeout(5000)]);
                     const serverPositionAfterSeek = this.getAdjustedPlaybackPosition(serverState);
                     if (((newLocalPosition > serverPositionAfterSeek) && (newLocalPosition < (serverPositionAfterSeek + MAX_SEEK_ERROR_MS)))) {
-                        await this.musicPlayer.freeze(localPosition - serverPositionAfterSeek);
+                        await this.state.musicPlayer.freeze(localPosition - serverPositionAfterSeek);
                     } else {
-                        await this.musicPlayer.resume();
+                        await this.state.musicPlayer.resume();
                     }
                 } else if (clientState.paused) {
-                    await this.musicPlayer.resume();
+                    await this.state.musicPlayer.resume();
                 }
             }
 
-            clientState = await this.musicPlayer.getCurrentState();
+            clientState = await this.state.musicPlayer.getCurrentState();
             if (!clientState) {
                 throw new Error('Spotify not ready');
             }
 
-            this.clientEtag = clientState.sample_time;
-            this.serverEtag = serverState.etag;
+            this.setState({
+                clientEtag: clientState.sample_time,
+                serverEtag: serverState.etag,
+            });
         } catch (e) {
             console.error(e);
-            this.taskExecutor.push(() => this.syncServerPlaybackState());
+            this.state.taskExecutor.push(() => this.syncServerPlaybackState());
         }
     }
 
     showListeners(): Promise<void> {
-        return Promise.race([this.server.getListeners(), timeout(5000)])
+        return Promise.race([this.props.server.getListeners(), timeout(5000)])
             .then(listeners => {
-                this.viewManager.adminView.setState(() => ({
+                this.state.viewManager.adminView.setState(() => ({
                     listeners: listeners,
                 }));
             });
@@ -306,31 +356,31 @@ export class StationManager {
 
     async inviteListener(username: string): Promise<void> {
         try {
-            const listener = await Promise.race([this.server.inviteListener(username, false, false), timeout(5000)]);
-            this.viewManager.adminView.showListenerInviteResult(username);
-            this.viewManager.adminView.setState((prevState: any) => ({
+            const listener = await Promise.race([this.props.server.inviteListener(username, false, false), timeout(5000)]);
+            this.state.viewManager.adminView.showListenerInviteResult(username);
+            this.state.viewManager.adminView.setState((prevState: any) => ({
                 listeners: prevState.listeners.concat([listener]),
             }));
         } catch (e) {
             const result = ((e instanceof ListenerAlreadyExistsError) ? ServerError.ListenerAlreadyExistsError
                 : ServerError.Unknown);
-            this.viewManager.adminView.showListenerInviteResult(username, result);
+            this.state.viewManager.adminView.showListenerInviteResult(username, result);
         }
     }
 
     async deleteListener(listenerId: number): Promise<void> {
         try {
-            const listener = await Promise.race([this.server.deleteListener(listenerId), timeout(5000)]);
-            this.viewManager.adminView.setState((prevState: any) => ({
+            const listener = await Promise.race([this.props.server.deleteListener(listenerId), timeout(5000)]);
+            this.state.viewManager.adminView.setState((prevState: any) => ({
                 listeners: prevState.listeners.filter((listener: Listener) => (listener.id !== listenerId)),
             }));
         } catch (e) {
-            this.viewManager.adminView.showListenerDeleteResult(e.message);
+            this.state.viewManager.adminView.showListenerDeleteResult(e.message);
         }
     }
 
     async currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
-        const state = await this.musicPlayer.getCurrentState();
+        const state = await this.state.musicPlayer.getCurrentState();
         if (state) {
             return state.current_track_uri === expectedState.current_track_uri;
         } else {
@@ -339,7 +389,7 @@ export class StationManager {
     }
 
     async currentPositionReady(expectedPosition: number): Promise<boolean> {
-        const state = await this.musicPlayer.getCurrentState();
+        const state = await this.state.musicPlayer.getCurrentState();
         if (state) {
             return state.raw_position_ms >= expectedPosition;
         } else {
@@ -348,8 +398,8 @@ export class StationManager {
     }
 
     getMedianClientServerTimeOffset(): number {
-        console.assert(this.clientServerTimeOffsets.length > 0);
-        return median(this.clientServerTimeOffsets.entries());
+        console.assert(this.state.clientServerTimeOffsets.length > 0);
+        return median(this.state.clientServerTimeOffsets.entries());
     }
 
     getAdjustedPlaybackPosition(serverState: PlaybackState): number {
@@ -364,14 +414,18 @@ export class StationManager {
     }
 
     adjustServerTimeOffset(startTime: Date, serverTime: Date, currentTime: Date) {
-        this.roundTripTimes.push(currentTime.getTime() - startTime.getTime());
-        const medianOneWayTime = Math.round(median(this.roundTripTimes.entries()) / 2);
+        const roundTripTimes = this.state.roundTripTimes;
+        roundTripTimes.push(currentTime.getTime() - startTime.getTime());
+
+        const medianOneWayTime = Math.round(median(roundTripTimes.entries()) / 2);
         const clientServerTimeOffset = ((serverTime.getTime() + medianOneWayTime) - currentTime.getTime());
-        this.clientServerTimeOffsets.push(clientServerTimeOffset);
-        this.viewManager.debugView.setState(() => ({
-            roundTripTimes: this.roundTripTimes,
-            clientServerTimeOffsets: this.clientServerTimeOffsets,
-        }));
+        const clientServerTimeOffsets = this.state.clientServerTimeOffsets;
+        clientServerTimeOffsets.push(clientServerTimeOffset);
+
+        this.setState({
+            roundTripTimes,
+            clientServerTimeOffsets,
+        });
     }
 }
 
@@ -562,7 +616,7 @@ export class StationServer {
 
         const data = await response.json();
         if (response.ok) {
-            return createListenerFromServer(<ServerListener>data);
+            return createListenerFromServer(data as ServerListener);
         } else if (data.non_field_errors.some((s: string) => (s === "The fields user, station must make a unique set."))) {
             throw new ListenerAlreadyExistsError();
         } else {

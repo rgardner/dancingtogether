@@ -3,7 +3,7 @@ var path = require("path");
 module.exports = {
     context: __dirname,
     entry: {
-        station: './static/js/station.ts',
+        station: './static/js/station.tsx',
     },
     plugins: [],
     mode: 'none',
@@ -18,7 +18,7 @@ module.exports = {
     },
     resolve: {
         modules: ['node_modules'],
-        extensions: ['.ts', '.js'],
+        extensions: ['.ts', '.tsx', '.js'],
     },
     output: {
         filename: "[name]-[hash].js",

@@ -1,4 +1,7 @@
 import * as $ from 'jquery';
+import * as React from 'react';
+import * as renderer from 'react-test-renderer';
+
 import { ListenerRole } from '../static/js/util';
 import {
     MusicPlayer, PlaybackState, PlayerInit, createSpotifyMusicPlayer,
@@ -6,7 +9,6 @@ import {
 import { WebSocketBridge, WebSocketListenCallback } from '../static/js/websocket_bridge';
 import {
     Listener, SEEK_OVERCORRECT_MS, StationManager, StationServer, ServerError,
-    ServerListener,
 } from '../static/js/station'
 
 const MockUserId = 1;
@@ -320,15 +322,24 @@ test('station server can invite listeners', async () => {
     expect(fetch.mock.calls.length).toEqual(1);
 });
 
-function createStationManager(stationServer: StationServer): StationManager {
-    return new StationManager(
-        MockUserId, ListenerRole.None, MockStationName, stationServer,
-        MockPlayerName, MockAccessToken1, MockAccessTokenExpirationTime1, Debug);
+function createStationManager(stationServer: StationServer) {
+    return renderer.create(
+        <StationManager
+            userId={MockUserId}
+            listenerRole={ListenerRole.None}
+            stationTitle={MockStationName}
+            server={stationServer}
+            clientName={MockPlayerName}
+            accessToken={MockAccessToken1}
+            accessTokenExpirationTime={MockAccessTokenExpirationTime1}
+            debug={Debug}
+        />
+    );
 }
 
 function addDefaultNetworkTimes(stationManager: StationManager) {
-    stationManager.roundTripTimes.push(0);
-    stationManager.clientServerTimeOffsets.push(0);
+    stationManager.state.roundTripTimes.push(0);
+    stationManager.state.clientServerTimeOffsets.push(0);
 }
 
 test('station manager correctly adjusts client server time offset', async () => {
@@ -340,17 +351,17 @@ test('station manager correctly adjusts client server time offset', async () => 
 
     let stationManager = createStationManager(
         createStationServer(new MockWebSocketBridge()),
-    );
+    ).root.instance;
 
     let startTime = new Date('2018-05-31T00:00:01.000Z');
     let serverTime = new Date('2018-05-31T00:00:03.000Z');
     let currentTime = new Date('2018-05-31T00:00:02.000Z');
     stationManager.adjustServerTimeOffset(startTime, serverTime, currentTime);
 
-    expect(stationManager.roundTripTimes.length).toBe(1);
-    expect(stationManager.roundTripTimes.entries()).toEqual([1000]);
-    expect(stationManager.clientServerTimeOffsets.length).toBe(1);
-    expect(stationManager.clientServerTimeOffsets.entries()).toEqual([1500]);
+    expect(stationManager.state.roundTripTimes.length).toBe(1);
+    expect(stationManager.state.roundTripTimes.entries()).toEqual([1000]);
+    expect(stationManager.state.clientServerTimeOffsets.length).toBe(1);
+    expect(stationManager.state.clientServerTimeOffsets.entries()).toEqual([1500]);
 });
 
 function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, playbackState: PlaybackState) {
@@ -367,7 +378,7 @@ test('station manager correctly adjusts playback state when server is paused', a
         return mockMusicPlayer;
     });
 
-    let stationManager = createStationManager(createStationServer(new MockWebSocketBridge()));
+    let stationManager = createStationManager(createStationServer(new MockWebSocketBridge())).root.instance;
     addDefaultNetworkTimes(stationManager);
 
     const mockPlaybackState = new PlaybackState(
@@ -381,7 +392,7 @@ test('station manager correctly adjusts playback state when server is paused', a
     await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
 
     verify_music_player_playback_state(mockMusicPlayer, mockPlaybackState);
-    expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
+    expect(stationManager.state.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
 
@@ -392,7 +403,7 @@ test('station manager correctly adjusts playback state when server is playing', 
         return mockMusicPlayer;
     });
 
-    let stationManager = createStationManager(createStationServer(new MockWebSocketBridge()));
+    let stationManager = createStationManager(createStationServer(new MockWebSocketBridge())).root.instance;
     addDefaultNetworkTimes(stationManager);
 
     const mockPlaybackState = new PlaybackState(
@@ -409,7 +420,7 @@ test('station manager correctly adjusts playback state when server is playing', 
         raw_position_ms: mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS,
     })
     verify_music_player_playback_state(mockMusicPlayer, expectedPlaybackState);
-    expect(stationManager.serverEtag).toEqual(mockPlaybackState.etag);
+    expect(stationManager.state.serverEtag).toEqual(mockPlaybackState.etag);
 });
 
 test.skip('station manager correctly handles precondition failed', async () => {
@@ -420,7 +431,7 @@ test.skip('station manager correctly handles precondition failed', async () => {
     });
 
     let mockWebSocketBridge = new MockWebSocketBridge();
-    let stationManager = createStationManager(createStationServer(mockWebSocketBridge));
+    let stationManager = createStationManager(createStationServer(mockWebSocketBridge)).root.instance;
     addDefaultNetworkTimes(stationManager);
 
     const mockPlaybackState = new PlaybackState(
