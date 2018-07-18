@@ -7,11 +7,11 @@ export interface IStationDebugProps {
 }
 
 export function StationDebug(props: IStationDebugProps) {
-    const medianRoundTripTime = median(props.roundTripTimes.array);
-    const joinedRoundTripTimes = props.roundTripTimes.array.map(time => `${time}ms`).join(', ');
+    const medianRoundTripTime = median(props.roundTripTimes.entries());
+    const joinedRoundTripTimes = props.roundTripTimes.entries().map(time => `${time}ms`).join(', ');
 
-    const medianClientServerTimeOffset = median(props.clientServerTimeOffsets.array);
-    const joinedClientServerTimeOffsets = props.clientServerTimeOffsets.array.map(time => `${time}ms`).join(', ');
+    const medianClientServerTimeOffset = median(props.clientServerTimeOffsets.entries());
+    const joinedClientServerTimeOffsets = props.clientServerTimeOffsets.entries().map(time => `${time}ms`).join(', ');
 
     return (
         <div>

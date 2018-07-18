@@ -3,7 +3,7 @@ var path = require("path");
 module.exports = {
     context: __dirname,
     entry: {
-        station: './static/js/station.tsx',
+        station: './frontend/src/index.tsx',
     },
     plugins: [],
     mode: 'none',
@@ -17,7 +17,7 @@ module.exports = {
         ],
     },
     resolve: {
-        modules: ['node_modules'],
+        modules: ['./frontend/node_modules'],
         extensions: ['.ts', '.tsx', '.js'],
     },
     output: {

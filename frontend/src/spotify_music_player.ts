@@ -1,62 +1,21 @@
 import * as $ from 'jquery';
 
-export class PlaybackState {
-    constructor(public context_uri: string,
-        public current_track_uri: string, public paused: boolean,
-        public raw_position_ms: number, public sample_time: Date,
-        public etag?: Date, public album_image_url?: string,
-        public album_name?: string, public current_track_name?: string, public artist_name?: string,
-        public duration?: number) {
-    }
-}
+import { IMusicPlayer, IPlayerInit, PlaybackState } from './music_player';
 
-export interface MusicPlayer {
-    connect(): Promise<boolean>;
-
-    on(eventName: string, cb: (...args: any[]) => void): void;
-    removeListener(eventName: string): void;
-
-    getCurrentState(): Promise<PlaybackState | null>;
-
-    getVolume(): Promise<number>;
-    setVolume(value: number): Promise<void>;
-
-    play(contextUri: string, currentTrackUri: string): Promise<void>;
-
-    pause(): Promise<void>;
-    resume(): Promise<void>;
-    togglePlay(): Promise<void>;
-
-    seek(positionMS: number): Promise<void>;
-
-    previousTrack(): Promise<void>;
-    nextTrack(): Promise<void>;
-}
-
-export interface PlayerInit {
-    clientName: string;
-    getOAuthToken(cb: (token: string) => void): void;
-    initialVolume?: number;
-}
-
-export function createSpotifyMusicPlayer(options: PlayerInit): MusicPlayer {
-    return new SpotifyMusicPlayer(options);
-}
-
-class SpotifyMusicPlayer implements MusicPlayer {
-    impl: Spotify.SpotifyPlayer;
-    getOAuthToken: (cb: (accessToken: string) => void) => void;
-    deviceId?: string;
-    observers = new Map([
+export default class SpotifyMusicPlayer implements IMusicPlayer {
+    private impl: Spotify.SpotifyPlayer;
+    private getOAuthToken: (cb: (accessToken: string) => void) => void;
+    private deviceId?: string;
+    private observers = new Map([
         ['authentication_error', $.Callbacks()],
         ['account_error', $.Callbacks()],
         ['too_many_requests_error', $.Callbacks()],
     ]);
 
-    constructor(options: PlayerInit) {
+    constructor(options: IPlayerInit) {
         this.impl = new Spotify.Player({
-            name: options.clientName,
             getOAuthToken: options.getOAuthToken,
+            name: options.clientName,
             volume: options.initialVolume,
         });
         this.getOAuthToken = options.getOAuthToken;
@@ -66,12 +25,12 @@ class SpotifyMusicPlayer implements MusicPlayer {
         });
     }
 
-    connect(): Promise<boolean> { return this.impl.connect(); }
+    public connect(): Promise<boolean> { return this.impl.connect(); }
 
-    on(eventName: string, cb: (_args: any[]) => void) {
+    public on(eventName: string, cb: (_args: any[]) => void) {
         if (eventName === 'player_state_changed') {
             this.impl.on(eventName, playbackState => {
-                cb(<any>createPlaybackStateFromSpotify(playbackState));
+                cb(createPlaybackStateFromSpotify(playbackState) as any);
             });
         } else if (eventName === 'too_many_requests_error') {
             this.observers.get(eventName)!.add(cb);
@@ -85,24 +44,24 @@ class SpotifyMusicPlayer implements MusicPlayer {
         }
     }
 
-    removeListener(eventName: string) {
+    public removeListener(eventName: string) {
         // @ts-ignore: Spotify.SpotifyPlayer requires multiple overloads
         this.impl.removeListener(eventName);
     }
 
-    async getCurrentState(): Promise<PlaybackState | null> {
+    public async getCurrentState(): Promise<PlaybackState | null> {
         const state = await this.impl.getCurrentState();
         return (state ? createPlaybackStateFromSpotify(state) : null);
     }
 
-    getVolume(): Promise<number> { return this.impl.getVolume(); }
-    setVolume(value: number): Promise<void> { return this.impl.setVolume(value); }
+    public getVolume(): Promise<number> { return this.impl.getVolume(); }
+    public setVolume(value: number): Promise<void> { return this.impl.setVolume(value); }
 
-    play(contextUri: string, currentTrackUri: string): Promise<void> {
+    public play(contextUri: string, currentTrackUri: string): Promise<void> {
         return this.playWithRetry(contextUri, currentTrackUri);
     }
 
-    async playWithRetry(contextUri: string, currentTrackUri: string, retryCount = 0): Promise<void> {
+    public async playWithRetry(contextUri: string, currentTrackUri: string, retryCount = 0): Promise<void> {
         if (!this.deviceId) {
             return Promise.reject('Spotify is not ready: no deviceId');
         }
@@ -134,7 +93,16 @@ class SpotifyMusicPlayer implements MusicPlayer {
         }
     }
 
-    putStartResumePlaybackRequest(contextUri: string, currentTrackUri: string): Promise<Response> {
+    public pause(): Promise<void> { return this.impl.pause(); }
+    public resume(): Promise<void> { return this.impl.resume(); }
+    public togglePlay(): Promise<void> { return this.impl.togglePlay(); }
+
+    public seek(positionMS: number): Promise<void> { return this.impl.seek(positionMS); }
+
+    public previousTrack(): Promise<void> { return this.impl.previousTrack(); }
+    public nextTrack(): Promise<void> { return this.impl.nextTrack(); }
+
+    private putStartResumePlaybackRequest(contextUri: string, currentTrackUri: string): Promise<Response> {
         const baseUrl = 'https://api.spotify.com/v1/me/player/play';
         const queryParams = `device_id=${this.deviceId}`;
         const url = `${baseUrl}?${queryParams}`;
@@ -154,20 +122,11 @@ class SpotifyMusicPlayer implements MusicPlayer {
             });
         });
     }
-
-    pause(): Promise<void> { return this.impl.pause(); }
-    resume(): Promise<void> { return this.impl.resume(); }
-    togglePlay(): Promise<void> { return this.impl.togglePlay(); }
-
-    seek(positionMS: number): Promise<void> { return this.impl.seek(positionMS); }
-
-    previousTrack(): Promise<void> { return this.impl.previousTrack(); }
-    nextTrack(): Promise<void> { return this.impl.nextTrack(); }
 }
 
 function createPlaybackStateFromSpotify(state: Spotify.PlaybackState) {
     return new PlaybackState(
-        <string>state.context.uri,
+        state.context.uri as string,
         state.track_window.current_track.uri,
         state.paused,
         state.position,

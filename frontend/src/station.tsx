@@ -1,52 +1,17 @@
 import * as $ from 'jquery';
 import * as React from 'react';
-import * as ReactDOM from 'react-dom';
+import './Station.css';
 
-import { CircularArray, ListenerRole, median, wait } from './util';
-import { MusicPlayer, PlaybackState, createSpotifyMusicPlayer } from './music_player';
-import { ChannelWebSocketBridge, WebSocketBridge } from './websocket_bridge';
-import { ViewManager } from './station_view';
 import { StationDebug } from './components/StationDebug';
+import { IMusicPlayer, PlaybackState } from './music_player';
+import SpotifyMusicPlayer from './spotify_music_player';
+import { ViewManager } from './station_view';
+import { CircularArray, ListenerRole, median, wait } from './util';
+import { IWebSocketBridge } from './websocket_bridge';
 
 const SERVER_HEARTBEAT_INTERVAL_MS = 3000;
 export const MAX_SEEK_ERROR_MS = 2000;
 export const SEEK_OVERCORRECT_MS = 2000;
-
-interface AppData {
-    userId: number;
-    stationId: number;
-    stationTitle: string;
-    userIsDJ: boolean;
-    userIsAdmin: boolean;
-    spotifyConnectPlayerName: string;
-    accessToken: string;
-    accessTokenExpirationTime: Date;
-    debug: boolean;
-}
-
-declare const APP_DATA: AppData;
-
-window.onSpotifyWebPlaybackSDKReady = () => {
-    let listenerRole = ListenerRole.None;
-    if (APP_DATA.userIsDJ) listenerRole |= ListenerRole.DJ;
-    if (APP_DATA.userIsAdmin) listenerRole |= ListenerRole.Admin;
-    let webSocketBridge = new ChannelWebSocketBridge();
-
-    ReactDOM.render(
-        <StationManager
-            userId={APP_DATA.userId}
-            listenerRole={listenerRole}
-            stationTitle={APP_DATA.stationTitle}
-            server={new StationServer(APP_DATA.stationId, getCrossSiteRequestForgeryToken(), webSocketBridge)}
-            clientName={APP_DATA.spotifyConnectPlayerName}
-            accessToken={APP_DATA.accessToken}
-            accessTokenExpirationTime={APP_DATA.accessTokenExpirationTime}
-            debug={APP_DATA.debug}
-            initialVolume={StationMusicPlayer.getCachedVolume()}
-        />,
-        document.getElementById('station')
-    );
-};
 
 interface IStationManagerProps {
     userId: number;
@@ -77,18 +42,18 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
     constructor(props: any) {
         super(props);
         this.state = {
-            taskExecutor: new TaskExecutor(),
+            accessToken: props.accessToken,
+            accessTokenExpirationTime: props.accessTokenExpirationTime,
+            clientServerTimeOffsets: new CircularArray<number>(5),
             musicPlayer: new StationMusicPlayer(
-                createSpotifyMusicPlayer({
+                new SpotifyMusicPlayer({
                     clientName: this.props.clientName,
                     getOAuthToken: cb => this.getOAuthToken(cb),
                     initialVolume: this.props.initialVolume,
                 })),
-            accessToken: props.accessToken,
-            accessTokenExpirationTime: props.accessTokenExpirationTime,
-            viewManager: new ViewManager(this.props.listenerRole, this.props.stationTitle, this.props.debug),
             roundTripTimes: new CircularArray<number>(5),
-            clientServerTimeOffsets: new CircularArray<number>(5),
+            taskExecutor: new TaskExecutor(),
+            viewManager: new ViewManager(this.props.listenerRole, this.props.stationTitle, this.props.debug),
         }
 
         this.bindMusicPlayerActions();
@@ -108,14 +73,31 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         );
     }
 
-    bindMusicPlayerActions() {
+    public getAdjustedPlaybackPosition(serverState: PlaybackState): number {
+        const position = serverState.raw_position_ms;
+        let adjustment = 0;
+        if (!serverState.paused) {
+            const serverTimeOffset = this.getMedianClientServerTimeOffset();
+            adjustment = ((new Date()).getTime() - (serverState.sample_time.getTime() - serverTimeOffset));
+        }
+
+        return (position + adjustment);
+    }
+
+    // Test utilities
+
+    public getMusicPlayer(): IMusicPlayer {
+        return this.state.musicPlayer.musicPlayer;
+    }
+
+    private bindMusicPlayerActions() {
         this.state.musicPlayer.on('ready', () => {
             this.startSteadyState();
 
             this.state.viewManager.stationView.setState(() => ({ isConnected: true }));
             this.state.viewManager.listenerView.setState(() => ({ isReady: true }));
             this.state.musicPlayer.getVolume().then(volume => {
-                this.state.viewManager.listenerView.setState(() => ({ volume: volume }));
+                this.state.viewManager.listenerView.setState(() => ({ volume }));
             });
             this.state.viewManager.djView.setState(() => ({ isReady: true }));
         });
@@ -129,13 +111,13 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         });
     }
 
-    bindServerActions() {
+    private bindServerActions() {
         this.props.server.on('error', (error: ServerError, message: string) => {
             console.error(`${error}: ${message}`);
         });
     }
 
-    bindViewActions() {
+    private bindViewActions() {
         this.state.viewManager.adminView.on('invite_listener', (username: string) => {
             this.state.taskExecutor.push(() => this.inviteListener(username));
         });
@@ -145,7 +127,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         });
     }
 
-    bindSteadyStateActions() {
+    private bindSteadyStateActions() {
         this.state.musicPlayer.on('player_state_changed', clientState => {
             if (clientState) {
                 if (this.state.clientEtag && (clientState.sample_time <= this.state.clientEtag)) {
@@ -187,8 +169,9 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         });
     }
 
-    startSteadyState() {
+    private startSteadyState() {
         this.bindSteadyStateActions();
+        // tslint:disable-next-line:no-bitwise
         if ((this.props.listenerRole & ListenerRole.Admin) === ListenerRole.Admin) {
             this.state.taskExecutor.push(() => this.showListeners());
         }
@@ -198,22 +181,10 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         this.enableHeartbeat();
     }
 
-    stopSteadyState() {
-        this.state.musicPlayer.removeListener('player_state_changed');
-        this.props.server.removeListener('playback_state_changed');
-        this.state.viewManager.listenerView.removeListener('muteButtonClick');
-        this.state.viewManager.listenerView.removeListener('volumeSliderChange');
-        this.state.viewManager.djView.removeListener('playPauseButtonClick');
-        this.state.viewManager.djView.removeListener('previousTrackButtonClick');
-        this.state.viewManager.djView.removeListener('nextTrackButtonClick');
-
-        this.disableHeartbeat();
-        this.state.taskExecutor.clear();
-    }
-
-    enableHeartbeat() {
+    private enableHeartbeat() {
         const heartbeatIntervalId = window.setInterval(() => {
             this.state.taskExecutor.push(() => this.calculatePing());
+            // tslint:disable-next-line:no-bitwise
             if ((this.props.listenerRole & ListenerRole.DJ) === ListenerRole.DJ) {
                 this.state.taskExecutor.push(() => this.updateServerPlaybackState());
             }
@@ -224,16 +195,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         });
     }
 
-    disableHeartbeat() {
-        if (this.state.heartbeatIntervalId) {
-            window.clearInterval(this.state.heartbeatIntervalId);
-            this.setState({
-                heartbeatIntervalId: undefined,
-            });
-        }
-    }
-
-    async updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
+    private async updateServerPlaybackState(playbackState?: PlaybackState): Promise<void> {
         if (!playbackState) {
             const tempPlaybackState = await this.state.musicPlayer.getCurrentState();
             playbackState = (tempPlaybackState ? tempPlaybackState : undefined);
@@ -247,7 +209,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         playbackState.sample_time = new Date(playbackState.sample_time.getTime() + this.getMedianClientServerTimeOffset());
 
         try {
-            const serverState: PlaybackState = await Promise.race([this.props.server.sendPlaybackState(playbackState, this.state.serverEtag), timeout(5000)]);
+            const serverState: PlaybackState = await Promise.race([this.props.server.sendPlaybackState(playbackState), timeout(5000)]);
             await this.applyServerPlaybackState(serverState);
         } catch (e) {
             console.error(e);
@@ -256,19 +218,19 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         }
     }
 
-    async syncServerPlaybackState(): Promise<void> {
+    private async syncServerPlaybackState(): Promise<void> {
         const serverState = await Promise.race([this.props.server.getPlaybackState(), timeout(5000)]);
         if (serverState) {
             return this.applyServerPlaybackState(serverState);
         }
     }
 
-    async calculatePing(): Promise<void> {
+    private async calculatePing(): Promise<void> {
         const pong = await Promise.race([this.props.server.sendPingRequest(), timeout(5000)]);
         this.adjustServerTimeOffset(pong.startTime, pong.serverTime, new Date());
     }
 
-    getOAuthToken(cb: (accessToken: string) => void) {
+    private getOAuthToken(cb: (accessToken: string) => void) {
         let refreshTokenIfNeeded = Promise.resolve(this.props.accessToken);
         if ((new Date()) > this.props.accessTokenExpirationTime) {
             refreshTokenIfNeeded = this.refreshOAuthToken();
@@ -277,7 +239,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         refreshTokenIfNeeded.then(accessToken => cb(accessToken));
     }
 
-    async refreshOAuthToken(): Promise<string> {
+    private async refreshOAuthToken(): Promise<string> {
         const response = await Promise.race([this.props.server.refreshOAuthToken(this.props.userId), timeout(5000)]);
         this.setState({
             accessToken: response.accessToken,
@@ -286,7 +248,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         return response.accessToken;
     }
 
-    async applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
+    private async applyServerPlaybackState(serverState: PlaybackState): Promise<void> {
         if (this.state.serverEtag && (serverState.etag! <= this.state.serverEtag)) {
             return;
         }
@@ -345,16 +307,16 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         }
     }
 
-    showListeners(): Promise<void> {
+    private showListeners(): Promise<void> {
         return Promise.race([this.props.server.getListeners(), timeout(5000)])
             .then(listeners => {
                 this.state.viewManager.adminView.setState(() => ({
-                    listeners: listeners,
+                    listeners,
                 }));
             });
     }
 
-    async inviteListener(username: string): Promise<void> {
+    private async inviteListener(username: string): Promise<void> {
         try {
             const listener = await Promise.race([this.props.server.inviteListener(username, false, false), timeout(5000)]);
             this.state.viewManager.adminView.showListenerInviteResult(username);
@@ -368,18 +330,18 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         }
     }
 
-    async deleteListener(listenerId: number): Promise<void> {
+    private async deleteListener(listenerId: number): Promise<void> {
         try {
-            const listener = await Promise.race([this.props.server.deleteListener(listenerId), timeout(5000)]);
+            await Promise.race([this.props.server.deleteListener(listenerId), timeout(5000)]);
             this.state.viewManager.adminView.setState((prevState: any) => ({
-                listeners: prevState.listeners.filter((listener: Listener) => (listener.id !== listenerId)),
+                listeners: prevState.listeners.filter((listener: IListener) => (listener.id !== listenerId)),
             }));
         } catch (e) {
             this.state.viewManager.adminView.showListenerDeleteResult(e.message);
         }
     }
 
-    async currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
+    private async currentTrackReady(expectedState: PlaybackState): Promise<boolean> {
         const state = await this.state.musicPlayer.getCurrentState();
         if (state) {
             return state.current_track_uri === expectedState.current_track_uri;
@@ -388,7 +350,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         }
     }
 
-    async currentPositionReady(expectedPosition: number): Promise<boolean> {
+    private async currentPositionReady(expectedPosition: number): Promise<boolean> {
         const state = await this.state.musicPlayer.getCurrentState();
         if (state) {
             return state.raw_position_ms >= expectedPosition;
@@ -397,23 +359,12 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         }
     }
 
-    getMedianClientServerTimeOffset(): number {
+    private getMedianClientServerTimeOffset(): number {
         console.assert(this.state.clientServerTimeOffsets.length > 0);
         return median(this.state.clientServerTimeOffsets.entries());
     }
 
-    getAdjustedPlaybackPosition(serverState: PlaybackState): number {
-        const position = serverState.raw_position_ms;
-        let adjustment = 0;
-        if (!serverState.paused) {
-            const serverTimeOffset = this.getMedianClientServerTimeOffset();
-            adjustment = ((new Date()).getTime() - (serverState.sample_time.getTime() - serverTimeOffset));
-        }
-
-        return (position + adjustment);
-    }
-
-    adjustServerTimeOffset(startTime: Date, serverTime: Date, currentTime: Date) {
+    private adjustServerTimeOffset(startTime: Date, serverTime: Date, currentTime: Date) {
         const roundTripTimes = this.state.roundTripTimes;
         roundTripTimes.push(currentTime.getTime() - startTime.getTime());
 
@@ -423,18 +374,18 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         clientServerTimeOffsets.push(clientServerTimeOffset);
 
         this.setState({
-            roundTripTimes,
             clientServerTimeOffsets,
+            roundTripTimes,
         });
     }
 }
 
-interface PongResponse {
+interface IPongResponse {
     startTime: Date;
     serverTime: Date;
 }
 
-interface OAuthTokenResponse {
+interface IOAuthTokenResponse {
     accessToken: string;
     accessTokenExpirationTime: Date;
 }
@@ -447,7 +398,7 @@ export enum ServerError {
 
 class ListenerAlreadyExistsError extends Error { }
 
-export interface Listener {
+export interface IListener {
     id: number;
     username: string,
     stationId: number,
@@ -456,15 +407,14 @@ export interface Listener {
 }
 
 export class StationServer {
-    requestId = 0;
-    observers = new Map([
+    private observers = new Map([
         ['error', $.Callbacks()],
         ['join', $.Callbacks()],
         ['pong', $.Callbacks()],
         ['playback_state_changed', $.Callbacks()],
     ]);
 
-    constructor(private stationId: number, private csrftoken: string, private webSocketBridge: WebSocketBridge) {
+    constructor(private stationId: number, private csrftoken: string, private webSocketBridge: IWebSocketBridge) {
         // Correctly decide between ws:// and wss://
         const wsScheme = ((window.location.protocol === 'https:') ? 'wss' : 'ws');
         const wsBaseUrl = wsScheme + '://' + window.location.host;
@@ -473,18 +423,18 @@ export class StationServer {
         this.bindWebSocketBridgeActions();
     }
 
-    bindWebSocketBridgeActions() {
+    public bindWebSocketBridgeActions() {
         this.webSocketBridge.listen(action => { this.onMessage(action); });
     }
 
     // Public events
     // playback_state_change: (state: PlaybackState)
     // error: (error: ServerError, message: string)
-    on(eventName: string, cb: Function) {
+    public on(eventName: string, cb: any) {
         this.observers.get(eventName)!.add(cb);
     }
 
-    onOnce(eventName: string, cb: Function) {
+    public onOnce(eventName: string, cb: any) {
         const cbWrapper = (...args: any[]) => {
             this.removeListener(eventName, cbWrapper);
             cb(...args);
@@ -492,17 +442,7 @@ export class StationServer {
         this.on(eventName, cbWrapper);
     }
 
-    onRequest(eventName: string, thisRequestId: number, cb: Function) {
-        const cbWrapper = (requestId: number, ...args: any[]) => {
-            if (requestId === thisRequestId) {
-                this.removeListener(eventName, cbWrapper);
-                cb(...args);
-            }
-        };
-        this.on(eventName, cbWrapper);
-    }
-
-    removeListener(eventName: string, cb?: Function) {
+    public removeListener(eventName: string, cb?: any) {
         if (cb) {
             this.observers.get(eventName)!.remove(cb);
         } else {
@@ -510,7 +450,7 @@ export class StationServer {
         }
     }
 
-    sendPingRequest(): Promise<PongResponse> {
+    public sendPingRequest(): Promise<IPongResponse> {
         return new Promise(resolve => {
             this.onOnce('pong', resolve);
             this.webSocketBridge.send({
@@ -520,7 +460,7 @@ export class StationServer {
         });
     }
 
-    async refreshOAuthToken(userId: number): Promise<OAuthTokenResponse> {
+    public async refreshOAuthToken(userId: number): Promise<IOAuthTokenResponse> {
         const url = `/api/v1/users/${userId}/accesstoken/refresh/`;
         const response = await fetch(url, {
             credentials: 'include',
@@ -538,10 +478,10 @@ export class StationServer {
         }
     }
 
-    async sendPlaybackState(playbackState: PlaybackState, serverEtag?: Date): Promise<PlaybackState> {
+    public async sendPlaybackState(playbackState: PlaybackState): Promise<PlaybackState> {
         const url = `/api/v1/stations/${this.stationId}/`;
 
-        let headers = new Headers();
+        const headers = new Headers();
         headers.append('X-CSRFToken', this.csrftoken);
         headers.append('Content-Type', 'application/json');
 
@@ -550,7 +490,7 @@ export class StationServer {
                 'playbackstate': playbackState
             }),
             credentials: 'include',
-            headers: headers,
+            headers,
             method: 'PATCH',
         });
 
@@ -564,7 +504,7 @@ export class StationServer {
         }
     }
 
-    async getPlaybackState(): Promise<PlaybackState | undefined> {
+    public async getPlaybackState(): Promise<PlaybackState | undefined> {
         const url = `/api/v1/stations/${this.stationId}/`;
         const response = await fetch(url, {
             credentials: 'include',
@@ -582,7 +522,7 @@ export class StationServer {
         }
     }
 
-    async getListeners(): Promise<Array<Listener>> {
+    public async getListeners(): Promise<IListener[]> {
         const url = `/api/v1/stations/${this.stationId}/listeners/`;
         const response = await fetch(url, {
             credentials: 'include',
@@ -596,27 +536,27 @@ export class StationServer {
         }
     }
 
-    async inviteListener(username: string, isAdmin: boolean, isDJ: boolean): Promise<Listener> {
+    public async inviteListener(username: string, isAdmin: boolean, isDJ: boolean): Promise<IListener> {
         const url = `/api/v1/stations/${this.stationId}/listeners/`;
-        let headers = new Headers();
+        const headers = new Headers();
         headers.append('X-CSRFToken', this.csrftoken);
         headers.append('Content-Type', 'application/json');
 
         const response = await fetch(url, {
             body: JSON.stringify({
-                'user': username,
-                'station': this.stationId,
                 'is_admin': isAdmin,
                 'is_dj': isDJ,
+                'station': this.stationId,
+                'user': username,
             }),
             credentials: 'include',
-            headers: headers,
+            headers,
             method: 'POST',
         });
 
         const data = await response.json();
         if (response.ok) {
-            return createListenerFromServer(data as ServerListener);
+            return createListenerFromServer(data as IServerListener);
         } else if (data.non_field_errors.some((s: string) => (s === "The fields user, station must make a unique set."))) {
             throw new ListenerAlreadyExistsError();
         } else {
@@ -624,15 +564,15 @@ export class StationServer {
         }
     }
 
-    async deleteListener(listenerId: number): Promise<void> {
+    public async deleteListener(listenerId: number): Promise<void> {
         const url = `/api/v1/stations/${this.stationId}/listeners/${listenerId}/`;
 
-        let headers = new Headers();
+        const headers = new Headers();
         headers.append('X-CSRFToken', this.csrftoken);
 
         const response = await fetch(url, {
             credentials: 'include',
-            headers: headers,
+            headers,
             method: 'DELETE',
         });
 
@@ -641,7 +581,7 @@ export class StationServer {
         }
     }
 
-    onMessage(action: any) {
+    private onMessage(action: any) {
         console.log('Received: ', action);
         if (action.error) {
             this.observers.get('error')!.fire(serverErrorFromString(action.error), action.message);
@@ -651,9 +591,9 @@ export class StationServer {
             const serverPlaybackState = createPlaybackStateFromServer(action.playbackstate);
             this.observers.get(action.type)!.fire(serverPlaybackState);
         } else if (action.type === 'pong') {
-            const pong: PongResponse = {
-                startTime: new Date(action.start_time),
+            const pong: IPongResponse = {
                 serverTime: new Date(action.server_time),
+                startTime: new Date(action.start_time),
             };
             this.observers.get(action.type)!.fire(pong);
         }
@@ -679,7 +619,7 @@ function createPlaybackStateFromServer(state: any) {
         new Date(state.last_updated_time));
 }
 
-export interface ServerListener {
+export interface IServerListener {
     id: number;
     user: string;
     station: number;
@@ -687,50 +627,50 @@ export interface ServerListener {
     is_dj: boolean;
 }
 
-function createListenerFromServer(listener: ServerListener): Listener {
+function createListenerFromServer(listener: IServerListener): IListener {
     return {
         'id': listener.id,
-        'username': listener.user,
-        'stationId': listener.station,
         'isAdmin': listener.is_admin,
         'isDJ': listener.is_dj,
+        'stationId': listener.station,
+        'username': listener.user,
     }
 }
 
 export class StationMusicPlayer {
-    volumeBeforeMute = 0.8;
-
-    constructor(public musicPlayer: MusicPlayer) {
-        this.musicPlayer.connect();
-    }
-
-    on(eventName: string, cb: (...args: any[]) => void) {
-        this.musicPlayer.on(eventName, cb);
-    }
-
-    removeListener(eventName: string) {
-        this.musicPlayer.removeListener(eventName);
-    }
-
-    getCurrentState(): Promise<PlaybackState | null> { return this.musicPlayer.getCurrentState(); }
-
-    static getCachedVolume() {
+    public static getCachedVolume() {
         const value = localStorage.getItem('musicVolume');
         return ((value !== null) ? parseFloat(value) : 0.8);
     }
 
-    static setCachedVolume(volume: number) {
+    public static setCachedVolume(volume: number) {
         localStorage.setItem('musicVolume', volume.toString());
     }
 
-    getVolume(): Promise<number> { return this.musicPlayer.getVolume(); }
+    private volumeBeforeMute = 0.8;
 
-    setVolume(value: number): Promise<void> {
+    constructor(public musicPlayer: IMusicPlayer) {
+        this.musicPlayer.connect();
+    }
+
+    public on(eventName: string, cb: (...args: any[]) => void) {
+        this.musicPlayer.on(eventName, cb);
+    }
+
+    public removeListener(eventName: string) {
+        this.musicPlayer.removeListener(eventName);
+    }
+
+    public getCurrentState(): Promise<PlaybackState | null> { return this.musicPlayer.getCurrentState(); }
+
+    public getVolume(): Promise<number> { return this.musicPlayer.getVolume(); }
+
+    public setVolume(value: number): Promise<void> {
         StationMusicPlayer.setCachedVolume(value);
         return this.musicPlayer.setVolume(value);
     }
 
-    async muteUnmuteVolume(): Promise<number> {
+    public async muteUnmuteVolume(): Promise<number> {
         const volume = await this.getVolume();
 
         // BUG: Spotify API returns null instead of 0.0.
@@ -750,31 +690,31 @@ export class StationMusicPlayer {
         return newVolume;
     }
 
-    play(contextUri: string, currentTrackUri: string): Promise<void> {
+    public play(contextUri: string, currentTrackUri: string): Promise<void> {
         return this.musicPlayer.play(contextUri, currentTrackUri);
     }
 
-    pause(): Promise<void> { return this.musicPlayer.pause(); }
-    resume(): Promise<void> { return this.musicPlayer.resume(); }
-    togglePlay(): Promise<void> { return this.musicPlayer.togglePlay(); }
+    public pause(): Promise<void> { return this.musicPlayer.pause(); }
+    public resume(): Promise<void> { return this.musicPlayer.resume(); }
+    public togglePlay(): Promise<void> { return this.musicPlayer.togglePlay(); }
 
-    async freeze(duration: number): Promise<void> {
+    public async freeze(duration: number): Promise<void> {
         await this.musicPlayer.pause();
         await wait(duration);
         await this.musicPlayer.resume();
     }
 
-    seek(positionMS: number): Promise<void> { return this.musicPlayer.seek(positionMS); }
+    public seek(positionMS: number): Promise<void> { return this.musicPlayer.seek(positionMS); }
 
-    previousTrack(): Promise<void> { return this.musicPlayer.previousTrack(); }
-    nextTrack(): Promise<void> { return this.musicPlayer.nextTrack(); }
+    public previousTrack(): Promise<void> { return this.musicPlayer.previousTrack(); }
+    public nextTrack(): Promise<void> { return this.musicPlayer.nextTrack(); }
 }
 
 class TaskExecutor {
-    tasks: Promise<any> = Promise.resolve();
-    tasksInFlight: number = 0;
+    private tasks: Promise<any> = Promise.resolve();
+    private tasksInFlight: number = 0;
 
-    push(task: (...args: any[]) => Promise<any>) {
+    public push(task: (...args: any[]) => Promise<any>) {
         if (this.tasksInFlight === 0) {
             // why reset tasks here? in case the native promises implementation isn't
             // smart enough to garbage collect old completed tasks in the chain.
@@ -786,7 +726,7 @@ class TaskExecutor {
         })
     }
 
-    clear() {
+    public clear() {
         this.tasksInFlight = 0;
         this.tasks = Promise.resolve();
     }
@@ -803,31 +743,4 @@ async function retry(condition: () => Promise<boolean>): Promise<void> {
         await wait(250);
         await retry(condition);
     }
-}
-
-function getCrossSiteRequestForgeryToken(): string {
-    const csrftoken = getCookie('csrftoken');
-    if (!csrftoken) {
-        console.assert(false, 'Cannot obtain csrftoken');
-        throw new Error('Cannot obtain csrftoken');
-    }
-
-    return csrftoken;
-}
-
-function getCookie(name: string) {
-    var cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        var cookies = document.cookie.split(';');
-        for (var i = 0; i < cookies.length; i++) {
-            var cookie = $.trim(cookies[i]);
-            // Does this cookie string begin with the name we want?
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-
-    return cookieValue;
 }

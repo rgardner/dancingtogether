@@ -5,8 +5,7 @@
     "scripts": {
         "build": "webpack --config webpack.dev.config.js --progress --colors",
         "build-production": "webpack --config webpack.prod.config.js --progress --colors",
-        "watch": "webpack --config webpack.dev.config.js --watch",
-        "test": "jest"
+        "watch": "webpack --config webpack.dev.config.js --watch"
     },
     "devDependencies": {
         "@types/jest": "^22.2.3",
@@ -35,23 +34,5 @@
         "webpack": "^4.8.3",
         "webpack-bundle-tracker": "^0.3.0",
         "whatwg-fetch": "^2.0.4"
-    },
-    "jest": {
-        "automock": false,
-        "setupFiles": [
-            "./frontend-tests/setupJest.ts"
-        ],
-        "transform": {
-            "^.+\\.tsx?$": "ts-jest"
-        },
-        "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.(jsx?|tsx?)$",
-        "moduleFileExtensions": [
-            "ts",
-            "tsx",
-            "js",
-            "jsx",
-            "json",
-            "node"
-        ]
     }
 }

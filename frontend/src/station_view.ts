@@ -1,16 +1,16 @@
 import * as $ from 'jquery';
 import { PlaybackState } from './music_player';
-import { Listener, ServerError } from './station';
+import { IListener, ServerError } from './station';
 import { ListenerRole, wait } from './util';
 
 const MUSIC_POSITION_VIEW_REFRESH_INTERVAL_MS = 1000;
 
 export class ViewManager {
-    stationView: StationView;
-    musicPositionView = new MusicPositionView();
-    listenerView = new StationListenerView();
-    djView: StationDJView;
-    adminView: StationAdminView;
+    public stationView: StationView;
+    public musicPositionView = new MusicPositionView();
+    public listenerView = new StationListenerView();
+    public djView: StationDJView;
+    public adminView: StationAdminView;
 
     constructor(listenerRole: ListenerRole, stationTitle: string, debug: boolean) {
         this.stationView = new StationView(stationTitle);
@@ -21,10 +21,10 @@ export class ViewManager {
 
 class StationView {
     private state = new class {
-        stationTitle = '';
-        playbackState?: PlaybackState;
-        isConnected = false;
-        errorMessage?: string;
+        public stationTitle = '';
+        public playbackState?: PlaybackState;
+        public isConnected = false;
+        public errorMessage?: string;
     };
 
     constructor(stationTitle: string) {
@@ -32,13 +32,13 @@ class StationView {
         this.render();
     }
 
-    setState(updater: any) {
+    public setState(updater: any) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
         this.render();
     }
 
-    render() {
+    public render() {
         $('#station-title').html(this.state.stationTitle);
 
         $('#connection-status').removeClass().empty();
@@ -59,32 +59,32 @@ class StationView {
             // Update album art
             $('#album-art').empty();
             $('<img/>', {
-                src: this.state.playbackState.album_image_url,
                 alt: this.state.playbackState.album_name,
+                src: this.state.playbackState.album_image_url,
             }).appendTo('#album-art');
 
             // Update track title and track artist
-            $('#playback-track-title').html(<string>this.state.playbackState.current_track_name);
-            $('#playback-track-artist').html(<string>this.state.playbackState.artist_name);
+            $('#playback-track-title').html(this.state.playbackState.current_track_name as string);
+            $('#playback-track-artist').html(this.state.playbackState.artist_name as string);
 
             // Update duration, current position is handled in MusicPositionView
-            $('#playback-duration').html(msToTimeString(<number>this.state.playbackState.duration));
+            $('#playback-duration').html(msToTimeString(this.state.playbackState.duration as number));
         }
     }
 }
 
 class MusicPositionView {
     private state = new class {
-        positionMS: number = 0.0;
-        paused?: boolean;
+        public positionMS: number = 0.0;
+        public paused?: boolean;
     };
-    refreshTimeoutId?: number;
+    private refreshTimeoutId?: number;
 
     constructor() {
         this.render();
     }
 
-    setState(updater: any) {
+    public setState(updater: any) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
 
@@ -97,7 +97,11 @@ class MusicPositionView {
         this.render();
     }
 
-    ensureEnableRefresh() {
+    public render() {
+        $('#playback-current-position').html(msToTimeString(this.state.positionMS));
+    }
+
+    private ensureEnableRefresh() {
         if (!this.refreshTimeoutId) {
             this.refreshTimeoutId = window.setInterval(() => {
                 this.render();
@@ -106,24 +110,20 @@ class MusicPositionView {
         }
     }
 
-    ensureDisableRefresh() {
+    private ensureDisableRefresh() {
         if (this.refreshTimeoutId) {
             window.clearInterval(this.refreshTimeoutId);
             this.refreshTimeoutId = undefined;
         }
     }
-
-    render() {
-        $('#playback-current-position').html(msToTimeString(this.state.positionMS));
-    }
 }
 
 class StationListenerView {
     private state = new class {
-        isReady: boolean = false;
-        volume: number = 0.8;
+        public isReady: boolean = false;
+        public volume: number = 0.8;
     };
-    observers = new Map([
+    private observers = new Map([
         ['muteButtonClick', $.Callbacks()],
         ['volumeSliderChange', $.Callbacks()],
     ]);
@@ -133,32 +133,21 @@ class StationListenerView {
         this.render();
     }
 
-    on(eventName: string, cb: (...args: any[]) => void) {
+    public on(eventName: string, cb: (...args: any[]) => void) {
         this.observers.get(eventName)!.add(cb);
     }
 
-    removeListener(eventName: string) {
+    public removeListener(eventName: string) {
         this.observers.get(eventName)!.empty();
     }
 
-    setState(updater: any) {
+    public setState(updater: any) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
         this.render();
     }
 
-    bindUIActions() {
-        $('#mute-button').on('click', () => {
-            this.observers.get('muteButtonClick')!.fire();
-        });
-
-        $('#volume-slider').change(() => {
-            const newVolume = parseFloat($('#volume-slider').val() as string);
-            this.observers.get('volumeSliderChange')!.fire(newVolume);
-        });
-    }
-
-    render() {
+    public render() {
         $('#listener-controls :button').prop('disabled', !this.state.isReady);
         if (this.state.volume !== null) {
             if (this.state.volume === 0.0) {
@@ -170,15 +159,26 @@ class StationListenerView {
             $('#volume-slider').val(this.state.volume);
         }
     }
+
+    private bindUIActions() {
+        $('#mute-button').on('click', () => {
+            this.observers.get('muteButtonClick')!.fire();
+        });
+
+        $('#volume-slider').change(() => {
+            const newVolume = parseFloat($('#volume-slider').val() as string);
+            this.observers.get('volumeSliderChange')!.fire(newVolume);
+        });
+    }
 }
 
 class StationDJView {
     private state = new class {
-        isEnabled = false;
-        isReady = false;
-        playbackState?: PlaybackState;
+        public isEnabled = false;
+        public isReady = false;
+        public playbackState?: PlaybackState;
     };
-    observers = new Map([
+    private observers = new Map([
         ['playPauseButtonClick', $.Callbacks()],
         ['previousTrackButtonClick', $.Callbacks()],
         ['nextTrackButtonClick', $.Callbacks()],
@@ -190,35 +190,21 @@ class StationDJView {
         this.render();
     }
 
-    on(eventName: string, cb: Function) {
+    public on(eventName: string, cb: any) {
         this.observers.get(eventName)!.add(cb);
     }
 
-    removeListener(eventName: string) {
+    public removeListener(eventName: string) {
         this.observers.get(eventName)!.empty();
     }
 
-    setState(updater: any) {
+    public setState(updater: any) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
         this.render();
     }
 
-    bindUIActions() {
-        $('#play-pause-button').on('click', () => {
-            this.observers.get('playPauseButtonClick')!.fire();
-        });
-
-        $('#previous-track-button').on('click', () => {
-            this.observers.get('previousTrackButtonClick')!.fire();
-        });
-
-        $('#next-track-button').on('click', () => {
-            this.observers.get('nextTrackButtonClick')!.fire();
-        });
-    }
-
-    render() {
+    public render() {
         if (this.state.isEnabled) {
             $('#dj-controls').show();
         } else {
@@ -235,17 +221,31 @@ class StationDJView {
             }
         }
     }
+
+    private bindUIActions() {
+        $('#play-pause-button').on('click', () => {
+            this.observers.get('playPauseButtonClick')!.fire();
+        });
+
+        $('#previous-track-button').on('click', () => {
+            this.observers.get('previousTrackButtonClick')!.fire();
+        });
+
+        $('#next-track-button').on('click', () => {
+            this.observers.get('nextTrackButtonClick')!.fire();
+        });
+    }
 }
 
 class StationAdminView {
     private state = new class {
-        isEnabled = false;
-        isReady = false;
-        listeners: Array<Listener> = [];
-        inviteSentMessage = '';
-        listenerDeleteMessage = '';
+        public isEnabled = false;
+        public isReady = false;
+        public listeners: IListener[] = [];
+        public inviteSentMessage = '';
+        public listenerDeleteMessage = '';
     };
-    observers = new Map([
+    private observers = new Map([
         ['invite_listener', $.Callbacks()],
         ['delete_listener', $.Callbacks()],
     ]);
@@ -256,17 +256,17 @@ class StationAdminView {
         this.render();
     }
 
-    on(eventName: string, cb: Function) {
+    public on(eventName: string, cb: any) {
         this.observers.get(eventName)!.add(cb);
     }
 
-    setState(updater: any) {
+    public setState(updater: any) {
         // Merge previous state and new state
         this.state = Object.assign({}, this.state, updater(this.state));
         this.render();
     }
 
-    showListenerInviteResult(username: string, error?: ServerError) {
+    public showListenerInviteResult(username: string, error?: ServerError) {
         $('#invite-listener-email').val('');
 
         let message = '';
@@ -282,31 +282,12 @@ class StationAdminView {
         wait(10000).then(() => this.setState(() => ({ inviteSentMessage: '' })));
     }
 
-    showListenerDeleteResult(message: string) {
+    public showListenerDeleteResult(message: string) {
         this.setState(() => ({ listenerDeleteMessage: message }));
         wait(10000).then(() => this.setState(() => ({ listenerDeleteMessage: '' })));
     }
 
-    bindUIActions() {
-        $('#invite-listener-email').keyup(e => {
-            // Also submit form if the user hits the enter key
-            if (e.keyCode === 13) {
-                $('#invite-listener-form').submit();
-            }
-        });
-
-        $('#invite-listener-form').submit(e => {
-            e.preventDefault();
-            if (this.state.isEnabled) {
-                const username = $('#invite-listener-username').val() as string;
-                if (username.length > 0) {
-                    this.observers.get('invite_listener')!.fire(username);
-                }
-            }
-        });
-    }
-
-    render() {
+    public render() {
         if (this.state.isEnabled) {
             $('#admin-view').show();
         } else {
@@ -336,15 +317,34 @@ class StationAdminView {
         }
     }
 
-    makeListenerTableRow(username: string, listenerId: number) {
-        let $row = $('<tr>');
+    private bindUIActions() {
+        $('#invite-listener-email').keyup(e => {
+            // Also submit form if the user hits the enter key
+            if (e.keyCode === 13) {
+                $('#invite-listener-form').submit();
+            }
+        });
+
+        $('#invite-listener-form').submit(e => {
+            e.preventDefault();
+            if (this.state.isEnabled) {
+                const username = $('#invite-listener-username').val() as string;
+                if (username.length > 0) {
+                    this.observers.get('invite_listener')!.fire(username);
+                }
+            }
+        });
+    }
+
+    private makeListenerTableRow(username: string, listenerId: number) {
+        const $row = $('<tr>');
         $('<td>').html(username).appendTo($row);
         $('<button>', {
-            type: 'submit',
             class: 'btn btn-warning btn-sm',
             click: () => {
                 this.observers.get('delete_listener')!.fire(listenerId);
             },
+            type: 'submit',
         }).html('Remove').appendTo($('<td>')).appendTo($row);
         return $row;
     }

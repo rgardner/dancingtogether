@@ -3,7 +3,7 @@ all: run
 .PHONY: build
 build:
 	docker-compose build
-	npm install
+	cd frontend && npm install
 
 .PHONY: db-makemigrations
 db-makemigrations:
@@ -38,7 +38,7 @@ stop:
 
 .PHONY: watch
 watch:
-	npm run watch
+	cd frontend && npm run watch
 
 .PHONY: attach
 attach:
@@ -53,7 +53,7 @@ test: test-client test-server
 
 .PHONY: test-client
 test-client:
-	npm test
+	cd frontend && npm run test-nowatch
 
 .PHONY: test-server
 test-server:
