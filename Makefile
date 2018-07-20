@@ -38,7 +38,7 @@ stop:
 
 .PHONY: watch
 watch:
-	cd frontend && npm run watch
+	cd frontend && npm run start
 
 .PHONY: attach
 attach:
@@ -54,6 +54,10 @@ test: test-client test-server
 .PHONY: test-client
 test-client:
 	cd frontend && npm run test-nowatch
+
+.PHONY: test-client-watch
+test-client-watch:
+	cd frontend && npm run test
 
 .PHONY: test-server
 test-server:

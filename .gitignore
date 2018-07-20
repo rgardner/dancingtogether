@@ -11,8 +11,8 @@ staticfiles
 # Frontend
 assets/bundles
 assets/dist
-webpack-stats.json
-webpack-stats-prod.json
+webpack-stats.dev.json
+webpack-stats.prod.json
 
 ## Node
 node_modules

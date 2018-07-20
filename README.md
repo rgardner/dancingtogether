@@ -124,3 +124,8 @@ builds.
 | pytest-django   | Test fixture support and writing unit tests | https://pytest-django.readthedocs.io/en/latest/ |
 | pytest-asyncio  | Websocket consumer tests                    | https://github.com/pytest-dev/pytest-asyncio    |
 | python-dateutil | Parsing server ping response                | https://labix.org/python-dateutil               |
+
+
+## Resources
+
+- [Setting up React and Django](http://v1k45.com/blog/modern-django-part-1-setting-up-django-and-react/)

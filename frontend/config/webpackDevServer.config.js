@@ -70,6 +70,10 @@ module.exports = function(proxy, allowedHost) {
     watchOptions: {
       ignored: ignoredFiles(paths.appSrc),
     },
+    // http://v1k45.com/blog/modern-django-part-1-setting-up-django-and-react/
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+    },
     // Enable HTTPS if the HTTPS environment variable is set to 'true'
     https: protocol === 'https',
     host: host,
