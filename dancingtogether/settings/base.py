@@ -135,7 +135,6 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
-    os.path.join(BASE_DIR, 'assets'),
 ]
 
 WEBPACK_LOADER = {
@@ -177,6 +176,19 @@ LOGGING = {
         'radio': {
             'handlers': ['console'],
             'level': 'DEBUG',
+        },
+    },
+}
+
+# Channel layer definitions
+# http://channels.readthedocs.io/en/latest/topics/channel_layers.html
+
+CHANNEL_LAYERS = {
+    'default': {
+        # This example app uses the Redis channel layer implementation channels_redis
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [os.environ.get('REDIS_URL')],
         },
     },
 }
