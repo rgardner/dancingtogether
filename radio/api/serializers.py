@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class PlaybackStateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlaybackState
-        fields = ('context_uri', 'current_track_uri', 'paused',
+        fields = ('station_id', 'context_uri', 'current_track_uri', 'paused',
                   'raw_position_ms', 'sample_time', 'last_updated_time')
 
     def update(self, instance, validated_data):
@@ -33,8 +33,15 @@ class StationSerializer(serializers.HyperlinkedModelSerializer):
 
     def update(self, instance, validated_data):
         if 'playbackstate' in validated_data:
-            PlaybackStateSerializer().update(instance.playbackstate,
-                                             validated_data['playbackstate'])
+            try:
+                playback_state = PlaybackStateSerializer().update(
+                    instance.playbackstate, validated_data['playbackstate'])
+            except PlaybackState.DoesNotExist:
+                validated_data['playbackstate']['station_id'] = instance.id
+                playback_state = PlaybackStateSerializer().create(
+                    validated_data['playbackstate'])
+
+        instance.playbackstate = playback_state
         return instance
 
 
