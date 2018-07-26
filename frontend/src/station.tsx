@@ -2,10 +2,11 @@ import * as $ from 'jquery';
 import * as React from 'react';
 import './Station.css';
 
+import { MusicPlayerView } from './components/MusicPlayerView';
+import { StationAdmin } from './components/StationAdmin';
 import { StationDebug } from './components/StationDebug';
 import { IMusicPlayer, PlaybackState } from './music_player';
 import SpotifyMusicPlayer from './spotify_music_player';
-import { ViewManager } from './station_view';
 import { CircularArray, ListenerRole, median, wait } from './util';
 import { IWebSocketBridge } from './websocket_bridge';
 
@@ -33,18 +34,27 @@ interface IStationManagerState {
     musicPlayer: StationMusicPlayer;
     accessToken: string;
     accessTokenExpirationTime: Date;
-    viewManager: ViewManager;
+    clientPlaybackState?: PlaybackState;
+    volume?: number;
+    isReady: boolean;
+    isConnected: boolean;
+    errorMessage?: string;
+    listeners: IListener[];
+    adminActionResponseStatus?: string;
     roundTripTimes: CircularArray<number>;
     clientServerTimeOffsets: CircularArray<number>;
 }
 
 export class StationManager extends React.Component<IStationManagerProps, IStationManagerState> {
-    constructor(props: any) {
+    constructor(props: IStationManagerProps) {
         super(props);
         this.state = {
             accessToken: props.accessToken,
             accessTokenExpirationTime: props.accessTokenExpirationTime,
             clientServerTimeOffsets: new CircularArray<number>(5),
+            isConnected: false,
+            isReady: false,
+            listeners: [],
             musicPlayer: new StationMusicPlayer(
                 new SpotifyMusicPlayer({
                     clientName: this.props.clientName,
@@ -53,22 +63,77 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
                 })),
             roundTripTimes: new CircularArray<number>(5),
             taskExecutor: new TaskExecutor(),
-            viewManager: new ViewManager(this.props.listenerRole, this.props.stationTitle, this.props.debug),
+            volume: props.initialVolume,
         }
 
         this.bindMusicPlayerActions();
         this.bindServerActions();
-        this.bindViewActions();
+
+        this.onMuteButtonClick = this.onMuteButtonClick.bind(this);
+        this.onVolumeSliderChange = this.onVolumeSliderChange.bind(this);
+
+        this.onPlayPauseButtonClick = this.onPlayPauseButtonClick.bind(this);
+        this.onPreviousTrackButtonClick = this.onPreviousTrackButtonClick.bind(this);
+        this.onNextTrackButtonClick = this.onNextTrackButtonClick.bind(this);
+
+        this.onListenerInviteSubmit = this.onListenerInviteSubmit.bind(this);
+        this.onListenerDeleteSubmit = this.onListenerDeleteSubmit.bind(this);
     }
 
     public render() {
+        let connectionStatus;
+        if (this.state.isConnected) {
+            connectionStatus = <span className="bg-success">Connected</span>;
+        } else if (this.state.errorMessage) {
+            connectionStatus = <span className="bg-danger">Not Connected</span>;
+        } else {
+            connectionStatus = <span className="bg-info">Not Connected</span>;
+        }
+
         return (
-            <div className="row">
-                {this.props.debug &&
-                    <StationDebug
-                        roundTripTimes={this.state.roundTripTimes}
-                        clientServerTimeOffsets={this.state.clientServerTimeOffsets}
-                    />}
+            <div>
+                <div className="row">
+                    <div className="col">
+                        Status: {connectionStatus}<br /><br />
+                        {this.state.errorMessage &&
+                            <div>
+                                <span className="bg-danger">{this.state.errorMessage}</span><br />
+                            </div>
+                        }
+
+                        <h1>{this.props.stationTitle}</h1>
+                        <MusicPlayerView
+                            listenerRole={this.props.listenerRole}
+                            playbackState={this.state.clientPlaybackState}
+                            isConnected={this.state.isConnected}
+                            isReady={this.state.isReady}
+                            volume={this.state.volume}
+                            onMuteButtonClick={this.onMuteButtonClick}
+                            onVolumeSliderChange={this.onVolumeSliderChange}
+                            onPlayPauseButtonClick={this.onPlayPauseButtonClick}
+                            onPreviousTrackButtonClick={this.onPreviousTrackButtonClick}
+                            onNextTrackButtonClick={this.onNextTrackButtonClick}
+                        />
+                    </div>
+                    {((this.props.listenerRole & ListenerRole.Admin) === ListenerRole.Admin) &&
+                        <div className="col">
+                            <StationAdmin
+                                isReady={this.state.isReady}
+                                listeners={this.state.listeners}
+                                responseStatus={this.state.adminActionResponseStatus}
+                                onListenerInviteSubmit={this.onListenerInviteSubmit}
+                                onListenerDeleteSubmit={this.onListenerDeleteSubmit}
+                            />
+                        </div>
+                    }
+                </div>
+                <div className="row">
+                    {this.props.debug &&
+                        <StationDebug
+                            roundTripTimes={this.state.roundTripTimes}
+                            clientServerTimeOffsets={this.state.clientServerTimeOffsets}
+                        />}
+                </div>
             </div>
         );
     }
@@ -94,36 +159,66 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         this.state.musicPlayer.on('ready', () => {
             this.startSteadyState();
 
-            this.state.viewManager.stationView.setState(() => ({ isConnected: true }));
-            this.state.viewManager.listenerView.setState(() => ({ isReady: true }));
-            this.state.musicPlayer.getVolume().then(volume => {
-                this.state.viewManager.listenerView.setState(() => ({ volume }));
+            this.setState({
+                isConnected: true,
+                isReady: true,
             });
-            this.state.viewManager.djView.setState(() => ({ isReady: true }));
         });
 
         this.state.musicPlayer.on('initialization_error', ({ message }) => {
-            this.state.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+            this.setState({
+                errorMessage: message,
+                isConnected: false,
+            })
         });
 
         this.state.musicPlayer.on('account_error', ({ message }) => {
-            this.state.viewManager.stationView.setState(() => ({ isConnected: false, errorMessage: message }));
+            this.setState({
+                errorMessage: message,
+                isConnected: false,
+            })
         });
+    }
+
+    private onMuteButtonClick() {
+        this.state.musicPlayer.muteUnmuteVolume().then(newVolume => {
+            this.setState({
+                volume: newVolume,
+            });
+        });
+    }
+
+    private onVolumeSliderChange(newVolume: number) {
+        this.state.musicPlayer.setVolume(newVolume).then(() => {
+            this.setState({
+                volume: newVolume,
+            });
+        });
+    }
+
+    private onPlayPauseButtonClick() {
+        this.state.musicPlayer.togglePlay();
+    }
+
+    private onPreviousTrackButtonClick() {
+        this.state.musicPlayer.previousTrack();
+    }
+
+    private onNextTrackButtonClick() {
+        this.state.musicPlayer.nextTrack();
+    }
+
+    private onListenerInviteSubmit(username: string) {
+        this.state.taskExecutor.push(() => this.inviteListener(username));
+    }
+
+    private onListenerDeleteSubmit(listenerId: number) {
+        this.state.taskExecutor.push(() => this.deleteListener(listenerId));
     }
 
     private bindServerActions() {
         this.props.server.on('error', (error: ServerError, message: string) => {
             console.error(`${error}: ${message}`);
-        });
-    }
-
-    private bindViewActions() {
-        this.state.viewManager.adminView.on('invite_listener', (username: string) => {
-            this.state.taskExecutor.push(() => this.inviteListener(username));
-        });
-
-        this.state.viewManager.adminView.on('delete_listener', (listenerId: number) => {
-            this.state.taskExecutor.push(() => this.deleteListener(listenerId));
         });
     }
 
@@ -134,38 +229,14 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
                     return;
                 }
 
-                this.state.viewManager.stationView.setState(() => ({ playbackState: clientState }));
-                this.state.viewManager.musicPositionView.setState(() => ({ paused: clientState.paused, positionMS: clientState.raw_position_ms }));
-                this.state.viewManager.djView.setState(() => ({ playbackState: clientState }));
+                this.setState({
+                    clientPlaybackState: clientState,
+                });
             }
         });
 
         this.props.server.on('playback_state_changed', (serverState: PlaybackState) => {
             this.state.taskExecutor.push(() => this.applyServerPlaybackState(serverState));
-        });
-
-        this.state.viewManager.listenerView.on('muteButtonClick', () => {
-            this.state.musicPlayer.muteUnmuteVolume().then(newVolume => {
-                this.state.viewManager.listenerView.setState(() => ({ volume: newVolume }));
-            });
-        });
-
-        this.state.viewManager.listenerView.on('volumeSliderChange', (newVolume: number) => {
-            this.state.musicPlayer.setVolume(newVolume).then(() => {
-                this.state.viewManager.listenerView.setState(() => ({ volume: newVolume }));
-            });
-        });
-
-        this.state.viewManager.djView.on('playPauseButtonClick', () => {
-            this.state.musicPlayer.togglePlay();
-        });
-
-        this.state.viewManager.djView.on('previousTrackButtonClick', () => {
-            this.state.musicPlayer.previousTrack();
-        });
-
-        this.state.viewManager.djView.on('nextTrackButtonClick', () => {
-            this.state.musicPlayer.nextTrack();
         });
     }
 
@@ -307,37 +378,38 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
         }
     }
 
-    private showListeners(): Promise<void> {
-        return Promise.race([this.props.server.getListeners(), timeout(5000)])
-            .then(listeners => {
-                this.state.viewManager.adminView.setState(() => ({
-                    listeners,
-                }));
-            });
+    private async showListeners(): Promise<void> {
+        const listeners = await Promise.race([this.props.server.getListeners(), timeout(5000)]);
+        this.setState({ listeners });
     }
 
     private async inviteListener(username: string): Promise<void> {
         try {
             const listener = await Promise.race([this.props.server.inviteListener(username, false, false), timeout(5000)]);
-            this.state.viewManager.adminView.showListenerInviteResult(username);
-            this.state.viewManager.adminView.setState((prevState: any) => ({
+
+            this.setState(prevState => ({
+                adminActionResponseStatus: formatListenerInviteResult(username),
                 listeners: prevState.listeners.concat([listener]),
             }));
         } catch (e) {
             const result = ((e instanceof ListenerAlreadyExistsError) ? ServerError.ListenerAlreadyExistsError
                 : ServerError.Unknown);
-            this.state.viewManager.adminView.showListenerInviteResult(username, result);
+            this.setState({
+                adminActionResponseStatus: formatListenerInviteResult(username, result),
+            });
         }
     }
 
     private async deleteListener(listenerId: number): Promise<void> {
         try {
             await Promise.race([this.props.server.deleteListener(listenerId), timeout(5000)]);
-            this.state.viewManager.adminView.setState((prevState: any) => ({
+            this.setState(prevState => ({
                 listeners: prevState.listeners.filter((listener: IListener) => (listener.id !== listenerId)),
             }));
         } catch (e) {
-            this.state.viewManager.adminView.showListenerDeleteResult(e.message);
+            this.setState({
+                adminActionResponseStatus: e.message,
+            });
         }
     }
 
@@ -742,5 +814,15 @@ async function retry(condition: () => Promise<boolean>): Promise<void> {
     if (!b) {
         await wait(250);
         await retry(condition);
+    }
+}
+
+export function formatListenerInviteResult(username: string, error?: ServerError): string {
+    if (!error) {
+        return `${username} is now a listener`;
+    } else if (error === ServerError.ListenerAlreadyExistsError) {
+        return `Error: ${username} is already a listener`;
+    } else {
+        return `An error occurred while inviting ${username}`;
     }
 }
