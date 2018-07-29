@@ -1,0 +1,10 @@
+#album-art {
+    height: 300px;
+    width: 300px;
+}
+
+#invite-listener-form {
+    margin: auto;
+    padding: 10px;
+    width: 100%;
+}
