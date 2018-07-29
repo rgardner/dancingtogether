@@ -2,9 +2,7 @@ import * as $ from 'jquery';
 import * as React from 'react';
 import './Station.css';
 
-import { MusicPlayer } from './components/MusicPlayer';
-import { StationAdmin } from './components/StationAdmin';
-import { StationDebug } from './components/StationDebug';
+import { StationApp } from './components/StationApp';
 import { IMusicPlayer, PlaybackState } from './music_player';
 import SpotifyMusicPlayer from './spotify_music_player';
 import { CircularArray, ListenerRole, median, wait } from './util';
@@ -81,60 +79,28 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
     }
 
     public render() {
-        let connectionStatus;
-        if (this.state.isConnected) {
-            connectionStatus = <span className="bg-success">Connected</span>;
-        } else if (this.state.errorMessage) {
-            connectionStatus = <span className="bg-danger">Not Connected</span>;
-        } else {
-            connectionStatus = <span className="bg-info">Not Connected</span>;
-        }
-
         return (
-            <div>
-                <div className="row">
-                    <div className="col">
-                        Status: {connectionStatus}<br /><br />
-                        {this.state.errorMessage &&
-                            <div>
-                                <span className="bg-danger">{this.state.errorMessage}</span><br />
-                            </div>
-                        }
-
-                        <h1>{this.props.stationTitle}</h1>
-                        <MusicPlayer
-                            listenerRole={this.props.listenerRole}
-                            playbackState={this.state.clientPlaybackState}
-                            isConnected={this.state.isConnected}
-                            isReady={this.state.isReady}
-                            volume={this.state.volume}
-                            onMuteButtonClick={this.onMuteButtonClick}
-                            onVolumeSliderChange={this.onVolumeSliderChange}
-                            onPlayPauseButtonClick={this.onPlayPauseButtonClick}
-                            onPreviousTrackButtonClick={this.onPreviousTrackButtonClick}
-                            onNextTrackButtonClick={this.onNextTrackButtonClick}
-                        />
-                    </div>
-                    {((this.props.listenerRole & ListenerRole.Admin) === ListenerRole.Admin) &&
-                        <div className="col">
-                            <StationAdmin
-                                isReady={this.state.isReady}
-                                listeners={this.state.listeners}
-                                responseStatus={this.state.adminActionResponseStatus}
-                                onListenerInviteSubmit={this.onListenerInviteSubmit}
-                                onListenerDeleteSubmit={this.onListenerDeleteSubmit}
-                            />
-                        </div>
-                    }
-                </div>
-                <div className="row">
-                    {this.props.debug &&
-                        <StationDebug
-                            roundTripTimes={this.state.roundTripTimes}
-                            clientServerTimeOffsets={this.state.clientServerTimeOffsets}
-                        />}
-                </div>
-            </div>
+            <StationApp
+                stationTitle={this.props.stationTitle}
+                listenerRole={this.props.listenerRole}
+                isConnected={this.state.isConnected}
+                generalErrorMessage={this.state.errorMessage}
+                isReady={this.state.isReady}
+                playbackState={this.state.clientPlaybackState}
+                volume={this.state.volume}
+                listeners={this.state.listeners}
+                adminActionResponseStatus={this.state.adminActionResponseStatus}
+                debug={this.props.debug}
+                roundTripTimes={this.state.roundTripTimes}
+                clientServerTimeOffsets={this.state.clientServerTimeOffsets}
+                onMuteButtonClick={this.onMuteButtonClick}
+                onVolumeSliderChange={this.onVolumeSliderChange}
+                onPlayPauseButtonClick={this.onPlayPauseButtonClick}
+                onPreviousTrackButtonClick={this.onPreviousTrackButtonClick}
+                onNextTrackButtonClick={this.onNextTrackButtonClick}
+                onListenerInviteSubmit={this.onListenerInviteSubmit}
+                onListenerDeleteSubmit={this.onListenerDeleteSubmit}
+            />
         );
     }
 
