@@ -2,7 +2,7 @@ import * as $ from 'jquery';
 import * as React from 'react';
 import './Station.css';
 
-import { MusicPlayerView } from './components/MusicPlayerView';
+import { MusicPlayer } from './components/MusicPlayer';
 import { StationAdmin } from './components/StationAdmin';
 import { StationDebug } from './components/StationDebug';
 import { IMusicPlayer, PlaybackState } from './music_player';
@@ -102,7 +102,7 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
                         }
 
                         <h1>{this.props.stationTitle}</h1>
-                        <MusicPlayerView
+                        <MusicPlayer
                             listenerRole={this.props.listenerRole}
                             playbackState={this.state.clientPlaybackState}
                             isConnected={this.state.isConnected}

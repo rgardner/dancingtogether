@@ -19,7 +19,7 @@ export interface IMusicPlayerViewProps {
     onNextTrackButtonClick(): void;
 }
 
-export function MusicPlayerView(props: IMusicPlayerViewProps) {
+export function MusicPlayer(props: IMusicPlayerViewProps) {
     return (
         <div>
             {props.playbackState &&
