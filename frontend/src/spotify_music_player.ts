@@ -29,8 +29,9 @@ export default class SpotifyMusicPlayer implements IMusicPlayer {
 
     public on(eventName: string, cb: (_args: any[]) => void) {
         if (eventName === 'player_state_changed') {
-            this.impl.on(eventName, playbackState => {
-                cb(createPlaybackStateFromSpotify(playbackState) as any);
+            this.impl.on(eventName, rawPlaybackState => {
+                const playbackState = (rawPlaybackState ? createPlaybackStateFromSpotify(rawPlaybackState) : undefined);
+                cb(playbackState as any);
             });
         } else if (eventName === 'too_many_requests_error') {
             this.observers.get(eventName)!.add(cb);
