@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Push to GitHub. This is important for linking commits with Sentry.
+git push
+
 # Deploy to production. Do this first to ensure build is good.
 git push heroku HEAD:master --force
 
