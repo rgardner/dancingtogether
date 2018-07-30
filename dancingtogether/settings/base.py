@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 
 import os
 from pathlib import Path
+import typing
 
 import dj_database_url
 import django_heroku
@@ -29,7 +30,7 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = bool(os.environ.get('DT_DEBUG', False))
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS: typing.List[str] = []
 
 # Application definition
 
