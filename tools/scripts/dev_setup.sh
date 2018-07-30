@@ -18,8 +18,7 @@ get_os() {
 }
 
 if is_macos; then
-  brew install python3 || true
-  brew install heroku || true
+  brew install heroku python3 getsentry/tools/sentry-cli || true
 elif is_ubuntu; then
   # Install Python3.6
   sudo add-apt-repository ppa:jonathonf/python-3.6 || true
@@ -30,7 +29,7 @@ elif is_ubuntu; then
   sudo add-apt-repository "deb https://cli-assets.heroku.com/branches/stable/apt ./"
   curl -L https://cli-assets.heroku.com/apt/release.key | sudo apt-key add -
   sudo apt-get update
-  sudo apt-get install heroku || true
+  sudo apt-get install heroku sentry-cli || true
 fi
 
 git remote add heroku https://git.heroku.com/dancingtogether.git || true

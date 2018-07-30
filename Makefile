@@ -61,4 +61,4 @@ test-server:
 
 .PHONY: deploy
 deploy:
-	git push heroku HEAD:master
+	tools/scripts/deploy

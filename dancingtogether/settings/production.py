@@ -2,13 +2,11 @@ from .base import *
 
 import os
 
-import raven
-
 # Sentry Error Reporting
 
 RAVEN_CONFIG = {
     'dsn': os.environ['DT_RAVEN_CONFIG_DSN'],
-    'release': raven.fetch_git_sha(BASE_DIR),
+    'release': os.environ['DT_RAVEN_CONFIG_RELEASE'],
 }
 
 # Webpack

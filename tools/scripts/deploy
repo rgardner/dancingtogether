@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Deploy to production. Do this first to ensure build is good.
+git push heroku HEAD:master --force
+
+# Assumes you're in a git repository
+# SENTRY_AUTH_TOKEN: store this in a .env file
+# SENTRY_ORG: store this in a .env file
+VERSION="$(sentry-cli releases propose-version)"
+
+# Create a release
+sentry-cli releases new --project dancing-together "$VERSION"
+
+# Associate commits with the release
+sentry-cli releases set-commits --auto "$VERSION"
+
+# Update release environment variable in production
+heroku config:set DT_RAVEN_CONFIG_RELEASE="$VERSION"
+
+# Finalize release now that deployment has successfully completed
+sentry-cli releases finalize "$VERSION"
