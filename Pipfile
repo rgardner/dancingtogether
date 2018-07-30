@@ -13,6 +13,7 @@ channels = "*"
 django-webpack-loader = "*"
 djangorestframework = "*"
 drf-nested-routers = "*"
+raven = "*"
 
 [requires]
 python_version = "3.7"

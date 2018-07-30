@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{% load raven %}
 {% load render_bundle from webpack_loader %}
 {% load staticfiles %}
 
@@ -8,7 +9,7 @@
 {% endblock %}{# content #}
 
 {% block extra_script %}
-<script src="https://cdn.ravenjs.com/3.24.0/raven.min.js" crossorigin=anonymous></script>
+<script src="https://cdn.ravenjs.com/3.26.4/raven.min.js" crossorigin="anonymous"></script>
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script src="{% static 'channels/js/websocketbridge.js' %}"></script>
 <script>
@@ -24,10 +25,7 @@
         debug: {{ debug|yesno:"true,false" }},
     };
 
-    Raven.config('https://b380711cbf644219808e14271070a170@sentry.io/1252042', {
-        release: '0-0-0',
-        environment: 'development-test',
-    }).install();
+    Raven.config('{% sentry_public_dsn %}').install();
 </script>
 
 {% render_bundle 'main' %}

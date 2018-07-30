@@ -13,7 +13,7 @@ services:
     build: .
     command: python3 manage.py runserver 0.0.0.0:8000
     environment:
-      - DJANGO_SETTINGS_MODULE=dancingtogether.settings.base
+      - DJANGO_SETTINGS_MODULE=dancingtogether.settings.development
       - DATABASE_URL=postgres://postgres@db:5432/postgres
       - REDIS_URL=redis://redis@redis:6379
     env_file:
