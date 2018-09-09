@@ -129,3 +129,8 @@ builds.
 ## Resources
 
 - [Setting up React and Django](http://v1k45.com/blog/modern-django-part-1-setting-up-django-and-react/)
+
+## Security
+
+- [webbkoll results](https://webbkoll.dataskydd.net/en/results?url=http%3A%2F%2Fwww.dancingtogether.live%2F)
+- [Qualys SSL Labs](https://www.ssllabs.com/ssltest/analyze.html?d=www.dancingtogether.live&hideResults=on)
