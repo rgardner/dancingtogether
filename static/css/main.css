@@ -1,3 +1,54 @@
+/* Dancing Together */
+
+#primary-header {
+    background-clip: padding-box;
+    background-color: #1C66A6;
+    background-image: url(../images/Artwork_1.svg);
+    background-position: 80%;
+    background-repeat: no-repeat;
+    background-size: 117px 84px;
+    border-bottom: 2px solid #1C66A6;
+    opacity: 1;
+    padding-bottom: 15px;
+    padding-top: 15px;
+}
+
+#title {
+    font-family: "Source Sans Pro";
+    font-size: 2em;
+    font-style: normal;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 2px 2px 2px #000000;
+}
+
+#secondary-header {
+    background-color: #F2B5A7;
+    clear: left;
+    padding-bottom: 50px;
+    padding-top: 50px;
+}
+
+.footer {
+    background-color: #717070;
+    bottom: 0;
+    height: 60px;
+    line-height: 60px;
+    position: absolute;
+    width: 100%;
+}
+
+.copyright {
+	background-color: #717070;
+	border-top-width: 2px;
+	color: #F2D8C2;
+	font-family: "Source Sans Pro";
+	font-weight: lighter;
+	letter-spacing: 2px;
+	text-align: center;
+	text-transform: uppercase;
+}
+
 /* Accounts */
 
 /*
