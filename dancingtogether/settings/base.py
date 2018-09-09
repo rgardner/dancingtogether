@@ -60,6 +60,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'dancingtogether.middleware.XContentTypeOptionsMiddleware',
+    'dancingtogether.middleware.XXssProtectionMiddleware',
 ]
 
 ROOT_URLCONF = 'dancingtogether.urls'
