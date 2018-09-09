@@ -21,6 +21,8 @@ import main.views
 
 urlpatterns = [
     path('', main.views.index, name='homepage'),
+    path('about/', main.views.about, name='about'),
+    path('contact/', main.views.contact, name='contact'),
     path('accounts/', include('accounts.urls')),
     path('admin/', admin.site.urls),
     path('join/', accounts.views.JoinView.as_view(), name='join'),
