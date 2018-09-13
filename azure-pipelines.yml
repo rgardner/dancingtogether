@@ -5,18 +5,11 @@
 
 pool:
   vmImage: 'Ubuntu 16.04'
-strategy:
-  matrix:
-    Python36:
-      PYTHON_VERSION: '3.6'
-    Python37:
-      PYTHON_VERSION: '3.7'
-  maxParallel: 3
 
 steps:
 - task: UsePythonVersion@0
   inputs:
-    versionSpec: '$(PYTHON_VERSION)'
+    versionSpec: '3.7'
     architecture: 'x64'
 
 - task: PythonScript@0
@@ -37,13 +30,12 @@ steps:
 
 - script: |
     python -m pip install --upgrade pip pipenv setuptools wheel
-    pipenv install --system --dev --system --ignore-pipfile --deploy
-    pip install unittest-xml-reporting
+    pipenv install --dev --system --ignore-pipfile --deploy
   displayName: 'Install prerequisites'
 
 - script: |
     pushd '$(projectRoot)'
-    DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --testrunner xmlrunner.extra.djangotestrunner.XMLTestRunner --no-input
+    CI=1 DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/TEST-results.xml --no-input
   condition: succeededOrFailed()
   displayName: 'Run tests'
 

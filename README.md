@@ -1,5 +1,8 @@
 # Dancing Together
 
+[![Build Status](https://dev.azure.com/rgardner/dancingtogether/_apis/build/status/rgardner.dancingtogether)](https://dev.azure.com/rgardner/dancingtogether/_build/latest?definitionId=1)
+
+
 Dancing Together is a website for friends, family, couples, coworkers, and
 even Internet strangers to listen to Spotify together. Simply sign up for an
 account, create or join a room with friends, select some killer tunes, and
