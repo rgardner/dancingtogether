@@ -1,0 +1,6 @@
+#!/bin/sh
+
+yapf --recursive . --exclude '*/migrations/*' --parallel --diff
+mkdir junit
+mypy --ignore-missing-imports --junit-xml junit/test-lint.xml $(find . -name \*.py ! -path '*/migrations/*')
+find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pylint --load-plugins pylint_django

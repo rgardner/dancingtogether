@@ -1,0 +1,3 @@
+#!/bin/bash
+
+CI=1 DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/test-results.xml --no-input

@@ -28,18 +28,17 @@ steps:
       print('Found Django project in', project_location)
       print('##vso[task.setvariable variable=projectRoot]{}'.format(project_location))
 
-- script: |
-    python -m pip install --upgrade pip pipenv setuptools wheel
-    pipenv install --dev --system --ignore-pipfile --deploy
+- script: ci/install_prerequisites
   displayName: 'Install prerequisites'
 
-- script: |
-    pushd '$(projectRoot)'
-    CI=1 DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/TEST-results.xml --no-input
+- script: ci/run_lint_tests
+  displayName: 'Run lint tests'
+
+- script: ci/run_tests
   condition: succeededOrFailed()
   displayName: 'Run tests'
 
 - task: PublishTestResults@2
   inputs:
-    testResultsFiles: "**/TEST-*.xml"
+    testResultsFiles: "**/test-*.xml"
     testRunTitle: 'Python $(PYTHON_VERSION)'

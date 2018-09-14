@@ -60,6 +60,12 @@ $ make attach
 **NOTE**: Do not use seed data in production. This creates two accounts,
 'primary' and 'secondary', each with password 'testpassword'.
 
+### Linting
+
+```sh
+$ make check
+```
+
 
 ### Testing
 

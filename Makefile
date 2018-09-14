@@ -5,6 +5,12 @@ build:
 	docker-compose build
 	cd frontend && npm install
 
+.PHONY: check
+check:
+	pipenv run yapf --recursive . --exclude '*/migrations/*' --in-place --parallel
+	bash -c "pipenv run mypy --ignore-missing-imports \$$(find . -name \*.py ! -path '*/migrations/*')"
+	find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pipenv run pylint --load-plugins pylint_django
+
 .PHONY: db-makemigrations
 db-makemigrations:
 	docker-compose run web python3 manage.py makemigrations
