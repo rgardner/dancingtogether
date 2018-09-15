@@ -11,7 +11,6 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 RAVEN_CONFIG = {
     'dsn': os.environ['DT_RAVEN_CONFIG_DSN'],
-    'release': os.environ['DT_RAVEN_CONFIG_RELEASE'],
 }
 
 # Webpack
