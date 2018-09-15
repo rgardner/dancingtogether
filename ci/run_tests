@@ -1,3 +1,14 @@
 #!/bin/bash
 
-CI=1 DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/test-results.xml --no-input
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# run frontend tests
+
+pushd "$REPO_ROOT/frontend"
+npm run build
+CI=1 JEST_JUNIT_OUTPUT=junit/test-frontend.xml npm test -- --ci --reporters=default --reporters=jest-junit
+popd
+
+# run backend tests
+
+CI=1 DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/test-backend.xml --no-input

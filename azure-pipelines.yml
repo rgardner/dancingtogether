@@ -35,10 +35,8 @@ steps:
   displayName: 'Run lint tests'
 
 - script: ci/run_tests
-  condition: succeededOrFailed()
   displayName: 'Run tests'
 
 - task: PublishTestResults@2
   inputs:
     testResultsFiles: "**/test-*.xml"
-    testRunTitle: 'Python $(PYTHON_VERSION)'

@@ -75,160 +75,162 @@ function createStationServer(mockWebSocketBridge: MockWebSocketBridge) {
     return new StationServer(MOCK_STATION_ID, MOCK_CROSS_SITE_REQUEST_FORGERY_TOKEN, mockWebSocketBridge);
 }
 
-test('station server can send a ping', async () => {
-    expect.assertions(2);
-    const mockWebSocketBridge = new MockWebSocketBridge();
-    const stationServer = createStationServer(mockWebSocketBridge);
+describe('station server', () => {
+    it('can send a ping', async () => {
+        expect.assertions(2);
+        const mockWebSocketBridge = new MockWebSocketBridge();
+        const stationServer = createStationServer(mockWebSocketBridge);
 
-    mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual(expect.objectContaining({
-            'command': 'ping',
-            'start_time': expect.any(Date),
+        mockWebSocketBridge.receiveData().then(data => {
+            expect(data).toEqual(expect.objectContaining({
+                'command': 'ping',
+                'start_time': expect.any(Date),
+            }));
+            mockWebSocketBridge.fire({
+                'server_time': new Date(),
+                'start_time': data.start_time,
+                'type': 'pong',
+            });
+        });
+
+        await expect(stationServer.sendPingRequest())
+            .resolves.toEqual(expect.objectContaining({
+                'serverTime': expect.any(Date),
+                'startTime': expect.any(Date),
+            }));
+    });
+
+    it('can send a playback state', async () => {
+        expect.assertions(2);
+        const stationServer = createStationServer(new MockWebSocketBridge());
+
+        // Mock server response
+        const sampleTime = new Date();
+        const responsePlaybackState = new ServerPlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
+        fetch.mockResponseOnce(JSON.stringify({
+            'playbackstate': responsePlaybackState,
         }));
+
+        const currentPlaybackState = new ServerPlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            1000 /*raw_position_ms*/, sampleTime);
+
+        const expectedResponsePlaybackState = new PlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
+        await expect(stationServer.sendPlaybackState(currentPlaybackState))
+            .resolves.toEqual(expectedResponsePlaybackState);
+
+        expect(fetch.mock.calls.length).toEqual(1);
+    });
+
+    it('can get the playback state', async () => {
+        expect.assertions(2);
+        const stationServer = createStationServer(new MockWebSocketBridge());
+
+        // Mock server response
+        const sampleTime = new Date();
+        const responsePlaybackState = new ServerPlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
+        fetch.mockResponseOnce(JSON.stringify({
+            'playbackstate': responsePlaybackState,
+        }));
+
+        const expectedResponsePlaybackState = new PlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
+        await expect(stationServer.getPlaybackState())
+            .resolves.toEqual(expectedResponsePlaybackState);
+
+        expect(fetch.mock.calls.length).toEqual(1);
+    });
+
+    it('fires notifications for station state changes', async () => {
+        expect.assertions(1);
+        const mockWebSocketBridge = new MockWebSocketBridge();
+        const stationServer = createStationServer(mockWebSocketBridge);
+
+        const sampleTime = new Date();
+        const mockPlaybackState = new PlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            0 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG1);
+
+        stationServer.on('playback_state_changed', (data: PlaybackState) => {
+            expect(data).toEqual(mockPlaybackState);
+        });
         mockWebSocketBridge.fire({
-            'server_time': new Date(),
-            'start_time': data.start_time,
-            'type': 'pong',
+            'playbackstate': new ServerPlaybackState(
+                MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+                0 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG1
+            ),
+            'type': 'playback_state_changed',
         });
     });
 
-    await expect(stationServer.sendPingRequest())
-        .resolves.toEqual(expect.objectContaining({
-            'serverTime': expect.any(Date),
-            'startTime': expect.any(Date),
-        }));
-});
+    it('fires notifications for errors', async () => {
+        expect.assertions(2);
+        const mockWebSocketBridge = new MockWebSocketBridge();
+        const stationServer = createStationServer(mockWebSocketBridge);
 
-test('station server can send a playback state', async () => {
-    expect.assertions(2);
-    const stationServer = createStationServer(new MockWebSocketBridge());
+        const mockError1 = { error: 'client_error', message: 'failed to join station' };
+        stationServer.onOnce('error', (error: ServerError, message: string) => {
+            expect(error).toEqual(ServerError.ClientError);
+            expect(message).toEqual(mockError1.message);
+        });
 
-    // Mock server response
-    const sampleTime = new Date();
-    const responsePlaybackState = new ServerPlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
-    fetch.mockResponseOnce(JSON.stringify({
-        'playbackstate': responsePlaybackState,
-    }));
-
-    const currentPlaybackState = new ServerPlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        1000 /*raw_position_ms*/, sampleTime);
-
-    const expectedResponsePlaybackState = new PlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
-    await expect(stationServer.sendPlaybackState(currentPlaybackState))
-        .resolves.toEqual(expectedResponsePlaybackState);
-
-    expect(fetch.mock.calls.length).toEqual(1);
-});
-
-test('station server can get the playback state', async () => {
-    expect.assertions(2);
-    const stationServer = createStationServer(new MockWebSocketBridge());
-
-    // Mock server response
-    const sampleTime = new Date();
-    const responsePlaybackState = new ServerPlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
-    fetch.mockResponseOnce(JSON.stringify({
-        'playbackstate': responsePlaybackState,
-    }));
-
-    const expectedResponsePlaybackState = new PlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        1000 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG2);
-    await expect(stationServer.getPlaybackState())
-        .resolves.toEqual(expectedResponsePlaybackState);
-
-    expect(fetch.mock.calls.length).toEqual(1);
-});
-
-test('station server fires notifications for station state changes', async () => {
-    expect.assertions(1);
-    const mockWebSocketBridge = new MockWebSocketBridge();
-    const stationServer = createStationServer(mockWebSocketBridge);
-
-    const sampleTime = new Date();
-    const mockPlaybackState = new PlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        0 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG1);
-
-    stationServer.on('playback_state_changed', (data: PlaybackState) => {
-        expect(data).toEqual(mockPlaybackState);
-    });
-    mockWebSocketBridge.fire({
-        'playbackstate': new ServerPlaybackState(
-            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-            0 /*raw_position_ms*/, sampleTime, MOCK_SERVER_ETAG1
-        ),
-        'type': 'playback_state_changed',
-    });
-});
-
-test('station server fires notifications for errors', async () => {
-    expect.assertions(2);
-    const mockWebSocketBridge = new MockWebSocketBridge();
-    const stationServer = createStationServer(mockWebSocketBridge);
-
-    const mockError1 = { error: 'client_error', message: 'failed to join station' };
-    stationServer.onOnce('error', (error: ServerError, message: string) => {
-        expect(error).toEqual(ServerError.ClientError);
-        expect(message).toEqual(mockError1.message);
+        mockWebSocketBridge.fire(mockError1);
     });
 
-    mockWebSocketBridge.fire(mockError1);
-});
+    function createServerListener(listener: IListener) {
+        return {
+            id: listener.id,
+            is_admin: listener.isAdmin,
+            is_dj: listener.isDJ,
+            station: listener.stationId,
+            user: listener.username,
+        };
+    }
 
-function createServerListener(listener: IListener) {
-    return {
-        id: listener.id,
-        is_admin: listener.isAdmin,
-        is_dj: listener.isDJ,
-        station: listener.stationId,
-        user: listener.username,
-    };
-}
+    it('can get listeners', async () => {
+        const stationServer = createStationServer(new MockWebSocketBridge());
 
-test('station server can get listeners', async () => {
-    const stationServer = createStationServer(new MockWebSocketBridge());
+        // Mock server response
+        const listener = {
+            id: 2,
+            isAdmin: false,
+            isDJ: false,
+            stationId: MOCK_STATION_ID,
+            username: MOCK_USERNAME1,
+        };
+        const responseListeners = [createServerListener(listener)];
+        fetch.mockResponseOnce(JSON.stringify(responseListeners));
 
-    // Mock server response
-    const listener = {
-        id: 2,
-        isAdmin: false,
-        isDJ: false,
-        stationId: MOCK_STATION_ID,
-        username: MOCK_USERNAME1,
-    };
-    const responseListeners = [createServerListener(listener)];
-    fetch.mockResponseOnce(JSON.stringify(responseListeners));
+        await expect(stationServer.getListeners()).resolves.toEqual([listener]);
 
-    await expect(stationServer.getListeners()).resolves.toEqual([listener]);
+        expect(fetch.mock.calls.length).toEqual(1);
+    });
 
-    expect(fetch.mock.calls.length).toEqual(1);
-});
+    test('station server can invite listeners', async () => {
+        const stationServer = createStationServer(new MockWebSocketBridge());
 
-test('station server can invite listeners', async () => {
-    const stationServer = createStationServer(new MockWebSocketBridge());
+        // Mock server response
+        const listener = {
+            id: 2,
+            isAdmin: false,
+            isDJ: false,
+            stationId: MOCK_STATION_ID,
+            username: MOCK_USERNAME1,
+        };
+        fetch.mockResponseOnce(JSON.stringify(createServerListener(listener)));
 
-    // Mock server response
-    const listener = {
-        id: 2,
-        isAdmin: false,
-        isDJ: false,
-        stationId: MOCK_STATION_ID,
-        username: MOCK_USERNAME1,
-    };
-    fetch.mockResponseOnce(JSON.stringify(createServerListener(listener)));
+        await expect(stationServer.inviteListener(listener.username, listener.isAdmin, listener.isDJ))
+            .resolves.toEqual(listener);
 
-    await expect(stationServer.inviteListener(listener.username, listener.isAdmin, listener.isDJ))
-        .resolves.toEqual(listener);
-
-    expect(fetch.mock.calls.length).toEqual(1);
+        expect(fetch.mock.calls.length).toEqual(1);
+    });
 });
 
 function createStationManager(stationServer: StationServer) {
@@ -251,127 +253,129 @@ function addDefaultNetworkTimes(stationManager: StationManager) {
     stationManager.state.clientServerTimeOffsets.push(0);
 }
 
-test('station manager correctly adjusts client server time offset', async () => {
-    const stationManager = createStationManager(
-        createStationServer(new MockWebSocketBridge()),
-    ).root.instance;
+describe('station manager', () => {
+    it('correctly adjusts client server time offset', async () => {
+        const stationManager = createStationManager(
+            createStationServer(new MockWebSocketBridge()),
+        ).root.instance;
 
-    const startTime = new Date('2018-05-31T00:00:01.000Z');
-    const serverTime = new Date('2018-05-31T00:00:03.000Z');
-    const currentTime = new Date('2018-05-31T00:00:02.000Z');
-    stationManager.adjustServerTimeOffset(startTime, serverTime, currentTime);
+        const startTime = new Date('2018-05-31T00:00:01.000Z');
+        const serverTime = new Date('2018-05-31T00:00:03.000Z');
+        const currentTime = new Date('2018-05-31T00:00:02.000Z');
+        stationManager.adjustServerTimeOffset(startTime, serverTime, currentTime);
 
-    expect(stationManager.state.roundTripTimes.length).toBe(1);
-    expect(stationManager.state.roundTripTimes.entries()).toEqual([1000]);
-    expect(stationManager.state.clientServerTimeOffsets.length).toBe(1);
-    expect(stationManager.state.clientServerTimeOffsets.entries()).toEqual([1500]);
-});
+        expect(stationManager.state.roundTripTimes.length).toBe(1);
+        expect(stationManager.state.roundTripTimes.entries()).toEqual([1000]);
+        expect(stationManager.state.clientServerTimeOffsets.length).toBe(1);
+        expect(stationManager.state.clientServerTimeOffsets.entries()).toEqual([1500]);
+    });
 
-function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, playbackState: PlaybackState) {
-    expect(mockMusicPlayer.playbackState.context_uri).toEqual(playbackState.context_uri);
-    expect(mockMusicPlayer.playbackState.current_track_uri).toEqual(playbackState.current_track_uri);
-    expect(mockMusicPlayer.playbackState.paused).toBe(playbackState.paused);
-    expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(playbackState.raw_position_ms);
-}
+    function verify_music_player_playback_state(mockMusicPlayer: MockMusicPlayer, playbackState: PlaybackState) {
+        expect(mockMusicPlayer.playbackState.context_uri).toEqual(playbackState.context_uri);
+        expect(mockMusicPlayer.playbackState.current_track_uri).toEqual(playbackState.current_track_uri);
+        expect(mockMusicPlayer.playbackState.paused).toBe(playbackState.paused);
+        expect(mockMusicPlayer.playbackState.raw_position_ms).toBe(playbackState.raw_position_ms);
+    }
 
-test('station manager correctly adjusts playback state when server is paused', async () => {
-    const stationManager = createStationManager(createStationServer(new MockWebSocketBridge())).root.instance;
-    addDefaultNetworkTimes(stationManager);
+    it('correctly adjusts playback state when server is paused', async () => {
+        const stationManager = createStationManager(createStationServer(new MockWebSocketBridge())).root.instance;
+        addDefaultNetworkTimes(stationManager);
 
-    const mockPlaybackState = new PlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        0 /*raw_position_ms*/, new Date(), MOCK_SERVER_ETAG1);
+        const mockPlaybackState = new PlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            0 /*raw_position_ms*/, new Date(), MOCK_SERVER_ETAG1);
 
-    // assume server has already set the current track
-    const mockMusicPlayer = stationManager.getMusicPlayer() as MockMusicPlayer;
-    mockMusicPlayer!.playbackState.context_uri = mockPlaybackState.context_uri;
-    mockMusicPlayer!.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
+        // assume server has already set the current track
+        const mockMusicPlayer = stationManager.getMusicPlayer() as MockMusicPlayer;
+        mockMusicPlayer!.playbackState.context_uri = mockPlaybackState.context_uri;
+        mockMusicPlayer!.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
 
-    await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
+        await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
 
-    verify_music_player_playback_state(mockMusicPlayer!, mockPlaybackState);
-    expect(stationManager.state.serverEtag).toEqual(mockPlaybackState.etag);
-});
+        verify_music_player_playback_state(mockMusicPlayer!, mockPlaybackState);
+        expect(stationManager.state.serverEtag).toEqual(mockPlaybackState.etag);
+    });
 
 
-test('station manager correctly adjusts playback state when server is playing', async () => {
-    const stationManager = createStationManager(createStationServer(new MockWebSocketBridge())).root.instance;
-    addDefaultNetworkTimes(stationManager);
+    it('correctly adjusts playback state when server is playing', async () => {
+        const stationManager = createStationManager(createStationServer(new MockWebSocketBridge())).root.instance;
+        addDefaultNetworkTimes(stationManager);
 
-    const mockPlaybackState = new PlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, false /*paused*/,
-        10000 /*raw_position_ms*/, new Date(), MOCK_SERVER_ETAG1);
+        const mockPlaybackState = new PlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, false /*paused*/,
+            10000 /*raw_position_ms*/, new Date(), MOCK_SERVER_ETAG1);
 
-    // assume server has already set the current track
-    const mockMusicPlayer = stationManager.getMusicPlayer() as MockMusicPlayer;
-    mockMusicPlayer!.playbackState.context_uri = mockPlaybackState.context_uri;
-    mockMusicPlayer!.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
+        // assume server has already set the current track
+        const mockMusicPlayer = stationManager.getMusicPlayer() as MockMusicPlayer;
+        mockMusicPlayer!.playbackState.context_uri = mockPlaybackState.context_uri;
+        mockMusicPlayer!.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
 
-    await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
+        await expect(stationManager.applyServerPlaybackState(mockPlaybackState)).resolves.toBeUndefined();
 
-    const expectedPlaybackState = Object.assign({}, mockPlaybackState, {
-        raw_position_ms: mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS,
-    })
-    verify_music_player_playback_state(mockMusicPlayer!, expectedPlaybackState);
-    expect(stationManager.state.serverEtag).toEqual(mockPlaybackState.etag);
-});
+        const expectedPlaybackState = Object.assign({}, mockPlaybackState, {
+            raw_position_ms: mockPlaybackState.raw_position_ms + SEEK_OVERCORRECT_MS,
+        })
+        verify_music_player_playback_state(mockMusicPlayer!, expectedPlaybackState);
+        expect(stationManager.state.serverEtag).toEqual(mockPlaybackState.etag);
+    });
 
-test.skip('station manager correctly handles precondition failed', async () => {
-    const mockWebSocketBridge = new MockWebSocketBridge();
-    const stationManager = createStationManager(createStationServer(mockWebSocketBridge)).root.instance;
-    addDefaultNetworkTimes(stationManager);
+    it.skip('correctly handles precondition failed', async () => {
+        const mockWebSocketBridge = new MockWebSocketBridge();
+        const stationManager = createStationManager(createStationServer(mockWebSocketBridge)).root.instance;
+        addDefaultNetworkTimes(stationManager);
 
-    const mockPlaybackState = new PlaybackState(
-        MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
-        0 /*raw_position_ms*/, new Date());
+        const mockPlaybackState = new PlaybackState(
+            MOCK_CONTEXT_URI, MOCK_CURRENT_TRACK_URI, true /*paused*/,
+            0 /*raw_position_ms*/, new Date());
 
-    // Set up callback for server receiving get request and response
-    // assume server has already set the current track
-    const mockMusicPlayer = stationManager.getMusicPlayer() as MockMusicPlayer;
-    mockWebSocketBridge.receiveData().then(data => {
-        expect(data).toEqual(expect.objectContaining({
-            'command': 'get_playback_state',
-            'request_id': expect.any(Number),
-            'state': mockMusicPlayer.playbackState,
+        // Set up callback for server receiving get request and response
+        // assume server has already set the current track
+        const mockMusicPlayer = stationManager.getMusicPlayer() as MockMusicPlayer;
+        mockWebSocketBridge.receiveData().then(data => {
+            expect(data).toEqual(expect.objectContaining({
+                'command': 'get_playback_state',
+                'request_id': expect.any(Number),
+                'state': mockMusicPlayer.playbackState,
+            }));
+
+            // Server would update current track on behalf of client
+            mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;
+            mockMusicPlayer.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
+
+            const responsePlaybackState = mockPlaybackState;
+            responsePlaybackState.etag = MOCK_SERVER_ETAG1;
+            mockWebSocketBridge.fire({
+                'request_id': data.request_id,
+                'state': responsePlaybackState,
+                'type': 'ensure_playback_state',
+            });
+        });
+
+        // Set up callback for music player state change correct
+        const donePromise = new Promise(resolve => {
+            mockMusicPlayer.on('player_state_changed', (playbackState: PlaybackState) => {
+                expect(playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
+                expect(playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
+                expect(playbackState.paused).toBe(mockPlaybackState.paused);
+                expect(playbackState.raw_position_ms).toBe(mockPlaybackState.raw_position_ms);
+                resolve();
+            });
+        });
+
+        await expect(donePromise).resolves.toBeUndefined();
+    });
+
+    it('requests a fresh access token when needed', async () => {
+        const stationManager = createStationManager(createStationServer(new MockWebSocketBridge()));
+
+        fetch.mockResponseOnce(JSON.stringify({
+            'token': MOCK_ACCESS_TOKEN2,
+            'token_expiration_time': MOCK_ACCESS_TOKEN_EXPIRATION_TIME2,
         }));
 
-        // Server would update current track on behalf of client
-        mockMusicPlayer.playbackState.context_uri = mockPlaybackState.context_uri;
-        mockMusicPlayer.playbackState.current_track_uri = mockPlaybackState.current_track_uri;
-
-        const responsePlaybackState = mockPlaybackState;
-        responsePlaybackState.etag = MOCK_SERVER_ETAG1;
-        mockWebSocketBridge.fire({
-            'request_id': data.request_id,
-            'state': responsePlaybackState,
-            'type': 'ensure_playback_state',
-        });
+        const mockMusicPlayer = stationManager.root.instance.getMusicPlayer() as MockMusicPlayer;
+        await expect(mockMusicPlayer!.requestOAuthToken()).resolves.toEqual(MOCK_ACCESS_TOKEN2);
     });
-
-    // Set up callback for music player state change correct
-    const donePromise = new Promise(resolve => {
-        mockMusicPlayer.on('player_state_changed', (playbackState: PlaybackState) => {
-            expect(playbackState.context_uri).toEqual(mockPlaybackState.context_uri);
-            expect(playbackState.current_track_uri).toEqual(mockPlaybackState.current_track_uri);
-            expect(playbackState.paused).toBe(mockPlaybackState.paused);
-            expect(playbackState.raw_position_ms).toBe(mockPlaybackState.raw_position_ms);
-            resolve();
-        });
-    });
-
-    await expect(donePromise).resolves.toBeUndefined();
-});
-
-test('station manager requests a fresh access token when needed', async () => {
-    const stationManager = createStationManager(createStationServer(new MockWebSocketBridge()));
-
-    fetch.mockResponseOnce(JSON.stringify({
-        'token': MOCK_ACCESS_TOKEN2,
-        'token_expiration_time': MOCK_ACCESS_TOKEN_EXPIRATION_TIME2,
-    }));
-
-    const mockMusicPlayer = stationManager.root.instance.getMusicPlayer() as MockMusicPlayer;
-    await expect(mockMusicPlayer!.requestOAuthToken()).resolves.toEqual(MOCK_ACCESS_TOKEN2);
 });
 
 class ServerPlaybackState {

@@ -1,6 +1,15 @@
-#!/bin/sh
+#!/bin/bash
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+mkdir -p junit
+
+# run frontend lint tests
+
+(cd "$REPO_ROOT/frontend" && npx tslint --project tsconfig.prod.json --format junit --out ../junit/test-frontend-lint.xml)
+
+# run backend lint tests
 
 yapf --recursive . --exclude '*/migrations/*' --parallel --diff
-mkdir junit
-mypy --ignore-missing-imports --junit-xml junit/test-lint.xml $(find . -name \*.py ! -path '*/migrations/*')
+mypy --ignore-missing-imports --junit-xml junit/test-backend-lint.xml $(find . -name \*.py ! -path '*/migrations/*')
 find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pylint --load-plugins pylint_django
