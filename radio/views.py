@@ -71,7 +71,7 @@ class CreateStationView(CreateView):
 
 class DetailStationView(LoginRequiredMixin, ListenerRequiredMixin,
                         spotify.AuthorizationRequiredMixin,
-                        spotify.FressAccessTokenRequiredMixin,
+                        spotify.FreshAccessTokenRequiredMixin,
                         generic.DetailView):
     model = Station
     template_name = 'radio/detail.html'
@@ -97,6 +97,15 @@ class DetailStationView(LoginRequiredMixin, ListenerRequiredMixin,
 class DeleteStationView(LoginRequiredMixin, ListenerRequiredMixin, DeleteView):
     model = Station
     success_url = reverse_lazy('radio:index')
+
+    def post(self, request, *args, **kwargs):
+        # precondition: ListenerRequiredMixin
+        listener = Listener.objects.get(
+            user=request.user, station_id=kwargs['pk'])
+        if listener.is_admin:
+            return super().post(request, *args, **kwargs)
+        else:
+            return redirect('/stations/')
 
 
 def oauth_callback(request):

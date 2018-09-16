@@ -28,7 +28,7 @@ class AuthorizationRequiredMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-class FressAccessTokenRequiredMixin:
+class FreshAccessTokenRequiredMixin:
     """Ensures the access token is fresh and caches it in the session."""
 
     def dispatch(self, request, *args, **kwargs):
