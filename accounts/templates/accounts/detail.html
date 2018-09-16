@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% load bootstrap4 %}
+
+{% block content %}
+
+<div>
+  <h2>Your Profile</h2>
+
+  <h3>Change Password</h3>
+  <form method="post" action="{% url 'account-detail' user.id %}">
+    {% csrf_token %}
+    {% bootstrap_form_errors password_change_form %}
+    {% bootstrap_form password_change_form %}
+    {% bootstrap_button 'Change password' 'submit' 'btn btn-primary' %}
+  </form>
+
+  <h3 class="text-danger">Delete Account</h3>
+  <form method="post" action="{% url 'account-delete' user.id %}">
+    {% csrf_token %}
+    {% bootstrap_button 'Delete Account' 'submit' 'btn btn-danger' %}
+  </form>
+</div>
+
+{% endblock %}{# content #}
