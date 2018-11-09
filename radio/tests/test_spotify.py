@@ -4,6 +4,7 @@ from django.utils import timezone
 import pytest
 
 from .. import spotify
+from ..spotify import AccessToken
 from ..models import SpotifyCredentials
 from . import mocks
 
@@ -18,7 +19,7 @@ def test_refresh_access_token(user1):
     with override_settings(
             SPOTIFY_TOKEN_API_URL=f'http://localhost:{port}/api/token'):
 
-        access_token = spotify.load_access_token(user1.id)
+        access_token = AccessToken.load(user1.id)
         access_token.refresh()
         assert access_token.token == mocks.TEST_ACCESS_TOKEN
 

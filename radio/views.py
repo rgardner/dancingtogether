@@ -88,8 +88,7 @@ class DetailStationView(LoginRequiredMixin, ListenerRequiredMixin,
         context['is_admin'] = listener.is_admin
 
         context['player_name'] = settings.SPOTIFY_PLAYER_NAME
-        context['access_token'] = spotify.load_access_token(
-            self.request.user.id).token
+        context['access_token'] = self.request.session['access_token']
 
         return context
 

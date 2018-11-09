@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 class AuthorizationRequiredMixin:
+    """
+    Verify that the current user has authorized the application to use Spotify.
+    """
+
     def dispatch(self, request, *args, **kwargs):
         if not hasattr(request.user, 'spotifycredentials'):
             return request_spotify_authorization(request)
@@ -29,13 +33,15 @@ class AuthorizationRequiredMixin:
 
 
 class FreshAccessTokenRequiredMixin:
-    """Ensures the access token is fresh and caches it in the session."""
+    """
+    Ensures the Spotify access token is fresh and cached in the current session.
+    """
 
     def dispatch(self, request, *args, **kwargs):
-        access_token = load_access_token(request.user)
+        access_token = AccessToken.load(request.user)
         if access_token.has_expired():
             access_token.refresh()
-            save_access_token(access_token)
+            access_token.save()
 
         request.session['access_token'] = access_token.token
         return super().dispatch(request, *args, **kwargs)
@@ -125,10 +131,30 @@ class AccessToken:
             logger.error(response.text)
             response.raise_for_status()
 
-    @staticmethod
-    def from_db_model(creds: SpotifyCredentials):
-        return AccessToken(creds.user, creds.refresh_token, creds.access_token,
-                           creds.access_token_expiration_time)
+    @classmethod
+    def load(cls, user_id):
+        """Load the user's access token from the database."""
+        creds = SpotifyCredentials.objects.get(user_id=user_id)
+        return cls.from_db_model(creds)
+
+    def save(self):
+        """Save the access token to the database."""
+        try:
+            creds = SpotifyCredentials.objects.get(
+                user_id=access_token.user.id)
+        except SpotifyCredentials.DoesNotExist:
+            creds = SpotifyCredentials(
+                user_id=access_token.user.id,
+                refresh_token=access_token.refresh_token)
+
+        creds.access_token = access_token.token
+        creds.access_token_expiration_time = access_token.token_expiration_time
+        creds.save()
+
+    @classmethod
+    def from_db_model(cls, creds: SpotifyCredentials):
+        return cls(creds.user, creds.refresh_token, creds.access_token,
+                   creds.access_token_expiration_time)
 
     @staticmethod
     def request_refresh_and_access_token(code, user):
@@ -149,22 +175,4 @@ class AccessToken:
         access_token = AccessToken(user, response_data['refresh_token'],
                                    response_data['access_token'],
                                    expiration_time)
-        save_access_token(access_token)
-
-
-def save_access_token(access_token: AccessToken):
-    try:
-        creds = SpotifyCredentials.objects.get(user_id=access_token.user.id)
-    except SpotifyCredentials.DoesNotExist:
-        creds = SpotifyCredentials(
-            user_id=access_token.user.id,
-            refresh_token=access_token.refresh_token)
-
-    creds.access_token = access_token.token
-    creds.access_token_expiration_time = access_token.token_expiration_time
-    creds.save()
-
-
-def load_access_token(user_id) -> AccessToken:
-    creds = SpotifyCredentials.objects.get(user_id=user_id)
-    return AccessToken.from_db_model(creds)
+        access_token.save()

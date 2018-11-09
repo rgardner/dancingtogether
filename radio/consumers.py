@@ -50,7 +50,8 @@ def station_admin_required(func):
 class StationConsumer(AsyncJsonWebsocketConsumer):
     # WebSocket event handlers
 
-    def get_station_id(self):
+    @property
+    def station_id(self):
         return self.scope['url_route']['kwargs']['station_id']
 
     async def connect(self):
@@ -66,12 +67,10 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             await self.accept()
 
         self.state = StationState.NotConnected
-        self.station_id = None
         self.is_admin = None
         self.is_dj = None
 
-        station_id = self.get_station_id()
-        await self.join_station(station_id)
+        await self.join_station(self.station_id)
 
     async def receive_json(self, content):
         """Called when we get a text frame."""
@@ -87,19 +86,18 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         """Called when the WebSocket closes for any reason."""
         try:
             if self.state != StationState.NotConnected:
-                await self.leave_station(self.station_id)
+                await self.leave_station()
         except ClientError as e:
             logger.error(f'Station client error: {e.code}: {e.message}')
 
     # Command helper methods called by receive_json
 
-    async def join_station(self, station_id):
-        listener = await get_listener_or_error(station_id, self.user)
-        self.station_id = station_id
+    async def join_station(self):
+        listener = await get_listener_or_error(self.station_id, self.user)
         self.is_admin = listener.is_admin
         self.is_dj = listener.is_dj
 
-        station = await get_station_or_error(station_id, self.user)
+        station = await get_station_or_error(self.station_id, self.user)
         await self.channel_layer.group_add(station.group_name,
                                            self.channel_name)
 
@@ -119,8 +117,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'join': station.title})
 
     @station_join_required
-    async def leave_station(self, station_id):
-        station = await get_station_or_error(station_id, self.user)
+    async def leave_station(self):
+        station = await get_station_or_error(self.station_id, self.user)
         await self.admin_group_send_leave(station.admin_group_name,
                                           self.user.username, self.user.email)
 
@@ -135,7 +133,6 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
             await ensure_station_playback_state_is_paused(station)
 
         self.state = StationState.NotConnected
-        self.station_id = None
         self.is_admin = None
         self.is_dj = None
 

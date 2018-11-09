@@ -50,7 +50,7 @@ class RefreshAccessToken(APIView):
     def post(self, request, format=None, user_pk=None):
         access_token = self.get_object()
         access_token.refresh()
-        spotify.save_access_token(access_token)
+        access_token.save()
 
         serializer = AccessTokenSerializer(access_token)
         return Response(serializer.data)
