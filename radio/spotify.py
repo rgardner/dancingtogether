@@ -92,19 +92,11 @@ class AccessToken:
                  access_token_expiration_time):
         self.user = user
         self.refresh_token = refresh_token
-        self._access_token = access_token
-        self._access_token_expiration_time = access_token_expiration_time
+        self.token = access_token
+        self.token_expiration_time = access_token_expiration_time
 
     def __str__(self):
         return self.token
-
-    @property
-    def token(self):
-        return self._access_token
-
-    @property
-    def token_expiration_time(self):
-        return self._access_token_expiration_time
 
     def is_valid(self):
         return ((self.token is not None)
@@ -123,10 +115,10 @@ class AccessToken:
         response = requests.post(settings.SPOTIFY_TOKEN_API_URL, data=data)
         if response.status_code == HTTPStatus.OK.value:
             response_data = response.json()
-            self._access_token = response_data['access_token']
+            self.token = response_data['access_token']
             expires_in = int(response_data['expires_in'])
             expires_in = timedelta(seconds=expires_in)
-            self._access_token_expiration_time = timezone.now() + expires_in
+            self.token_expiration_time = timezone.now() + expires_in
         else:
             logger.error(response.text)
             response.raise_for_status()
@@ -140,15 +132,13 @@ class AccessToken:
     def save(self):
         """Save the access token to the database."""
         try:
-            creds = SpotifyCredentials.objects.get(
-                user_id=access_token.user.id)
+            creds = SpotifyCredentials.objects.get(user_id=self.user.id)
         except SpotifyCredentials.DoesNotExist:
             creds = SpotifyCredentials(
-                user_id=access_token.user.id,
-                refresh_token=access_token.refresh_token)
+                user_id=self.user.id, refresh_token=self.refresh_token)
 
-        creds.access_token = access_token.token
-        creds.access_token_expiration_time = access_token.token_expiration_time
+        creds.access_token = self.token
+        creds.access_token_expiration_time = self.token_expiration_time
         creds.save()
 
     @classmethod

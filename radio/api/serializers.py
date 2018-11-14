@@ -41,7 +41,8 @@ class StationSerializer(serializers.HyperlinkedModelSerializer):
                 playback_state = PlaybackStateSerializer().create(
                     validated_data['playbackstate'])
 
-        instance.playbackstate = playback_state
+            instance.playbackstate = playback_state
+
         return instance
 
 

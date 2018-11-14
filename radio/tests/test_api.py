@@ -1,4 +1,5 @@
 from http import HTTPStatus
+import json
 import os
 
 from django.contrib import auth
@@ -7,10 +8,76 @@ from django.utils import timezone
 import pytest
 from rest_framework.test import APITestCase
 
-from ..models import Listener, SpotifyCredentials, Station
+from ..api.serializers import PlaybackStateSerializer, StationSerializer
+from ..models import Listener, PlaybackState, SpotifyCredentials, Station
 from . import mocks
 
+MOCK_USERNAME1 = 'MockUsername1'
 MOCK_USERNAME2 = 'MockUsername2'
+
+
+@pytest.mark.skipif(
+    'CI' in os.environ, reason='Django test client causes redirect in CI')
+class StationTests(APITestCase):
+    def setUp(self):
+        password = 'testpassword'
+        self.user1 = create_user1(password)
+        assert self.client.login(
+            username=self.user1.username, password=password)
+        create_spotify_credentials(self.user1)
+
+    def tearDown(self):
+        self.client.logout()
+
+    def test_can_list_stations(self):
+        response = self.client.get('/api/v1/stations/')
+        assert response.status_code == HTTPStatus.OK
+        assert not response.data
+
+        station = create_station()
+        create_listener(station, self.user1)
+        response = self.client.get('/api/v1/stations/')
+        assert response.status_code == HTTPStatus.OK
+        assert len(response.data) == 1
+        assert response.data[0] == StationSerializer(station).data
+
+    def test_can_only_list_authorized_stations(self):
+        # Create a station that user1 is not a listener of
+        create_station()
+
+        response = self.client.get('/api/v1/stations/')
+        assert response.status_code == HTTPStatus.OK
+        assert not response.data
+
+    def test_can_update_stations(self):
+        station = create_station()
+        create_listener(station, self.user1)
+        playback_state = create_playback_state(station)
+
+        response = self.client.patch(
+            f'/api/v1/stations/{station.id}/',
+            data={
+                'playbackstate': {
+                    'raw_position_ms': 1,
+                },
+            },
+            format='json')
+        assert response.status_code == HTTPStatus.OK
+        assert PlaybackState.objects.get(
+            station_id=station.id).raw_position_ms == 1
+
+    def test_user_can_only_update_authorized_stations(self):
+        station = create_station()
+        playback_state = create_playback_state(station)
+        playback_state.raw_position_ms = 1
+
+        response = self.client.patch(
+            f'/api/v1/stations/{station.id}/',
+            data={
+                'playbackstate.raw_position_ms': 1,
+            },
+            format='json')
+        assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 @pytest.mark.skipif(
@@ -23,42 +90,115 @@ class ListenerTests(APITestCase):
             username=self.user1.username, password=password)
         create_spotify_credentials(self.user1)
 
+        self.station = create_station()
+        create_listener(self.station, self.user1, is_admin=True)
+
     def tearDown(self):
         self.client.logout()
 
     def test_can_create_listener(self):
-        station_id = create_station().id
         username2 = create_user2().username
 
         data = {
             'user': username2,
-            'station': station_id,
+            'station': self.station.id,
             'is_admin': False,
             'is_dj': False,
         }
         response = self.client.post('/api/v1/stations/1/listeners/', data=data)
         assert response.status_code == HTTPStatus.CREATED.value
 
-    def test_cannot_create_listener_for_nonexistent_user(self):
-        station_id = create_station().id
+    def test_can_only_create_listener_if_authorized(self):
+        station2 = create_station()
+        username2 = create_user2().username
 
+        # user1 is not a listener of station2
+        data = {
+            'user': username2,
+            'station': self.station.id,
+            'is_admin': False,
+            'is_dj': False,
+        }
+        response = self.client.post('/api/v1/stations/2/listeners/', data=data)
+        assert response.status_code == HTTPStatus.NOT_FOUND.value
+
+        # user1 is not an admin of station2
+        create_listener(station2, self.user1, is_admin=False)
+        data = {
+            'user': username2,
+            'station': self.station.id,
+            'is_admin': False,
+            'is_dj': False,
+        }
+        response = self.client.post('/api/v1/stations/2/listeners/', data=data)
+        assert response.status_code == HTTPStatus.FORBIDDEN.value
+
+    def test_cannot_create_listener_for_nonexistent_user(self):
         data = {
             'user': 'NonexistentUsername',
-            'station': station_id,
+            'station': self.station.id,
             'is_admin': False,
             'is_dj': False,
         }
         response = self.client.post('/api/v1/stations/1/listeners/', data=data)
         assert response.status_code == HTTPStatus.BAD_REQUEST.value
 
+    def test_can_get_listeners(self):
+        user2 = create_user2()
+        create_listener(self.station, user2)
+
+        response = self.client.get('/api/v1/stations/1/listeners/')
+        data = [{
+            'id': 1,
+            'user': MOCK_USERNAME1,
+            'station': 1,
+            'is_admin': True,
+            'is_dj': True
+        },
+                {
+                    'id': 2,
+                    'user': MOCK_USERNAME2,
+                    'station': 1,
+                    'is_admin': False,
+                    'is_dj': True
+                }]
+        assert response.data == data
+
+    def test_can_only_get_listeners_if_authorized(self):
+        station2 = create_station()
+
+        # user1 is not a listener of station2
+        response = self.client.get('/api/v1/stations/2/listeners/')
+        assert response.status_code == HTTPStatus.NOT_FOUND.value
+
+        # user1 is not an admin of station2
+        create_listener(station2, self.user1, is_admin=False)
+        response = self.client.get('/api/v1/stations/2/listeners/')
+        assert response.status_code == HTTPStatus.FORBIDDEN.value
+
     def test_can_delete_listener(self):
-        station = create_station()
         user = create_user2()
-        listener_id = create_listener(station, user).id
+        listener_id = create_listener(self.station, user).id
 
         response = self.client.delete(
             f'/api/v1/stations/1/listeners/{listener_id}/')
         assert response.status_code == HTTPStatus.NO_CONTENT.value
+
+    def test_can_only_delete_listener_if_authorized(self):
+        station2 = create_station()
+        user2 = create_user2()
+        listener_id = create_listener(station2, user2).id
+
+        # user1 is not a listener of station2
+        response = self.client.delete(
+            f'/api/v1/stations/2/listeners/{listener_id}/')
+        assert response.status_code == HTTPStatus.NOT_FOUND.value
+
+        # user1 is not an admin of station2
+        create_listener(station2, self.user1, is_admin=False)
+        response = self.client.delete(
+            f'/api/v1/stations/2/listeners/{listener_id}/')
+        assert response.status_code == HTTPStatus.FORBIDDEN.value
 
 
 @pytest.mark.skipif(
@@ -96,7 +236,9 @@ class AccessTokenTests(APITestCase):
 
 def create_user1(password):
     return auth.get_user_model().objects.create_user(
-        username='testuser1', email='testuser1@example.com', password=password)
+        username=MOCK_USERNAME1,
+        email='testuser1@example.com',
+        password=password)
 
 
 def create_user2():
@@ -108,11 +250,23 @@ def create_station():
     return Station.objects.create(title='Station1')
 
 
-def create_listener(station, user):
+def create_listener(station, user, **kwargs):
     return Listener.objects.create(
-        station=station, user=user, is_admin=False, is_dj=True)
+        station=station,
+        user=user,
+        is_admin=kwargs.get('is_admin', False),
+        is_dj=kwargs.get('is_dj', True))
 
 
 def create_spotify_credentials(user):
     return SpotifyCredentials.objects.create(
         user=user, access_token_expiration_time=timezone.now())
+
+
+def create_playback_state(station, **kwargs):
+    station_state = PlaybackState(station=station)
+    station_state.paused = kwargs.get('paused', True)
+    station_state.raw_position_ms = kwargs.get('raw_position_ms', 0)
+    station_state.sample_time = timezone.now()
+    station_state.save()
+    return station_state

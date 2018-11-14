@@ -1,8 +1,9 @@
 import logging
 
-from django.http import Http404
+from django.contrib import auth
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
@@ -22,12 +23,39 @@ class StationViewSet(viewsets.ModelViewSet):
     queryset = Station.objects.all()
     serializer_class = StationSerializer
 
+    def get_object(self):
+        return get_object_or_404(self.get_queryset(), id=self.kwargs['pk'])
+
+    def get_queryset(self):
+        return self.request.user.stations.all()
+
 
 class ListenerViewSet(viewsets.ModelViewSet):
     serializer_class = ListenerSerializer
 
+    def get_object(self):
+        return get_object_or_404(self.get_queryset(), id=self.kwargs['pk'])
+
     def get_queryset(self):
-        return Listener.objects.filter(station=self.kwargs['station_pk'])
+        station_id = self.kwargs['station_pk']
+        get_object_or_404(self.request.user.stations.all(), id=station_id)
+
+        listener = Listener.objects.get(
+            station=station_id, user=self.request.user)
+        if not listener.is_admin:
+            raise PermissionDenied()
+
+        return Listener.objects.filter(station=station_id)
+
+    def create(self, request, station_pk=None):
+        get_object_or_404(self.request.user.stations.all(), id=station_pk)
+
+        listener = Listener.objects.get(
+            station=station_pk, user=self.request.user)
+        if not listener.is_admin:
+            raise PermissionDenied()
+
+        return super().create(request)
 
 
 class BelongsToUser(permissions.BasePermission):
