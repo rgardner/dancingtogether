@@ -70,7 +70,7 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         self.is_admin = None
         self.is_dj = None
 
-        await self.join_station(self.station_id)
+        await self.join_station()
 
     async def receive_json(self, content):
         """Called when we get a text frame."""

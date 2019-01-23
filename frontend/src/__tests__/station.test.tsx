@@ -61,7 +61,7 @@ class MockWebSocketBridge implements IWebSocketBridge {
     // Mock functions
 
     public fire(data: any) {
-        this.callback!(data, '');
+        this.callback!(data);
     }
 
     public receiveData(): Promise<any> {

@@ -1,7 +1,8 @@
-// @ts-ignore: No typings for Django Channels IWebSocketBridge
-declare var channels;
+import ReconnectingWebSocket from 'reconnecting-websocket';
 
-export type WebSocketListenCallback = (action: any, stream: string) => void;
+import DTError from './DTError';
+
+export type WebSocketListenCallback = (action: any) => void;
 
 export interface IWebSocketBridge {
     connect(path: string): void;
@@ -10,9 +11,24 @@ export interface IWebSocketBridge {
 }
 
 export class ChannelWebSocketBridge implements IWebSocketBridge {
-    private impl = new channels.WebSocketBridge();
+    private impl?: ReconnectingWebSocket;
 
-    public connect(path: string) { this.impl.connect(path); }
-    public listen(callback: WebSocketListenCallback) { this.impl.listen(callback); }
-    public send(data: any) { this.impl.send(data); }
+    public connect(path: string) {
+        this.impl = new ReconnectingWebSocket(path);
+        this.impl.onclose = (event) => {
+            console.log(`Websocket closed: code=${event.code}, wasClean=${event.wasClean}`);
+        };
+    }
+
+    public listen(callback: WebSocketListenCallback) {
+        if (!this.impl) {
+            throw new DTError('invalid operation: ChannelWebSocketBridge.connect not called');
+        }
+
+        this.impl.onmessage = (event) => callback(JSON.parse(event.data));
+    }
+
+    public send(data: any) {
+        this.impl!.send(JSON.stringify(data));
+    }
 }

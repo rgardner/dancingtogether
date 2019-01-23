@@ -398,7 +398,12 @@ export class StationManager extends React.Component<IStationManagerProps, IStati
     }
 
     private getMedianClientServerTimeOffset(): number {
-        console.assert(this.state.clientServerTimeOffsets.length > 0);
+        if (this.state.clientServerTimeOffsets.length === 0) {
+            // This can occur if a ping to the server times out, so choose a
+            // 'reasonable' default value.
+            return 400;
+        }
+
         return median(this.state.clientServerTimeOffsets.entries());
     }
 
@@ -770,9 +775,10 @@ class TaskExecutor {
     }
 }
 
-function timeout(ms: number): Promise<never> {
+async function timeout(ms: number): Promise<never> {
     // @ts-ignore: Type '{}' is not assignable to type 'never'
-    return wait(ms).then(Promise.reject);
+    await wait(ms);
+    return Promise.reject('Request timed out');
 }
 
 async function retry(condition: () => Promise<boolean>): Promise<void> {
