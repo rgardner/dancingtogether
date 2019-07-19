@@ -1,6 +1,6 @@
 from http import HTTPStatus
-import os
 
+from accounts.models import User
 from django.contrib import auth
 from django.test import TestCase
 import pytest
@@ -11,13 +11,12 @@ MOCK_PASSWORD = 'MockPassword'
 MOCK_PASSWORD2 = 'MockPassword2'
 
 
-@pytest.mark.skipif(
-    'CI' in os.environ, reason='Django test client causes redirect in CI')
 class AccountsViewsTests(TestCase):
     def tearDown(self):
         self.client.logout()
+        auth.get_user_model().objects.all().delete()
 
-    def test_user_signup(self):
+    def test_user_sign_up(self):
         response = self.client.post(
             '/join/', {
                 'username': MOCK_USERNAME,
@@ -29,7 +28,7 @@ class AccountsViewsTests(TestCase):
         user = auth.get_user(self.client)
         assert user.is_authenticated
 
-    def test_user_signup_already_logged_in(self):
+    def test_user_sign_up_already_logged_in(self):
         user = create_user()
         self.client.force_login(user)
 
@@ -98,8 +97,8 @@ class AccountsViewsTests(TestCase):
         self.assertRedirects(response, f'/accounts/{user.id}/')
 
         self.client.logout()
-        assert self.client.login(
-            username=MOCK_USERNAME, password=MOCK_PASSWORD2)
+        assert self.client.login(username=MOCK_USERNAME,
+                                 password=MOCK_PASSWORD2)
 
     def test_user_can_only_change_their_password(self):
         user = create_user()
@@ -141,10 +140,10 @@ class AccountsViewsTests(TestCase):
     def test_user_needs_to_be_logged_in_to_delete_account(self):
         user = create_user()
         response = self.client.post(f'/accounts/{user.id}/delete/')
-        self.assertRedirects(response,
-                             '/accounts/login/?next=/accounts/1/delete/')
+        self.assertRedirects(
+            response, f'/accounts/login/?next=/accounts/{user.id}/delete/')
 
 
-def create_user(username=MOCK_USERNAME):
-    return auth.get_user_model().objects.create_user(
-        username=MOCK_USERNAME, password=MOCK_PASSWORD)
+def create_user(username=MOCK_USERNAME) -> User:
+    return auth.get_user_model().objects.create_user(username=MOCK_USERNAME,
+                                                     password=MOCK_PASSWORD)

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+from accounts.models import User
 from channels.db import database_sync_to_async
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
@@ -26,8 +27,7 @@ NON_USER_EMAIL = 'nonuser@example.com'
 async def test_ping_pong(user1, station1):
     await create_listener(user1, station1)
 
-    async with disconnecting(StationCommunicator(station1.id,
-                                                 user1)) as communicator:
+    async with disconnecting(StationCommunicator(station1.id)) as communicator:
         start_time = timezone.now().isoformat()
         await communicator.ping(start_time)
 
@@ -40,12 +40,13 @@ async def test_ping_pong(user1, station1):
 @pytest.mark.skip(reason='Test bug: deserialization not working')
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_playback_state_changed_notifications(user1, station1):
+async def test_playback_state_changed_notifications(user1: User,
+                                                    station1: Station):
     await create_listener(user1, station1, is_dj=False)
     playback_state = await create_playback_state(station1)
 
     async with disconnecting(StationCommunicator(
-            station1.id, user1)) as listener_communicator:
+            station1.id)) as listener_communicator:
         # The DJ changes the playback state
         playback_state.context_uri = MOCK_CONTEXT_URI2
         await consumers.save_station_playback_state(playback_state)
@@ -62,14 +63,14 @@ async def test_playback_state_changed_notifications(user1, station1):
     reason='Authentication does not work with StationCommunicator')
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_dj_leaves_station(user1, station1):
+async def test_dj_leaves_station(user1: User, station1: Station):
     await create_listener(user1, station1, is_dj=True)
 
     # precondition: station playback state exists and is playing
     await create_playback_state(station1, paused=False)
 
-    async with disconnecting(StationCommunicator(station1.id,
-                                                 user1)) as _communicator:
+    async with disconnecting(StationCommunicator(
+            station1.id)) as _communicator:
         pass
 
     new_playback_state = await get_playback_state(station1)
@@ -80,19 +81,19 @@ async def test_dj_leaves_station(user1, station1):
 
 
 @pytest.fixture
-def user1():
-    return get_user_model().objects.create(
-        username='testuser1', email='testuser1@example.com')
+def user1() -> User:
+    return get_user_model().objects.create(username='testuser1',
+                                           email='testuser1@example.com')
 
 
 @pytest.fixture
-def user2():
-    return get_user_model().objects.create(
-        username='testuser2', email='testuser2@example.com')
+def user2() -> User:
+    return get_user_model().objects.create(username='testuser2',
+                                           email='testuser2@example.com')
 
 
 @pytest.fixture
-def station1():
+def station1() -> Station:
     return Station.objects.create(title='TestStation1')
 
 
@@ -100,13 +101,19 @@ def station1():
 
 
 @database_sync_to_async
-def create_listener(user, station, *, is_admin=False, is_dj=False):
-    return Listener.objects.create(
-        user=user, station=station, is_admin=is_admin, is_dj=is_dj)
+def create_listener(user: User,
+                    station: Station,
+                    *,
+                    is_admin=False,
+                    is_dj=False) -> Listener:
+    return Listener.objects.create(user=user,
+                                   station=station,
+                                   is_admin=is_admin,
+                                   is_dj=is_dj)
 
 
 @database_sync_to_async
-def create_playback_state(station, **kwargs):
+def create_playback_state(station: Station, **kwargs):
     station_state = PlaybackState(station=station)
     station_state.paused = kwargs.get('paused', True)
     station_state.raw_position_ms = kwargs.get('raw_position_ms', 0)
@@ -116,7 +123,7 @@ def create_playback_state(station, **kwargs):
 
 
 @database_sync_to_async
-def get_playback_state(station):
+def get_playback_state(station: Station):
     return PlaybackState.objects.get(station=station)
 
 
@@ -128,7 +135,7 @@ def assert_client_server_states_are_equal(client_state, server_state):
 
 
 @asynccontextmanager
-async def disconnecting(communicator):
+async def disconnecting(communicator: WebsocketCommunicator):
     try:
         connected, _ = await communicator.connect()
         assert connected
@@ -138,14 +145,14 @@ async def disconnecting(communicator):
 
 
 class StationCommunicator(WebsocketCommunicator):
-    def __init__(self, station_id, user):
+    def __init__(self, station_id: int):
         application = URLRouter([
             path('api/stations/<int:station_id>/stream/', StationConsumer),
         ])
         url = f'/api/stations/{station_id}/stream/'
         super().__init__(application, url)
 
-    async def ping(self, start_time):
+    async def ping(self, start_time: str):
         await self.send_json_to({
             'command': 'ping',
             'start_time': start_time,

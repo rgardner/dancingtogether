@@ -9,6 +9,10 @@ DATABASES = {
     },
 }
 
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
 # Test
 # https://docs.djangoproject.com/en/2.0/topics/testing/
 

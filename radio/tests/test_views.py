@@ -1,6 +1,6 @@
 from http import HTTPStatus
-import os
 
+from accounts.models import User
 from django.contrib import auth
 from django.test import TestCase
 import pytest
@@ -11,8 +11,6 @@ MOCK_USERNAME = 'MockUsername'
 MOCK_PASSWORD = 'MockPassword'
 
 
-@pytest.mark.skipif(
-    'CI' in os.environ, reason='Django test client causes redirect in CI')
 class RadioViewsTests(TestCase):
     def tearDown(self):
         self.client.logout()
@@ -25,6 +23,7 @@ class RadioViewsTests(TestCase):
         station2 = create_station()
 
         response = self.client.get('/stations/')
+
         assert station1 in response.context['stations']
         assert station2 not in response.context['stations']
 
@@ -37,6 +36,7 @@ class RadioViewsTests(TestCase):
         self.client.force_login(user)
 
         response = self.client.get('/stations/1/')
+
         assert response.status_code == HTTPStatus.NOT_FOUND.value
 
     def test_user_can_delete_station(self):
@@ -46,6 +46,7 @@ class RadioViewsTests(TestCase):
         create_listener(station, user, is_admin=True)
 
         response = self.client.post(f'/stations/{station.id}/delete/')
+
         self.assertRedirects(response, '/stations/')
         with pytest.raises(Station.DoesNotExist):
             Station.objects.get(id=station.id)
@@ -62,18 +63,22 @@ class RadioViewsTests(TestCase):
         create_listener(station, user)
 
         response = self.client.post(f'/stations/{station.id}/delete/')
+
         self.assertRedirects(response, '/stations/')
 
 
-def create_user(username=MOCK_USERNAME):
-    return auth.get_user_model().objects.create_user(
-        username=MOCK_USERNAME, password=MOCK_PASSWORD)
+def create_user(username=MOCK_USERNAME) -> User:
+    return auth.get_user_model().objects.create_user(username=MOCK_USERNAME,
+                                                     password=MOCK_PASSWORD)
 
 
-def create_station():
+def create_station() -> Station:
     return Station.objects.create(title='Station1')
 
 
-def create_listener(station, user, is_admin=False, is_dj=False):
-    return Listener.objects.create(
-        station=station, user=user, is_admin=is_admin, is_dj=is_dj)
+def create_listener(station: Station, user: User, is_admin=False,
+                    is_dj=False) -> Listener:
+    return Listener.objects.create(station=station,
+                                   user=user,
+                                   is_admin=is_admin,
+                                   is_dj=is_dj)

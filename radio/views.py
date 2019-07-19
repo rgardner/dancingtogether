@@ -2,7 +2,7 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views import View, generic
@@ -18,18 +18,21 @@ logger = logging.getLogger(__name__)
 class ListenerRequiredMixin:
     user_check_failure_path = ''
 
-    def dispatch(self, request, *args, **kwargs):
+    def dispatch(self, request: HttpRequest, *args, **kwargs):
+        # Django does not have a base class for mixins, so ignore some type errors
         get_object_or_404(
-            Listener, user=self.request.user, station_id=kwargs['pk'])
-        return super().dispatch(request, *args, **kwargs)
+            Listener,
+            user=self.request.user,  # type: ignore
+            station_id=kwargs['pk'])
+        return super().dispatch(request, *args, **kwargs)  # type: ignore
 
 
 class IndexView(LoginRequiredMixin, View):
-    def get(self, request, *args, **kwargs):
+    def get(self, request: HttpRequest, *args, **kwargs):
         view = ListStationsView.as_view()
         return view(request, *args, **kwargs)
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request: HttpRequest, *args, **kwargs):
         view = CreateStationView.as_view()
         return view(request, *args, **kwargs)
 
@@ -41,8 +44,7 @@ class ListStationsView(generic.ListView):
 
     def get_queryset(self):
         station_ids = Listener.objects.filter(
-            user=self.request.user).values_list(
-                'station_id', flat=True)
+            user=self.request.user).values_list('station_id', flat=True)
         return Station.objects.filter(id__in=station_ids)
 
     def get_context_data(self, **kwargs):
@@ -60,11 +62,10 @@ class CreateStationView(CreateView):
         response = super().form_valid(form)
 
         # Creator is automatically an admin and DJ of this station
-        Listener.objects.create(
-            user=self.request.user,
-            station=self.object,
-            is_admin=True,
-            is_dj=True)
+        Listener.objects.create(user=self.request.user,
+                                station=self.object,
+                                is_admin=True,
+                                is_dj=True)
 
         return response
 
@@ -82,8 +83,9 @@ class DetailStationView(LoginRequiredMixin, ListenerRequiredMixin,
         context['user_id'] = self.request.user.id
         context['debug'] = settings.DEBUG
 
-        listener = get_object_or_404(
-            Listener, user=self.request.user, station=context['object'])
+        listener = get_object_or_404(Listener,
+                                     user=self.request.user,
+                                     station=context['object'])
         context['is_dj'] = listener.is_dj
         context['is_admin'] = listener.is_admin
 
@@ -97,17 +99,17 @@ class DeleteStationView(LoginRequiredMixin, ListenerRequiredMixin, DeleteView):
     model = Station
     success_url = reverse_lazy('radio:index')
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request: HttpRequest, *args, **kwargs):
         # precondition: ListenerRequiredMixin
-        listener = Listener.objects.get(
-            user=request.user, station_id=kwargs['pk'])
+        listener = Listener.objects.get(user=request.user,
+                                        station_id=kwargs['pk'])
         if listener.is_admin:
             return super().post(request, *args, **kwargs)
         else:
             return redirect('/stations/')
 
 
-def oauth_callback(request):
+def oauth_callback(request: HttpRequest):
     result = request.GET
 
     # Validate OAuth state parameter
@@ -124,5 +126,5 @@ def oauth_callback(request):
         code = result['code']
         spotify.AccessToken.request_refresh_and_access_token(
             code, request.user)
-        # TODO(rogardn): redirect to original destination before oauth request
+        # TODO: redirect to original destination before oauth request
         return redirect('/stations')

@@ -1,3 +1,4 @@
+from accounts.models import User
 from django.contrib import auth
 from django.test import override_settings
 from django.utils import timezone
@@ -10,7 +11,7 @@ from . import mocks
 
 
 @pytest.mark.django_db(transaction=True)
-def test_refresh_access_token(user1):
+def test_refresh_access_token(user1: User):
     create_spotify_credentials(user1)
 
     port = mocks.get_free_port()
@@ -25,9 +26,9 @@ def test_refresh_access_token(user1):
 
 
 @pytest.fixture
-def user1():
-    return auth.get_user_model().objects.create(
-        username='testuser1', email='testuser1@example.com')
+def user1() -> User:
+    return auth.get_user_model().objects.create(username='testuser1',
+                                                email='testuser1@example.com')
 
 
 def create_spotify_credentials(user):

@@ -6,10 +6,12 @@ from . import views
 router = routers.SimpleRouter()
 router.register(r'stations', views.StationViewSet)
 
-listeners_router = routers.NestedSimpleRouter(
-    router, r'stations', lookup='station')
-listeners_router.register(
-    r'listeners', views.ListenerViewSet, basename='listeners')
+listeners_router = routers.NestedSimpleRouter(router,
+                                              r'stations',
+                                              lookup='station')
+listeners_router.register(r'listeners',
+                          views.ListenerViewSet,
+                          basename='listeners')
 
 # Wire up our API using automatic URL routing.
 # Additionally, we include login URLs for the browsable API.

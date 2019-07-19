@@ -7,8 +7,8 @@ class SpotifyCredentials(models.Model):
     class Meta:
         verbose_name_plural = "spotify credentials"
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL,
+                                on_delete=models.CASCADE)
     refresh_token = models.CharField(max_length=256)
     access_token = models.CharField(max_length=256)
     access_token_expiration_time = models.DateTimeField()
@@ -17,8 +17,9 @@ class SpotifyCredentials(models.Model):
 class Station(models.Model):
     title = models.CharField(max_length=256)
 
-    members = models.ManyToManyField(
-        settings.AUTH_USER_MODEL, related_name='stations', through='Listener')
+    members = models.ManyToManyField(settings.AUTH_USER_MODEL,
+                                     related_name='stations',
+                                     through='Listener')
 
     def __str__(self):
         return self.title
@@ -36,8 +37,8 @@ class Station(models.Model):
 
 
 class Listener(models.Model):
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL,
+                             on_delete=models.CASCADE)
     station = models.ForeignKey(Station, on_delete=models.CASCADE)
 
     is_admin = models.BooleanField()

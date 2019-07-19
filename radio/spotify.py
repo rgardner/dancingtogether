@@ -134,8 +134,8 @@ class AccessToken:
         try:
             creds = SpotifyCredentials.objects.get(user_id=self.user.id)
         except SpotifyCredentials.DoesNotExist:
-            creds = SpotifyCredentials(
-                user_id=self.user.id, refresh_token=self.refresh_token)
+            creds = SpotifyCredentials(user_id=self.user.id,
+                                       refresh_token=self.refresh_token)
 
         creds.access_token = self.token
         creds.access_token_expiration_time = self.token_expiration_time

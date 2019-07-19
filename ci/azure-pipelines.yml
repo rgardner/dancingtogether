@@ -38,5 +38,6 @@ steps:
   displayName: 'Run tests'
 
 - task: PublishTestResults@2
+  condition: succeededOrFailed()
   inputs:
     testResultsFiles: "**/test-*.xml"

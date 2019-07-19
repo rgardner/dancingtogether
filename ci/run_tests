@@ -4,11 +4,12 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # run frontend tests
 
-pushd "$REPO_ROOT/frontend"
+pushd "$REPO_ROOT/frontend" || exit 1
 npm run build
 CI=1 JEST_JUNIT_OUTPUT=junit/test-frontend.xml npm test -- --ci --reporters=default --reporters=jest-junit
-popd
+popd || exit 1
 
 # run backend tests
 
-CI=1 DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/test-backend.xml --no-input
+DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py collectstatic --noinput
+DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/test-backend.xml --no-input
