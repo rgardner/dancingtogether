@@ -263,7 +263,9 @@ def create_station() -> Station:
     return Station.objects.create(title='Station1')
 
 
-def create_listener(station: Station, user: User, is_admin=False,
+def create_listener(station: Station,
+                    user: User,
+                    is_admin=False,
                     is_dj=True) -> Listener:
     return Listener.objects.create(station=station,
                                    user=user,
@@ -276,7 +278,8 @@ def create_spotify_credentials(user: User) -> SpotifyCredentials:
         user=user, access_token_expiration_time=timezone.now())
 
 
-def create_playback_state(station: Station, paused=True,
+def create_playback_state(station: Station,
+                          paused=True,
                           raw_position_ms=0) -> PlaybackState:
     station_state = PlaybackState(station=station)
     station_state.paused = paused
