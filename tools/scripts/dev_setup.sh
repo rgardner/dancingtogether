@@ -11,19 +11,16 @@ is_macos() {
 is_ubuntu() {
   [[ "$(cat /etc/issue 2> /dev/null)" =~ Ubuntu ]] || return 1
 }
-get_os() {
-  for os in macos ubuntu; do
-    "is_$os"; [[ $? == "${1:-0}" ]] && echo $os
-  done
-}
 
 if is_macos; then
-  brew install heroku python3 getsentry/tools/sentry-cli || true
+  brew install heroku python3 pyenv getsentry/tools/sentry-cli || true
+  pyenv install 3.8.0 --skip-existing
+
+  virtualenv_name="dancingtogether-3.8.0"
+  pyenv virtualenv 3.8.0 "${virtualenv_name}" || true
+  pyenv local "${virtualenv_name}"
 elif is_ubuntu; then
-  # Install Python3.6
-  sudo add-apt-repository ppa:jonathonf/python-3.6 || true
-  sudo apt-get update
-  sudo apt-get install python3.6 || true
+  echo "You are on your own for installing python 3.8" 2>&1
 
   # Install heroku
   sudo add-apt-repository "deb https://cli-assets.heroku.com/branches/stable/apt ./"
@@ -33,7 +30,7 @@ elif is_ubuntu; then
 fi
 
 git remote add heroku https://git.heroku.com/dancingtogether.git || true
-ln -s -f "$repo_root"/tools/scripts/git-hooks/pre-commit .git/hooks/pre-commit
+ln -s -f "${repo_root}"/tools/scripts/git-hooks/pre-commit .git/hooks/pre-commit
 
 pip3 install pipenv
 pipenv install --dev

@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 services:
   db:
@@ -17,7 +17,7 @@ services:
       - DATABASE_URL=postgres://postgres@db:5432/postgres
       - REDIS_URL=redis://redis@redis:6379
     env_file:
-      - .env
+      - .envrc
     volumes:
       - .:/app
     ports:

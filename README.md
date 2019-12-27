@@ -9,6 +9,8 @@ hit play. Each person listens to music using their own Spotify account and
 Dancing Together keeps the jammin' in sync. Pause it, skip it, rewind it,
 enjoy it!
 
+It has a Python 3.8 Django backend with a JavaScript React frontend.
+
 ## Features
 
 - Create your own radio station and invite friends via email
@@ -32,8 +34,8 @@ enjoy it!
 # Install dependencies
 ./tools/scripts/dev_setup.sh
 # Add required environment variables
-cp .env.example .env
-vim .env
+cp .env.example .envrc
+vim .envrc
 # Build containers
 make build
 # Run database migrations and create a superuser to administer the site

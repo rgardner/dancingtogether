@@ -1,6 +1,7 @@
 # Python
 *pyc
 .mypy_cache
+.python-version
 
 ## Django
 staticfiles
@@ -18,5 +19,5 @@ webpack-stats.prod.json
 node_modules
 
 # Dancing Together
-.env
+.envrc
 junit
