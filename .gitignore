@@ -19,5 +19,6 @@ webpack-stats.prod.json
 node_modules
 
 # Dancing Together
+.env
 .envrc
 junit

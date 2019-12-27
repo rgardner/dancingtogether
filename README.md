@@ -34,8 +34,8 @@ It has a Python 3.8 Django backend with a JavaScript React frontend.
 # Install dependencies
 ./tools/scripts/dev_setup.sh
 # Add required environment variables
-cp .env.example .envrc
-vim .envrc
+cp .env.example .env
+vim .env
 # Build containers
 make build
 # Run database migrations and create a superuser to administer the site
