@@ -7,8 +7,7 @@ class SpotifyCredentials(models.Model):
     class Meta:
         verbose_name_plural = "spotify credentials"
 
-    user = models.OneToOneField(settings.AUTH_USER_MODEL,
-                                on_delete=models.CASCADE)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     refresh_token = models.CharField(max_length=256)
     access_token = models.CharField(max_length=256)
     access_token_expiration_time = models.DateTimeField()
@@ -17,35 +16,34 @@ class SpotifyCredentials(models.Model):
 class Station(models.Model):
     title = models.CharField(max_length=256)
 
-    members = models.ManyToManyField(settings.AUTH_USER_MODEL,
-                                     related_name='stations',
-                                     through='Listener')
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, related_name="stations", through="Listener"
+    )
 
     def __str__(self):
         return self.title
 
     @property
     def group_name(self):
-        return f'station-{self.id}'
+        return f"station-{self.id}"
 
     @property
     def admin_group_name(self):
-        return f'station-admin-{self.id}'
+        return f"station-admin-{self.id}"
 
     def get_absolute_url(self):
-        return reverse('radio:detail', kwargs={'pk': self.pk})
+        return reverse("radio:detail", kwargs={"pk": self.pk})
 
 
 class Listener(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     station = models.ForeignKey(Station, on_delete=models.CASCADE)
 
     is_admin = models.BooleanField()
     is_dj = models.BooleanField()
 
     class Meta:
-        unique_together = (('user', 'station'), )
+        unique_together = (("user", "station"),)
 
 
 class PlaybackState(models.Model):

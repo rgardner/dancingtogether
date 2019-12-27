@@ -53,7 +53,7 @@
 
 3. Invite users via email to join room
     - make link expire after 24 hours
-    
+
 4. Add stop/stream controls to join/disconnect from station for non-djs
 
 5. show warning if non-dj tries to change music

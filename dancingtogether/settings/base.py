@@ -29,71 +29,72 @@ BASE_DIR = Path(os.path.abspath(__file__)).parent.parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get(
-    'DT_SECRET_KEY', '%)jx84v!m(5$52w6yf6@*ib*likhgl2!o#k(171%4$c3_ykwb!')
+    "DT_SECRET_KEY", "%)jx84v!m(5$52w6yf6@*ib*likhgl2!o#k(171%4$c3_ykwb!"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = bool(os.environ.get('DT_DEBUG', False))
+DEBUG = bool(os.environ.get("DT_DEBUG", False))
 
 ALLOWED_HOSTS: typing.List[str] = []
 
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'bootstrap4',
-    'channels',
-    'raven.contrib.django.raven_compat',
-    'rest_framework',
-    'webpack_loader',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "bootstrap4",
+    "channels",
+    "raven.contrib.django.raven_compat",
+    "rest_framework",
+    "webpack_loader",
     # Project Apps
-    'main',
-    'radio',
-    'accounts',
+    "main",
+    "radio",
+    "accounts",
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'dancingtogether.middleware.XContentTypeOptionsMiddleware',
-    'dancingtogether.middleware.XXssProtectionMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "dancingtogether.middleware.XContentTypeOptionsMiddleware",
+    "dancingtogether.middleware.XXssProtectionMiddleware",
 ]
 
-ROOT_URLCONF = 'dancingtogether.urls'
+ROOT_URLCONF = "dancingtogether.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'templates')],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [os.path.join(BASE_DIR, "templates")],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-ASGI_APPLICATION = 'dancingtogether.routing.application'
+ASGI_APPLICATION = "dancingtogether.routing.application"
 
 # SSL/HTTPS
 
-SECURE_SSL_REDIRECT = bool(os.environ.get('DT_USE_HTTPS', True))
-SESSION_COOKIE_SECURE = bool(os.environ.get('DT_USE_HTTPS', True))
+SECURE_SSL_REDIRECT = bool(os.environ.get("DT_USE_HTTPS", True))
+SESSION_COOKIE_SECURE = bool(os.environ.get("DT_USE_HTTPS", True))
 if SECURE_SSL_REDIRECT:
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -105,31 +106,21 @@ if SECURE_SSL_REDIRECT:
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME':
-        'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
-    {
-        'NAME':
-        'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME':
-        'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME':
-        'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",},
 ]
 
-AUTH_USER_MODEL = 'accounts.User'
+AUTH_USER_MODEL = "accounts.User"
 
 # Internationalization
 # https://docs.djangoproject.com/en/2.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -140,68 +131,47 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.0/howto/static-files/
 
-STATIC_URL = '/static/'
+STATIC_URL = "/static/"
 
 # Logging
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': True,
-    'root': {
-        'level': 'WARNING',
-        'handlers': ['sentry'],
+    "version": 1,
+    "disable_existing_loggers": True,
+    "root": {"level": "WARNING", "handlers": ["sentry"],},
+    "formatters": {
+        "verbose": {"format": "%(levelname)s %(asctime)s %(module)s: %(message)s",},
     },
-    'formatters': {
-        'verbose': {
-            'format': '%(levelname)s %(asctime)s %(module)s: %(message)s',
+    "handlers": {
+        "sentry": {
+            "level": "ERROR",
+            "class": "raven.contrib.django.raven_compat.handlers.SentryHandler",
+            "tags": {"custom-tag": "x"},
         },
-    },
-    'handlers': {
-        'sentry': {
-            'level': 'ERROR',
-            'class':
-            'raven.contrib.django.raven_compat.handlers.SentryHandler',
-            'tags': {
-                'custom-tag': 'x'
-            },
-        },
-        'console': {
-            'level': 'DEBUG',
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+        "console": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
         },
     },
-    'loggers': {
-        '': {
-            'handlers': ['console'],
-            'level': 'INFO',
+    "loggers": {
+        "": {"handlers": ["console"], "level": "INFO",},
+        "dancingtogether": {"handlers": ["console"], "level": "DEBUG",},
+        "django": {
+            "handlers": ["console"],
+            "level": os.getenv("DJANGO_LOG_LEVEL", "INFO"),
         },
-        'dancingtogether': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
+        "django.db.backends": {
+            "level": "ERROR",
+            "handlers": ["console"],
+            "propagate": False,
         },
-        'django': {
-            'handlers': ['console'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
-        },
-        'django.db.backends': {
-            'level': 'ERROR',
-            'handlers': ['console'],
-            'propagate': False,
-        },
-        'raven': {
-            'level': 'DEBUG',
-            'handlers': ['console'],
-            'propagate': False,
-        },
-        'radio': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-        },
-        'sentry.errors': {
-            'level': 'DEBUG',
-            'handlers': ['console'],
-            'propagate': False,
+        "raven": {"level": "DEBUG", "handlers": ["console"], "propagate": False,},
+        "radio": {"handlers": ["console"], "level": "DEBUG",},
+        "sentry.errors": {
+            "level": "DEBUG",
+            "handlers": ["console"],
+            "propagate": False,
         },
     },
 }
@@ -210,41 +180,37 @@ LOGGING = {
 # http://channels.readthedocs.io/en/latest/topics/channel_layers.html
 
 CHANNEL_LAYERS = {
-    'default': {
+    "default": {
         # This example app uses the Redis channel layer implementation channels_redis
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            'hosts': [os.environ.get('REDIS_URL')],
-        },
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [os.environ.get("REDIS_URL")],},
     },
 }
 
 # Django Rest Framework
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.BasicAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
     ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated",],
 }
 
 # View settings
 
-LOGIN_REDIRECT_URL = '/stations/'
-LOGOUT_REDIRECT_URL = '/'
+LOGIN_REDIRECT_URL = "/stations/"
+LOGOUT_REDIRECT_URL = "/"
 
 django_heroku.settings(locals(), logging=False)
-if 'DATABASE_URL' in os.environ:
-    locals()['DATABASES']['default'] = dj_database_url.config(
-        conn_max_age=django_heroku.MAX_CONN_AGE, ssl_require=False)
+if "DATABASE_URL" in os.environ:
+    locals()["DATABASES"]["default"] = dj_database_url.config(
+        conn_max_age=django_heroku.MAX_CONN_AGE, ssl_require=False
+    )
 
-SITE_URL = os.environ.get('DT_SITE_URL')
-SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')
-SPOTIFY_CLIENT_SECRET = os.environ.get('DT_SPOTIFY_CLIENT_SECRET')
-SPOTIFY_PLAYER_NAME = os.environ.get('DT_SPOTIFY_PLAYER_NAME',
-                                     'Dancing Together')
+SITE_URL = os.environ.get("DT_SITE_URL")
+SPOTIFY_CLIENT_ID = os.environ.get("DT_SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.environ.get("DT_SPOTIFY_CLIENT_SECRET")
+SPOTIFY_PLAYER_NAME = os.environ.get("DT_SPOTIFY_PLAYER_NAME", "Dancing Together")
 
-SPOTIFY_TOKEN_API_URL = 'https://accounts.spotify.com/api/token'
-SPOTIFY_PLAYER_PLAY_API_URL = 'https://api.spotify.com/v1/me/player/play'
+SPOTIFY_TOKEN_API_URL = "https://accounts.spotify.com/api/token"
+SPOTIFY_PLAYER_PLAY_API_URL = "https://api.spotify.com/v1/me/player/play"

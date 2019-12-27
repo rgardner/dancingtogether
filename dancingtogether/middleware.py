@@ -4,7 +4,7 @@ class XContentTypeOptionsMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
-        response['X-Content-Type-Options'] = 'nosniff'
+        response["X-Content-Type-Options"] = "nosniff"
         return response
 
 
@@ -14,5 +14,5 @@ class XXssProtectionMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
-        response['X-Xss-Protection'] = '1; mode=block'
+        response["X-Xss-Protection"] = "1; mode=block"
         return response

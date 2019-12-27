@@ -15,13 +15,12 @@ from ..api.serializers import PlaybackStateSerializer
 from ..consumers import StationConsumer
 from ..models import Listener, PlaybackState, Station
 
-MOCK_CONTEXT_URI1 = 'MockContextUri1'
-MOCK_CONTEXT_URI2 = 'MockContextUri2'
-NON_USER_EMAIL = 'nonuser@example.com'
+MOCK_CONTEXT_URI1 = "MockContextUri1"
+MOCK_CONTEXT_URI2 = "MockContextUri2"
+NON_USER_EMAIL = "nonuser@example.com"
 
 
-@pytest.mark.skip(
-    reason='Authentication does not work with StationCommunicator')
+@pytest.mark.skip(reason="Authentication does not work with StationCommunicator")
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_ping_pong(user1, station1):
@@ -32,35 +31,33 @@ async def test_ping_pong(user1, station1):
         await communicator.ping(start_time)
 
         response = await communicator.receive_json_from()
-        assert response['type'] == 'pong'
-        assert response['start_time'] == start_time
-        assert dateutil.parser.isoparse(response['server_time'])
+        assert response["type"] == "pong"
+        assert response["start_time"] == start_time
+        assert dateutil.parser.isoparse(response["server_time"])
 
 
-@pytest.mark.skip(reason='Test bug: deserialization not working')
+@pytest.mark.skip(reason="Test bug: deserialization not working")
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_playback_state_changed_notifications(user1: User,
-                                                    station1: Station):
+async def test_playback_state_changed_notifications(user1: User, station1: Station):
     await create_listener(user1, station1, is_dj=False)
     playback_state = await create_playback_state(station1)
 
-    async with disconnecting(StationCommunicator(
-            station1.id)) as listener_communicator:
+    async with disconnecting(StationCommunicator(station1.id)) as listener_communicator:
         # The DJ changes the playback state
         playback_state.context_uri = MOCK_CONTEXT_URI2
         await consumers.save_station_playback_state(playback_state)
 
         response = await listener_communicator.receive_json_from()
-        assert response['type'] == 'playback_state_changed'
+        assert response["type"] == "playback_state_changed"
 
         response_playback_state = PlaybackStateSerializer(
-            data=response['playbackstate'])
+            data=response["playbackstate"]
+        )
         assert response_playback_state.is_valid()
 
 
-@pytest.mark.skip(
-    reason='Authentication does not work with StationCommunicator')
+@pytest.mark.skip(reason="Authentication does not work with StationCommunicator")
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_dj_leaves_station(user1: User, station1: Station):
@@ -69,8 +66,7 @@ async def test_dj_leaves_station(user1: User, station1: Station):
     # precondition: station playback state exists and is playing
     await create_playback_state(station1, paused=False)
 
-    async with disconnecting(StationCommunicator(
-            station1.id)) as _communicator:
+    async with disconnecting(StationCommunicator(station1.id)) as _communicator:
         pass
 
     new_playback_state = await get_playback_state(station1)
@@ -82,41 +78,40 @@ async def test_dj_leaves_station(user1: User, station1: Station):
 
 @pytest.fixture
 def user1() -> User:
-    return get_user_model().objects.create(username='testuser1',
-                                           email='testuser1@example.com')
+    return get_user_model().objects.create(
+        username="testuser1", email="testuser1@example.com"
+    )
 
 
 @pytest.fixture
 def user2() -> User:
-    return get_user_model().objects.create(username='testuser2',
-                                           email='testuser2@example.com')
+    return get_user_model().objects.create(
+        username="testuser2", email="testuser2@example.com"
+    )
 
 
 @pytest.fixture
 def station1() -> Station:
-    return Station.objects.create(title='TestStation1')
+    return Station.objects.create(title="TestStation1")
 
 
 # Utils
 
 
 @database_sync_to_async
-def create_listener(user: User,
-                    station: Station,
-                    *,
-                    is_admin=False,
-                    is_dj=False) -> Listener:
-    return Listener.objects.create(user=user,
-                                   station=station,
-                                   is_admin=is_admin,
-                                   is_dj=is_dj)
+def create_listener(
+    user: User, station: Station, *, is_admin=False, is_dj=False
+) -> Listener:
+    return Listener.objects.create(
+        user=user, station=station, is_admin=is_admin, is_dj=is_dj
+    )
 
 
 @database_sync_to_async
 def create_playback_state(station: Station, **kwargs):
     station_state = PlaybackState(station=station)
-    station_state.paused = kwargs.get('paused', True)
-    station_state.raw_position_ms = kwargs.get('raw_position_ms', 0)
+    station_state.paused = kwargs.get("paused", True)
+    station_state.raw_position_ms = kwargs.get("raw_position_ms", 0)
     station_state.sample_time = timezone.now()
     station_state.save()
     return station_state
@@ -146,14 +141,13 @@ async def disconnecting(communicator: WebsocketCommunicator):
 
 class StationCommunicator(WebsocketCommunicator):
     def __init__(self, station_id: int):
-        application = URLRouter([
-            path('api/stations/<int:station_id>/stream/', StationConsumer),
-        ])
-        url = f'/api/stations/{station_id}/stream/'
+        application = URLRouter(
+            [path("api/stations/<int:station_id>/stream/", StationConsumer),]
+        )
+        url = f"/api/stations/{station_id}/stream/"
         super().__init__(application, url)
 
     async def ping(self, start_time: str):
-        await self.send_json_to({
-            'command': 'ping',
-            'start_time': start_time,
-        })
+        await self.send_json_to(
+            {"command": "ping", "start_time": start_time,}
+        )

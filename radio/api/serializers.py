@@ -11,12 +11,19 @@ logger = logging.getLogger(__name__)
 class PlaybackStateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlaybackState
-        fields = ('station_id', 'context_uri', 'current_track_uri', 'paused',
-                  'raw_position_ms', 'sample_time', 'last_updated_time')
+        fields = (
+            "station_id",
+            "context_uri",
+            "current_track_uri",
+            "paused",
+            "raw_position_ms",
+            "sample_time",
+            "last_updated_time",
+        )
 
     def update(self, instance, validated_data):
         for field in PlaybackStateSerializer.Meta.fields:
-            if field != 'last_updated_time':
+            if field != "last_updated_time":
                 new_value = validated_data.get(field, getattr(instance, field))
                 setattr(instance, field, new_value)
 
@@ -29,17 +36,19 @@ class StationSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Station
-        fields = ('title', 'playbackstate')
+        fields = ("title", "playbackstate")
 
     def update(self, instance, validated_data):
-        if 'playbackstate' in validated_data:
+        if "playbackstate" in validated_data:
             try:
                 playback_state = PlaybackStateSerializer().update(
-                    instance.playbackstate, validated_data['playbackstate'])
+                    instance.playbackstate, validated_data["playbackstate"]
+                )
             except PlaybackState.DoesNotExist:
-                validated_data['playbackstate']['station_id'] = instance.id
+                validated_data["playbackstate"]["station_id"] = instance.id
                 playback_state = PlaybackStateSerializer().create(
-                    validated_data['playbackstate'])
+                    validated_data["playbackstate"]
+                )
 
             instance.playbackstate = playback_state
 
@@ -48,15 +57,13 @@ class StationSerializer(serializers.HyperlinkedModelSerializer):
 
 class ListenerSerializer(serializers.ModelSerializer):
     user = serializers.SlugRelatedField(
-        queryset=auth.get_user_model().objects.all(),
-        slug_field='username',
+        queryset=auth.get_user_model().objects.all(), slug_field="username",
     )
-    station = serializers.PrimaryKeyRelatedField(
-        queryset=Station.objects.all())
+    station = serializers.PrimaryKeyRelatedField(queryset=Station.objects.all())
 
     class Meta:
         model = Listener
-        fields = ('id', 'user', 'station', 'is_admin', 'is_dj')
+        fields = ("id", "user", "station", "is_admin", "is_dj")
 
 
 class AccessTokenSerializer(serializers.Serializer):
