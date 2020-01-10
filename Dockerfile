@@ -1,16 +1,23 @@
 FROM python:3.8.1
 ENV PYTHONUNBUFFERED 1
 
-RUN curl -sL https://deb.nodesource.com/setup_10.x | bash -
-RUN apt-get install -y nodejs
-RUN npm install -g webpack webpack-bundle-tracker typescript ts-loader
+RUN ["/bin/bash", "-c", "set -o pipefail && curl -sL https://deb.nodesource.com/setup_10.x | bash -"]
+# Update and install dependencies, and remove the package manager cache. Do
+# this in a single step for better caching.
+RUN apt-get --yes update && apt-get install --yes --no-install-recommends \
+  libpq-dev \
+  nodejs \
+  && rm -rf /var/lib/apt/lists/*
+RUN pip install pipenv
+RUN npm install --global \
+  ts-loader \
+  typescript \
+  webpack \
+  webpack-bundle-tracker
 
-RUN set -ex && mkdir /app
+RUN mkdir /app
+COPY Pipfile Pipfile.lock /app/
 WORKDIR /app
-
-ADD Pipfile /app
-ADD Pipfile.lock /app
-RUN set -ex && pip install pipenv --upgrade
 RUN set -ex && pipenv install --dev --system --ignore-pipfile --deploy
 
-ADD . /app
+COPY . /app
