@@ -3,6 +3,7 @@
 set -euo pipefail
 
 readonly repo_root="$(git rev-parse --show-toplevel)"
+readonly python_version="3.8.1"
 
 # OS detection
 is_macos() {
@@ -14,13 +15,13 @@ is_ubuntu() {
 
 if is_macos; then
   brew install heroku python3 pyenv getsentry/tools/sentry-cli || true
-  pyenv install 3.8.0 --skip-existing
+  pyenv install "${python_version}" --skip-existing
 
-  virtualenv_name="dancingtogether-3.8.0"
-  pyenv virtualenv 3.8.0 "${virtualenv_name}" || true
+  virtualenv_name="dancingtogether-${python_version}"
+  pyenv virtualenv "${python_version}" "${virtualenv_name}" || true
   pyenv local "${virtualenv_name}"
 elif is_ubuntu; then
-  echo "You are on your own for installing python 3.8" 2>&1
+  echo "You are on your own for installing python ${python_version}" 2>&1
 
   # Install heroku
   sudo add-apt-repository "deb https://cli-assets.heroku.com/branches/stable/apt ./"
