@@ -10,6 +10,6 @@ mkdir -p junit
 
 # run backend lint tests
 
-yapf --recursive . --exclude '*/migrations/*' --parallel --diff
-mypy --ignore-missing-imports --junit-xml junit/test-backend-lint.xml $(find . -name \*.py ! -path '*/migrations/*')
+python3 -m black --check .
+python3 -m mypy --ignore-missing-imports --junit-xml junit/test-backend-lint.xml $(find . -name \*.py ! -path '*/migrations/*')
 find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pylint --load-plugins pylint_django

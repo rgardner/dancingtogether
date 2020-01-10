@@ -2,7 +2,6 @@
 
 set -euo pipefail
 
-readonly repo_root="$(git rev-parse --show-toplevel)"
 readonly python_version="3.8.1"
 
 # OS detection
@@ -32,5 +31,6 @@ fi
 
 git remote add heroku https://git.heroku.com/dancingtogether.git || true
 
-pip3 install pipenv
-pipenv install --dev
+python3 -m pip install pipenv
+python3 -m pipenv install --dev
+python3 -m pre-commit install
