@@ -8,7 +8,7 @@ build:
 .PHONY: check
 check:
 	cd frontend && npx tslint --project .
-	pipenv run yapf --recursive . --exclude '*/migrations/*' --in-place --parallel
+	pipenv run black --check .
 	bash -c "pipenv run mypy --ignore-missing-imports \$$(find . -name \*.py ! -path '*/migrations/*')"
 	find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pipenv run pylint --load-plugins pylint_django
 
