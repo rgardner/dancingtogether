@@ -15,7 +15,6 @@ djangorestframework = "*"
 drf-nested-routers = "*"
 raven = "*"
 psycopg2 = "*"
-black = "*"
 
 [requires]
 python_version = "3.8"
