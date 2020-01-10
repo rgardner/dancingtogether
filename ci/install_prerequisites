@@ -8,8 +8,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # install backend dependencies
 
-# Install postgresql-dev for psycopg2-binary Python dependency
-sudo apt-get install postgresql-dev
+sudo apt-get install libpq-dev python-dev
 
 python3 -m pip install --upgrade pip pipenv
 pipenv install --dev --system --ignore-pipfile --deploy
