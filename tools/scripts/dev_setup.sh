@@ -31,7 +31,6 @@ elif is_ubuntu; then
 fi
 
 git remote add heroku https://git.heroku.com/dancingtogether.git || true
-ln -s -f "${repo_root}"/tools/scripts/git-hooks/pre-commit .git/hooks/pre-commit
 
 pip3 install pipenv
 pipenv install --dev
