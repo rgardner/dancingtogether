@@ -64,7 +64,7 @@ test-client-watch:
 
 .PHONY: test-server
 test-server:
-	DJANGO_SETTINGS_MODULE=dancingtogether.settings.test pipenv run python3 manage.py test
+	tools/scripts/test_backend
 
 .PHONY: deploy
 deploy:

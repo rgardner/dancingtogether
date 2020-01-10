@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Runs Dancing Together frontend tests.
+
+repo_root="$(git rev-parse --show-toplevel)"
+readonly repo_root
+
+pushd "${repo_root}/frontend" || exit 1
+npm run build
+CI=1 JEST_JUNIT_OUTPUT=junit/test-frontend.xml npm test -- --ci --reporters=default --reporters=jest-junit

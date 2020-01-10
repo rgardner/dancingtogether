@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# Runs all Dancing Together tests.
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+readonly repo_root
+
+set +e # allow failures
+failed=0
+"${repo_root}/tools/scripts/test_frontend" || failed=1
+"${repo_root}/tools/scripts/test_backend" || failed=1
+
+# Exit with error if any of the above failed
+if [ "$failed" -ne 0 ] ; then
+  exit 1
+fi

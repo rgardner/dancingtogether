@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#
+# Runs Dancing Together backend tests.
+
+set -euo pipefail
+
+DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py collectstatic --noinput
+DJANGO_SETTINGS_MODULE=dancingtogether.settings.test python manage.py test --junit-xml junit/test-backend.xml --no-input

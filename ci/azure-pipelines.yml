@@ -34,7 +34,7 @@ steps:
 - script: ci/run_lint_tests
   displayName: 'Run lint tests'
 
-- script: ci/run_tests
+- script: tools/scripts/test_all
   displayName: 'Run tests'
 
 - task: PublishTestResults@2
