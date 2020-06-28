@@ -3,7 +3,6 @@ from django.test.runner import DiscoverRunner
 
 class PytestTestRunner(DiscoverRunner):
     """Runs pytest to discover and run tests."""
-
     def __init__(self,
                  verbosity=1,
                  failfast=False,

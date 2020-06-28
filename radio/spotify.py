@@ -24,7 +24,6 @@ class AuthorizationRequiredMixin:
     """
     Verify that the current user has authorized the application to use Spotify.
     """
-
     def dispatch(self, request, *args, **kwargs):
         if not hasattr(request.user, 'spotifycredentials'):
             return request_spotify_authorization(request)
@@ -36,7 +35,6 @@ class FreshAccessTokenRequiredMixin:
     """
     Ensures the Spotify access token is fresh and cached in the current session.
     """
-
     def dispatch(self, request, *args, **kwargs):
         access_token = AccessToken.load(request.user)
         if access_token.has_expired():

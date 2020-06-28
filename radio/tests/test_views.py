@@ -76,7 +76,9 @@ def create_station() -> Station:
     return Station.objects.create(title='Station1')
 
 
-def create_listener(station: Station, user: User, is_admin=False,
+def create_listener(station: Station,
+                    user: User,
+                    is_admin=False,
                     is_dj=False) -> Listener:
     return Listener.objects.create(station=station,
                                    user=user,
