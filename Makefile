@@ -3,7 +3,7 @@ all: run
 .PHONY: build
 build:
 	docker-compose build
-	cd frontend && npm install
+	cd frontend && npm install --save-dev
 
 .PHONY: check
 check:
