@@ -19,7 +19,6 @@ import typing
 # (e.g. raven does this).
 import daphne.server  # pylint: disable=unused-import
 import dj_database_url
-import django_heroku
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = Path(os.path.abspath(__file__)).parent.parent.parent
@@ -98,7 +97,11 @@ if SECURE_SSL_REDIRECT:
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
 
-# database is configured by django_heroku.settings()
+DB_CONN_MAX_AGE = 600
+DATABASES = {}
+if 'DATABASE_URL' in os.environ:  # Test doesn't use DATABASE_URL
+    DATABASES['default'] = dj_database_url.config(
+        conn_max_age=DB_CONN_MAX_AGE, ssl_require=True)
 
 # Password validation
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators
@@ -234,11 +237,6 @@ REST_FRAMEWORK = {
 
 LOGIN_REDIRECT_URL = '/stations/'
 LOGOUT_REDIRECT_URL = '/'
-
-django_heroku.settings(locals(), logging=False)
-if 'DATABASE_URL' in os.environ:
-    locals()['DATABASES']['default'] = dj_database_url.config(
-        conn_max_age=django_heroku.MAX_CONN_AGE, ssl_require=False)
 
 SITE_URL = os.environ.get('DT_SITE_URL')
 SPOTIFY_CLIENT_ID = os.environ.get('DT_SPOTIFY_CLIENT_ID')

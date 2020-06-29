@@ -4,17 +4,17 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-Django = "*"
-requests = "*"
-channels_redis = "*"
 "django-bootstrap4" = "*"
-django-heroku = "*"
+"psycopg2-binary" = "*"
+Django = "*"
 channels = "*"
+channels_redis = "*"
+dj-database-url = "*"
 django-webpack-loader = "*"
 djangorestframework = "*"
 drf-nested-routers = "*"
 raven = "*"
-"psycopg2-binary" = "*"
+requests = "*"
 
 [requires]
 python_version = "3.7"

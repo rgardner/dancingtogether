@@ -109,7 +109,6 @@ builds.
 | Requests              | Service-to-service calls (e.g. Spotify API)           | <http://docs.python-requests.org/en/master/>                           |
 | channels_redis        | Admin notifications when a listener joins the station | <https://channels.readthedocs.io/en/latest/topics/channel_layers.html> |
 | django-bootstrap4     | Easy Bootstrap 4 template styling                     | <http://django-bootstrap4.readthedocs.io/en/latest/>                   |
-| django-heroku         | Heroku-specific logging/db configuration              | <https://github.com/heroku/django-heroku>                              |
 | channels              | Websockets for station change notifications           | <https://channels.readthedocs.io/en/latest/>                           |
 | django-webpack-loader | Loads the frontend webpack                            | <https://github.com/owais/django-webpack-loader>                       |
 | djangorestframework   | Provides serialization and REST routing               | <http://www.django-rest-framework.org/>                                |

@@ -4,6 +4,15 @@
 # by design.
 from .base import *  # pylint: disable=unused-wildcard-import,wildcard-import
 
+# Database
+# https://docs.djangoproject.com/en/2.0/ref/settings/#databases
+
+DATABASES['default'] = dj_database_url.config(conn_max_age=DB_CONN_MAX_AGE,
+                                              ssl_require=False)
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/2.0/howto/static-files/
+
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
