@@ -1,11 +1,12 @@
 from http import HTTPStatus
 
-from accounts.models import User
 from django.contrib import auth
 from django.test import TestCase
 import pytest
 
-from ..models import Listener, SpotifyCredentials, Station
+from accounts.models import User
+from ..models import Station
+from . import utils
 
 MOCK_USERNAME = 'MockUsername'
 MOCK_PASSWORD = 'MockPassword'
@@ -18,9 +19,9 @@ class RadioViewsTests(TestCase):
     def test_user_can_only_see_stations_they_are_members_of_index(self):
         user = create_user()
         self.client.force_login(user)
-        station1 = create_station()
-        create_listener(station1, user)
-        station2 = create_station()
+        station1 = utils.create_station()
+        utils.create_listener(station1, user)
+        station2 = utils.create_station()
 
         response = self.client.get('/stations/')
 
@@ -42,8 +43,8 @@ class RadioViewsTests(TestCase):
     def test_user_can_delete_station(self):
         user = create_user()
         self.client.force_login(user)
-        station = create_station()
-        create_listener(station, user, is_admin=True)
+        station = utils.create_station()
+        utils.create_listener(station, user, is_admin=True)
 
         response = self.client.post(f'/stations/{station.id}/delete/')
 
@@ -59,8 +60,8 @@ class RadioViewsTests(TestCase):
     def test_user_can_only_delete_stations_they_are_admins_of(self):
         user = create_user()
         self.client.force_login(user)
-        station = create_station()
-        create_listener(station, user)
+        station = utils.create_station()
+        utils.create_listener(station, user)
 
         response = self.client.post(f'/stations/{station.id}/delete/')
 
@@ -68,19 +69,5 @@ class RadioViewsTests(TestCase):
 
 
 def create_user(username=MOCK_USERNAME) -> User:
-    return auth.get_user_model().objects.create_user(username=MOCK_USERNAME,
+    return auth.get_user_model().objects.create_user(username=username,
                                                      password=MOCK_PASSWORD)
-
-
-def create_station() -> Station:
-    return Station.objects.create(title='Station1')
-
-
-def create_listener(station: Station,
-                    user: User,
-                    is_admin=False,
-                    is_dj=False) -> Listener:
-    return Listener.objects.create(station=station,
-                                   user=user,
-                                   is_admin=is_admin,
-                                   is_dj=is_dj)

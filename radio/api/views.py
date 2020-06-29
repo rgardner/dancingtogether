@@ -1,16 +1,14 @@
 import logging
 from typing import Optional
 
-from django.contrib import auth
 from django.shortcuts import get_object_or_404
-from rest_framework import permissions, status, viewsets
+from rest_framework import permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from .. import spotify
-from ..models import Listener, PlaybackState, SpotifyCredentials, Station
+from ..models import Listener, SpotifyCredentials, Station
 from ..spotify import AccessToken
 from .serializers import (AccessTokenSerializer, ListenerSerializer,
                           StationSerializer)
@@ -49,6 +47,7 @@ class ListenerViewSet(viewsets.ModelViewSet):
 
         return Listener.objects.filter(station=station_id)
 
+    # pylint: disable=arguments-differ
     def create(self, request: Request, station_pk=None):
         get_object_or_404(self.request.user.stations.all(), id=station_pk)
 
@@ -74,13 +73,16 @@ class RefreshAccessToken(APIView):
         self.check_object_permissions(self.request, obj)
         return AccessToken.from_db_model(obj)
 
+    # Overridden from APIView
+    # pylint: disable=no-self-use
     def get_queryset(self):
         return SpotifyCredentials.objects.all()
 
-    def post(self,
-             request: Request,
-             format=None,
-             user_pk: Optional[int] = None):
+    def post(
+        self,
+        request: Request,
+        format=None,  # pylint: disable=redefined-builtin,unused-argument
+        user_pk: Optional[int] = None):  # pylint: disable=unused-argument
         access_token = self.get_object()
         access_token.refresh()
         access_token.save()

@@ -1,34 +1,38 @@
-import ReconnectingWebSocket from 'reconnecting-websocket';
+import ReconnectingWebSocket from "reconnecting-websocket";
 
-import DTError from './DTError';
+import DTError from "./DTError";
 
 export type WebSocketListenCallback = (action: any) => void;
 
 export interface IWebSocketBridge {
-    connect(path: string): void;
-    listen(callback: WebSocketListenCallback): void;
-    send(data: any): void;
+  connect(path: string): void;
+  listen(callback: WebSocketListenCallback): void;
+  send(data: any): void;
 }
 
 export class ChannelWebSocketBridge implements IWebSocketBridge {
-    private impl?: ReconnectingWebSocket;
+  private impl?: ReconnectingWebSocket;
 
-    public connect(path: string) {
-        this.impl = new ReconnectingWebSocket(path);
-        this.impl.onclose = (event) => {
-            console.log(`Websocket closed: code=${event.code}, wasClean=${event.wasClean}`);
-        };
+  public connect(path: string): void {
+    this.impl = new ReconnectingWebSocket(path);
+    this.impl.onclose = (event) => {
+      console.log(
+        `Websocket closed: code=${event.code}, wasClean=${event.wasClean}`
+      );
+    };
+  }
+
+  public listen(callback: WebSocketListenCallback): void {
+    if (!this.impl) {
+      throw new DTError(
+        "invalid operation: ChannelWebSocketBridge.connect not called"
+      );
     }
 
-    public listen(callback: WebSocketListenCallback) {
-        if (!this.impl) {
-            throw new DTError('invalid operation: ChannelWebSocketBridge.connect not called');
-        }
+    this.impl.onmessage = (event) => callback(JSON.parse(event.data));
+  }
 
-        this.impl.onmessage = (event) => callback(JSON.parse(event.data));
-    }
-
-    public send(data: any) {
-        this.impl!.send(JSON.stringify(data));
-    }
+  public send(data: Record<string, unknown>): void {
+    this.impl!.send(JSON.stringify(data));
+  }
 }

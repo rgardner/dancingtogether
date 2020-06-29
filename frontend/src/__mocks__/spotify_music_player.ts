@@ -1,98 +1,111 @@
-import * as $ from 'jquery';
+import * as $ from "jquery";
 
-import { IMusicPlayer, IPlayerInit, PlaybackState } from '../music_player';
+import { IMusicPlayer, IPlayerInit, PlaybackState } from "../music_player";
 
 export default class MockMusicPlayer implements IMusicPlayer {
-    public playbackState = new PlaybackState('', '', true, 0, new Date());
-    private getOAuthToken: (cb: (accessToken: string) => void) => void;
-    private observers = new Map([
-        ['player_state_changed', $.Callbacks()],
-    ]);
+  public playbackState = new PlaybackState("", "", true, 0, new Date());
+  private getOAuthToken: (cb: (accessToken: string) => void) => void;
+  private observers = new Map([["player_state_changed", $.Callbacks()]]);
 
-    // IMusicPlayer
+  // IMusicPlayer
 
-    constructor(options: IPlayerInit) {
-        this.getOAuthToken = options.getOAuthToken;
+  constructor(options: IPlayerInit) {
+    this.getOAuthToken = options.getOAuthToken;
+  }
+
+  public getAccessToken(): string {
+    return "";
+  }
+
+  public setAccessToken(_value: string): void {
+    // do nothing
+  }
+
+  public connect(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+  public on(eventName: string, cb: any): void {
+    let callbacks = this.observers.get(eventName);
+    if (!callbacks) {
+      callbacks = $.Callbacks();
+      this.observers.set(eventName, callbacks);
     }
 
-    public getAccessToken() { return ''; }
+    callbacks.add(cb);
+  }
 
-    // tslint:disable-next-line:no-empty
-    public setAccessToken(_value: string) { }
+  public removeListener(eventName: string): void {
+    this.observers.get(eventName)!.empty();
+  }
 
-    public connect(): Promise<boolean> { return Promise.resolve(true); }
+  public getCurrentState(): Promise<PlaybackState> {
+    return Promise.resolve(this.playbackState);
+  }
 
-    public on(eventName: string, cb: any) {
-        let callbacks = this.observers.get(eventName);
-        if (!callbacks) {
-            callbacks = $.Callbacks();
-            this.observers.set(eventName, callbacks);
-        }
+  public getVolume(): Promise<number> {
+    return Promise.reject("not implemented");
+  }
 
-        callbacks.add(cb);
-    }
+  public setVolume(_value: number): Promise<void> {
+    return Promise.reject("not implemented");
+  }
 
-    public removeListener(eventName: string) {
-        this.observers.get(eventName)!.empty();
-    }
+  public play(_contextUri: string, _currentTrackUri: string): Promise<void> {
+    return Promise.reject("not implemented");
+  }
 
-    public getCurrentState(): Promise<PlaybackState> {
-        return Promise.resolve(this.playbackState);
-    }
+  public pause(): Promise<void> {
+    this.playbackState.paused = true;
+    this.firePlayerStateChange();
+    return Promise.resolve();
+  }
 
-    public getVolume(): Promise<number> { return Promise.reject('not implemented'); }
+  public resume(): Promise<void> {
+    this.playbackState.paused = false;
+    this.firePlayerStateChange();
+    return Promise.resolve();
+  }
 
-    public setVolume(_value: number): Promise<void> { return Promise.reject('not implemented'); }
+  public togglePlay(): Promise<void> {
+    this.playbackState.paused = !this.playbackState.paused;
+    this.firePlayerStateChange();
+    return Promise.resolve();
+  }
 
-    public play(_contextUri: string, _currentTrackUri: string): Promise<void> {
-        return Promise.reject('not implemented');
-    }
+  public seek(positionMS: number): Promise<void> {
+    this.playbackState.raw_position_ms = positionMS;
+    this.firePlayerStateChange();
+    return Promise.resolve();
+  }
 
-    public pause(): Promise<void> {
-        this.playbackState.paused = true;
-        this.firePlayerStateChange();
-        return Promise.resolve();
-    }
+  public previousTrack(): Promise<void> {
+    return Promise.reject("not implemented");
+  }
+  public nextTrack(): Promise<void> {
+    return Promise.reject("not implemented");
+  }
 
-    public resume(): Promise<void> {
-        this.playbackState.paused = false;
-        this.firePlayerStateChange();
-        return Promise.resolve();
-    }
+  // Mock functions
 
-    public togglePlay(): Promise<void> {
-        this.playbackState.paused = !this.playbackState.paused;
-        this.firePlayerStateChange();
-        return Promise.resolve();
-    }
+  public requestOAuthToken(): Promise<string> {
+    return new Promise((resolve) => {
+      this.getOAuthToken(resolve);
+    });
+  }
 
-    public seek(positionMS: number): Promise<void> {
-        this.playbackState.raw_position_ms = positionMS;
-        this.firePlayerStateChange();
-        return Promise.resolve();
-    }
+  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+  public fire(eventName: string, payload: any): void {
+    this.observers.get(eventName)!.fire(payload);
+  }
 
-    public previousTrack(): Promise<void> { return Promise.reject("not implemented"); }
-    public nextTrack(): Promise<void> { return Promise.reject("not implemented"); }
-
-    // Mock functions
-
-    public requestOAuthToken(): Promise<string> {
-        return new Promise(resolve => {
-            this.getOAuthToken(resolve);
-        });
-    }
-
-    public fire(eventName: string, payload: any) {
-        this.observers.get(eventName)!.fire(payload);
-    }
-
-    public firePlayerStateChange() {
-        this.getCurrentState().then(playbackState => {
-            const newPlaybackState = Object.assign({}, playbackState, {
-                sample_time: new Date(),
-            });
-            this.observers.get('player_state_changed')!.fire(newPlaybackState)
-        });
-    }
+  public firePlayerStateChange(): void {
+    this.getCurrentState().then((playbackState) => {
+      const newPlaybackState = Object.assign({}, playbackState, {
+        sample_time: new Date(),
+      });
+      this.observers.get("player_state_changed")!.fire(newPlaybackState);
+    });
+  }
 }

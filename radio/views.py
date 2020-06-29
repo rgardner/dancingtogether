@@ -15,6 +15,7 @@ from .models import Listener, Station
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable=too-few-public-methods
 class ListenerRequiredMixin:
     user_check_failure_path = ''
 
@@ -120,7 +121,7 @@ def oauth_callback(request: HttpRequest):
 
     if 'error' in result:
         error = result['error']
-        logger.warning(f'User rejected the oauth permissions: {error}')
+        logger.warning('User rejected the oauth permissions: %s', error)
         return redirect('/')
     else:
         code = result['code']

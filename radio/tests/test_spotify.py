@@ -1,10 +1,13 @@
-from accounts.models import User
+# Disable redefinition of outer name for pytest which uses this feature for
+# fixtures.
+# pylint: disable=redefined-outer-name
+
 from django.contrib import auth
 from django.test import override_settings
 from django.utils import timezone
 import pytest
 
-from .. import spotify
+from accounts.models import User
 from ..spotify import AccessToken
 from ..models import SpotifyCredentials
 from . import mocks

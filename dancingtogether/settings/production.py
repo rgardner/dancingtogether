@@ -1,4 +1,10 @@
-from .base import *
+"""Production settings suitable for running Dancing Together in production."""
+
+# pylint: disable=wrong-import-order
+
+# Production settings load and override base settings, so unused imports are
+# by design.
+from .base import *  # pylint: disable=unused-wildcard-import,wildcard-import
 
 import os
 

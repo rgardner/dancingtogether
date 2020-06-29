@@ -1,0 +1,14 @@
+[tool.pylint.MASTER]
+ignore = "migrations"
+load-plugins = ["pylint_django"]
+
+[tool.pylint."messages control"]
+disable = [
+  "bad-continuation",
+  "fixme",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "missing-module-docstring",
+  "no-else-return",
+  "too-many-ancestors"
+]

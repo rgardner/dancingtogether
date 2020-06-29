@@ -1,11 +1,15 @@
+"""Django views for sign up, sign in, sign out, delete account, etc."""
+
 from django.contrib import auth
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.mixins import LoginRequiredMixin
+# pylint: disable=unused-import
 from django.contrib.auth.views import LoginView as DefaultLoginView, LogoutView, PasswordChangeView
 from django.shortcuts import redirect
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import DetailView
+# pylint: disable=unused-import
 from django.views.generic.edit import CreateView, DeleteView, UpdateView
 
 from .forms import CustomUserCreationForm
@@ -13,6 +17,7 @@ from .models import User
 
 
 class JoinView(CreateView):
+    """Sign up view."""
     model = User
     form_class = CustomUserCreationForm
     template_name = 'registration/join.html'

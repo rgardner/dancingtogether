@@ -3,7 +3,7 @@ import logging
 from django.contrib import auth
 from rest_framework import serializers
 
-from ..models import Listener, PlaybackState, SpotifyCredentials, Station
+from ..models import Listener, PlaybackState, Station
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ class ListenerSerializer(serializers.ModelSerializer):
         fields = ('id', 'user', 'station', 'is_admin', 'is_dj')
 
 
+# Not needed to implement create and update abstract methods.
+# pylint: disable=abstract-method
 class AccessTokenSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=256)
     token_expiration_time = serializers.DateTimeField()

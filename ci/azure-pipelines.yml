@@ -41,3 +41,4 @@ steps:
   condition: succeededOrFailed()
   inputs:
     testResultsFiles: "**/test-*.xml"
+    failTaskOnFailedTests: true

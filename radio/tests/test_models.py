@@ -1,8 +1,12 @@
-from accounts.models import User
+# Disable redefinition of outer name for pytest which uses this feature for
+# fixtures.
+# pylint: disable=redefined-outer-name
+
 from django.contrib import auth
 from django.db.utils import IntegrityError
 import pytest
 
+from accounts.models import User
 from ..models import Listener, Station
 
 

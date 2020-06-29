@@ -6,11 +6,17 @@ build:
 	cd frontend && npm install --save-dev
 
 .PHONY: check
-check:
-	cd frontend && npx tslint --project .
+check: check-eslint check-pylint
 	pipenv run yapf --recursive . --exclude '*/migrations/*' --in-place --parallel
 	bash -c "pipenv run mypy --ignore-missing-imports \$$(find . -name \*.py ! -path '*/migrations/*')"
-	find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pipenv run pylint --load-plugins pylint_django
+
+.PHONY: check-eslint
+check-eslint:
+	cd frontend && npm run lint
+
+.PHONY: check-pylint
+check-pylint:
+	pipenv run pylint --rcfile pyproject.toml accounts dancingtogether main radio
 
 .PHONY: db-makemigrations
 db-makemigrations:

@@ -1,16 +1,14 @@
 from http import HTTPStatus
-import json
 
-from accounts.models import User
 from django.contrib import auth
-from django.test import TestCase, override_settings
+from django.test import override_settings
 from django.utils import timezone
-import pytest
 from rest_framework.test import APITestCase
 
-from ..api.serializers import PlaybackStateSerializer, StationSerializer
-from ..models import Listener, PlaybackState, SpotifyCredentials, Station
-from . import mocks
+from accounts.models import User
+from ..api.serializers import StationSerializer
+from ..models import PlaybackState, SpotifyCredentials, Station
+from . import mocks, utils
 
 MOCK_USERNAME1 = 'MockUsername1'
 MOCK_USERNAME2 = 'MockUsername2'
@@ -32,8 +30,8 @@ class StationTests(APITestCase):
         assert response.status_code == HTTPStatus.OK
         assert not response.data
 
-        station = create_station()
-        create_listener(station, self.user1)
+        station = utils.create_station()
+        utils.create_listener(station, self.user1)
         response = self.client.get('/api/v1/stations/')
         assert response.status_code == HTTPStatus.OK
         assert len(response.data) == 1
@@ -41,16 +39,16 @@ class StationTests(APITestCase):
 
     def test_can_only_list_authorized_stations(self):
         # Create a station that user1 is not a listener of
-        create_station()
+        utils.create_station()
 
         response = self.client.get('/api/v1/stations/')
         assert response.status_code == HTTPStatus.OK
         assert not response.data
 
     def test_can_update_stations(self):
-        station = create_station()
-        create_listener(station, self.user1)
-        playback_state = create_playback_state(station)
+        station = utils.create_station()
+        utils.create_listener(station, self.user1)
+        create_playback_state(station)
 
         response = self.client.patch(f'/api/v1/stations/{station.id}/',
                                      data={
@@ -64,7 +62,7 @@ class StationTests(APITestCase):
             station_id=station.id).raw_position_ms == 1
 
     def test_user_can_only_update_authorized_stations(self):
-        station = create_station()
+        station = utils.create_station()
         playback_state = create_playback_state(station)
         playback_state.raw_position_ms = 1
 
@@ -84,10 +82,10 @@ class ListenerTests(APITestCase):
                                  password=password)
         create_spotify_credentials(self.user1)
 
-        self.station = create_station()
-        self.listener = create_listener(self.station,
-                                        self.user1,
-                                        is_admin=True)
+        self.station = utils.create_station()
+        self.listener = utils.create_listener(self.station,
+                                              self.user1,
+                                              is_admin=True)
 
     def tearDown(self):
         self.client.logout()
@@ -107,7 +105,7 @@ class ListenerTests(APITestCase):
         assert response.status_code == HTTPStatus.CREATED.value
 
     def test_can_only_create_listener_if_authorized(self):
-        station2 = create_station()
+        station2 = utils.create_station()
         username2 = create_user2().username
 
         # user1 is not a listener of station2
@@ -122,7 +120,7 @@ class ListenerTests(APITestCase):
         assert response.status_code == HTTPStatus.NOT_FOUND.value
 
         # user1 is not an admin of station2
-        create_listener(station2, self.user1, is_admin=False)
+        utils.create_listener(station2, self.user1, is_admin=False)
         data = {
             'user': username2,
             'station': self.station.id,
@@ -146,10 +144,10 @@ class ListenerTests(APITestCase):
 
     def test_can_get_listeners(self):
         user2 = create_user2()
-        listener2 = create_listener(self.station,
-                                    user2,
-                                    is_admin=False,
-                                    is_dj=True)
+        listener2 = utils.create_listener(self.station,
+                                          user2,
+                                          is_admin=False,
+                                          is_dj=True)
 
         response = self.client.get(
             f'/api/v1/stations/{self.station.id}/listeners/')
@@ -177,7 +175,7 @@ class ListenerTests(APITestCase):
         assert actual_data == data
 
     def test_can_only_get_listeners_if_authorized(self):
-        station2 = create_station()
+        station2 = utils.create_station()
 
         # user1 is not a listener of station2
         response = self.client.get(
@@ -185,23 +183,23 @@ class ListenerTests(APITestCase):
         assert response.status_code == HTTPStatus.NOT_FOUND.value
 
         # user1 is not an admin of station2
-        create_listener(station2, self.user1, is_admin=False)
+        utils.create_listener(station2, self.user1, is_admin=False)
         response = self.client.get(
             f'/api/v1/stations/{station2.id}/listeners/')
         assert response.status_code == HTTPStatus.FORBIDDEN.value
 
     def test_can_delete_listener(self):
         user = create_user2()
-        listener_id = create_listener(self.station, user).id
+        listener_id = utils.create_listener(self.station, user).id
 
         response = self.client.delete(
             f'/api/v1/stations/{self.station.id}/listeners/{listener_id}/')
         assert response.status_code == HTTPStatus.NO_CONTENT.value
 
     def test_can_only_delete_listener_if_authorized(self):
-        station2 = create_station()
+        station2 = utils.create_station()
         user2 = create_user2()
-        listener_id = create_listener(station2, user2).id
+        listener_id = utils.create_listener(station2, user2).id
 
         # user1 is not a listener of station2
         response = self.client.delete(
@@ -209,7 +207,7 @@ class ListenerTests(APITestCase):
         assert response.status_code == HTTPStatus.NOT_FOUND.value
 
         # user1 is not an admin of station2
-        create_listener(station2, self.user1, is_admin=False)
+        utils.create_listener(station2, self.user1, is_admin=False)
         response = self.client.delete(
             f'/api/v1/stations/{station2.id}/listeners/{listener_id}/')
         assert response.status_code == HTTPStatus.FORBIDDEN.value
@@ -259,20 +257,6 @@ def create_user2() -> User:
         username=MOCK_USERNAME2, email='testuser2@example.com')
 
 
-def create_station() -> Station:
-    return Station.objects.create(title='Station1')
-
-
-def create_listener(station: Station,
-                    user: User,
-                    is_admin=False,
-                    is_dj=True) -> Listener:
-    return Listener.objects.create(station=station,
-                                   user=user,
-                                   is_admin=is_admin,
-                                   is_dj=is_dj)
-
-
 def create_spotify_credentials(user: User) -> SpotifyCredentials:
     return SpotifyCredentials.objects.create(
         user=user, access_token_expiration_time=timezone.now())
@@ -281,6 +265,7 @@ def create_spotify_credentials(user: User) -> SpotifyCredentials:
 def create_playback_state(station: Station,
                           paused=True,
                           raw_position_ms=0) -> PlaybackState:
+    """Creates and saves new playback state."""
     station_state = PlaybackState(station=station)
     station_state.paused = paused
     station_state.raw_position_ms = raw_position_ms

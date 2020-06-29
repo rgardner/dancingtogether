@@ -1,3 +1,4 @@
+# pylint: disable=too-few-public-methods
 class XContentTypeOptionsMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -8,6 +9,7 @@ class XContentTypeOptionsMiddleware:
         return response
 
 
+# pylint: disable=too-few-public-methods
 class XXssProtectionMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

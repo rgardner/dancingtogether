@@ -29,8 +29,7 @@ def station_join_required(func):
         if self.state != StationState.Connected:
             raise ClientError('bad_request',
                               'user has not connected to station')
-        else:
-            return func(self, *args, **kwargs)
+        return func(self, *args, **kwargs)
 
     return wrap
 
@@ -41,13 +40,14 @@ def station_admin_required(func):
             raise ClientError(
                 'forbidden',
                 'user does not have permission to request listeners')
-        else:
-            return func(self, *args, **kwargs)
+        return func(self, *args, **kwargs)
 
     return wrap
 
 
 class StationConsumer(AsyncJsonWebsocketConsumer):
+    # pylint: disable=attribute-defined-outside-init
+
     # WebSocket event handlers
 
     @property
@@ -58,7 +58,8 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
         """Called during initial websocket handshaking."""
         try:
             self.user = await channels.auth.get_user(self.scope)
-        except:
+        except:  # pylint: disable=bare-except
+            # TODO: Replace bare except with specific exception
             self.user = self.scope['user']
 
         if self.user.is_anonymous:
@@ -72,23 +73,23 @@ class StationConsumer(AsyncJsonWebsocketConsumer):
 
         await self.join_station()
 
-    async def receive_json(self, content):
+    async def receive_json(self, content, **kwargs):
         """Called when we get a text frame."""
         command = content.get('command', None)
         try:
             if command == 'ping':
                 await self.send_pong(content['start_time'])
 
-        except ClientError as e:
-            await self.send_json({'error': e.code, 'message': e.message})
+        except ClientError as exc:
+            await self.send_json({'error': exc.code, 'message': exc.message})
 
     async def disconnect(self, code):
         """Called when the WebSocket closes for any reason."""
         try:
             if self.state != StationState.NotConnected:
                 await self.leave_station()
-        except ClientError as e:
-            logger.error(f'Station client error: {e.code}: {e.message}')
+        except ClientError as exc:
+            logger.error('Station client error: %d: %s', exc.code, exc.message)
 
     # Command helper methods called by receive_json
 

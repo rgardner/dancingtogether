@@ -14,6 +14,8 @@ import { ListenerRole } from "../util";
 import { IWebSocketBridge, WebSocketListenCallback } from "../websocket_bridge";
 jest.mock("../spotify_music_player");
 
+// TODO: fix this properly
+// eslint-disable-next-line jest/no-mocks-import
 import MockMusicPlayer from "../__mocks__/spotify_music_player";
 
 const MOCK_USER_ID = 1;
@@ -56,20 +58,22 @@ class MockWebSocketBridge implements IWebSocketBridge {
   // IWebSocketBridge
 
   // tslint:disable-next-line:no-empty
-  public connect(_path: string) {}
+  public connect(_path: string) {
+    // do nothing
+  }
 
-  public listen(callback: WebSocketListenCallback) {
+  public listen(callback: WebSocketListenCallback): void {
     this.callback = callback;
   }
 
-  public send(data: any) {
+  public send(data: any): void {
     this.receiveDataCallback!(data);
     this.receiveDataCallback = undefined;
   }
 
   // Mock functions
 
-  public fire(data: any) {
+  public fire(data: any): void {
     this.callback!(data);
   }
 
@@ -80,7 +84,9 @@ class MockWebSocketBridge implements IWebSocketBridge {
   }
 }
 
-function createStationServer(mockWebSocketBridge: MockWebSocketBridge) {
+function createStationServer(
+  mockWebSocketBridge: MockWebSocketBridge
+): StationServer {
   return new StationServer(
     MOCK_STATION_ID,
     MOCK_CROSS_SITE_REQUEST_FORGERY_TOKEN,
@@ -94,6 +100,7 @@ describe("station server", () => {
     const mockWebSocketBridge = new MockWebSocketBridge();
     const stationServer = createStationServer(mockWebSocketBridge);
 
+    // eslint-disable-next-line jest/valid-expect-in-promise
     mockWebSocketBridge.receiveData().then((data) => {
       expect(data).toEqual(
         expect.objectContaining({

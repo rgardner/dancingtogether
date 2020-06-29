@@ -6,10 +6,10 @@ mkdir -p junit
 
 # run frontend lint tests
 
-(cd "$REPO_ROOT/frontend" && npx tslint --project tsconfig.prod.json --format junit --out ../junit/test-frontend-lint.xml)
+(cd "$REPO_ROOT/frontend" && npm run --silent lint -- --format junit >../junit/test-frontend-lint.xml)
 
 # run backend lint tests
 
 yapf --recursive . --exclude '*/migrations/*' --parallel --diff
-mypy --ignore-missing-imports --junit-xml junit/test-backend-lint.xml $(find . -name \*.py ! -path '*/migrations/*')
-find . -name '*.py' ! -path '*/migrations/*' -print0 | xargs pylint --load-plugins pylint_django
+mypy --ignore-missing-imports --junit-xml junit/test-backend-mypy.xml $(find . -name \*.py ! -path '*/migrations/*')
+pylint --rcfile pyproject.toml --output-format=pylint_junit.JUnitReporter accounts dancingtogether main radio >junit/test-backend-pylint.xml

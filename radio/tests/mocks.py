@@ -15,6 +15,7 @@ class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
 
     # BaseHTTPRequestHandler
 
+    # pylint: disable=invalid-name
     def do_POST(self):
         if re.search(self.TOKEN_PATTERN, self.path):
             self.send_response(HTTPStatus.OK.value)
@@ -31,9 +32,10 @@ class MockSpotifyRequestHandler(BaseHTTPRequestHandler):
 
 
 def get_free_port():
-    with closing(socket.socket(socket.AF_INET, type=socket.SOCK_STREAM)) as s:
-        s.bind(('localhost', 0))
-        _, port = s.getsockname()
+    with closing(socket.socket(socket.AF_INET,
+                               type=socket.SOCK_STREAM)) as sock:
+        sock.bind(('localhost', 0))
+        _, port = sock.getsockname()
         return port
 
 

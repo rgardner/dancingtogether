@@ -1,3 +1,5 @@
+"""Accounts app url routing."""
+
 from django.urls import include, path
 
 from . import views

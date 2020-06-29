@@ -1,18 +1,12 @@
 from django.test.runner import DiscoverRunner
+import pytest
 
 
 class PytestTestRunner(DiscoverRunner):
     """Runs pytest to discover and run tests."""
-    def __init__(self,
-                 verbosity=1,
-                 failfast=False,
-                 keepdb=False,
-                 junit_xml=None,
-                 **kwargs):
-        self.verbosity = verbosity
-        self.failfast = failfast
-        self.keepdb = keepdb
+    def __init__(self, *args, junit_xml=None, **kwargs):
         self.junit_xml = junit_xml
+        super().__init__(*args, **kwargs)
 
     @classmethod
     def add_arguments(cls, parser):
@@ -20,13 +14,11 @@ class PytestTestRunner(DiscoverRunner):
             '--junit-xml',
             help='Create junit-xml style report file at given path')
 
-    def run_tests(self, test_labels):
+    def run_tests(self, test_labels, extra_tests=None, **kwargs):
         """Run pytest and return the exitcode.
 
         It translates some of Django's test command option to pytest's.
         """
-        import pytest
-
         argv = []
         if self.verbosity == 0:
             argv.append('--quiet')

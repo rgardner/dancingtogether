@@ -17,7 +17,7 @@ import typing
 # We import daphne.server here to ensure the reactor is installed very early on
 # in case other packages accidentally import twisted.internet.reactor
 # (e.g. raven does this).
-import daphne.server  # noqa
+import daphne.server  # pylint: disable=unused-import
 import dj_database_url
 import django_heroku
 

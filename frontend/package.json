@@ -12,10 +12,8 @@
     "babel-preset-react-app": "^9.1.2",
     "case-sensitive-paths-webpack-plugin": "2.3.0",
     "chalk": "4.1.0",
-    "css-loader": "^3.6.0",
     "dotenv": "8.2.0",
     "dotenv-expand": "5.1.0",
-    "extract-text-webpack-plugin": "3.0.2",
     "file-loader": "6.0.0",
     "fork-ts-checker-webpack-plugin": "^5.0.5",
     "fs-extra": "9.0.1",
@@ -37,7 +35,6 @@
     "sw-precache-webpack-plugin": "1.0.0",
     "ts-loader": "^7.0.5",
     "tsconfig-paths-webpack-plugin": "^3.2.0",
-    "uglifyjs-webpack-plugin": "^2.2.0",
     "url-loader": "4.1.0",
     "webpack": "4.43.0",
     "webpack-dev-server": "^3.11.0",
@@ -47,6 +44,7 @@
   "scripts": {
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "test": "node scripts/test.js --env=jsdom",
     "test-nowatch": "CI=1 node scripts/test.js --env=jsdom"
   },
@@ -60,14 +58,20 @@
     "@types/react-test-renderer": "^16.9.2",
     "@types/spotify-web-playback-sdk": "^0.1.7",
     "@types/webpack": "^4.41.18",
+    "@typescript-eslint/eslint-plugin": "^3.4.0",
+    "@typescript-eslint/parser": "^3.4.0",
     "babel-jest": "^26.1.0",
+    "css-loader": "^3.6.0",
+    "eslint": "^7.3.1",
+    "eslint-config-prettier": "^6.11.0",
+    "eslint-plugin-jest": "^23.17.1",
+    "eslint-plugin-react": "^7.20.1",
     "jest-fetch-mock": "^3.0.3",
     "jest-junit": "^11.0.1",
+    "mini-css-extract-plugin": "^0.9.0",
     "react-test-renderer": "^16.13.1",
+    "terser-webpack-plugin": "^3.0.6",
     "ts-jest": "^26.1.1",
-    "tslint": "^6.1.2",
-    "tslint-config-prettier": "^1.18.0",
-    "tslint-react": "^5.0.0",
     "typescript": "^3.9.5",
     "webpack-bundle-tracker": "^0.4.3",
     "webpack-cli": "^3.3.12"
@@ -125,6 +129,41 @@
     ]
   },
   "eslintConfig": {
-    "extends": "react-app"
+    "root": true,
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint",
+      "jest"
+    ],
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended",
+      "prettier/@typescript-eslint",
+      "plugin:react/recommended",
+      "plugin:jest/recommended"
+    ],
+    "ignorePatterns": [
+      "node_modules",
+      "config",
+      "build",
+      "scripts"
+    ],
+    "rules": {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          "argsIgnorePattern": "^_"
+        }
+      ],
+      "@typescript-eslint/ban-ts-comment": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-non-null-assertion": "off",
+      "jest/no-disabled-tests": "off"
+    },
+    "settings": {
+      "react": {
+        "version": "detect"
+      }
+    }
   }
 }

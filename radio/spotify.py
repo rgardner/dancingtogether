@@ -1,11 +1,7 @@
-import asyncio
-from datetime import datetime, timedelta
-from functools import wraps
+from datetime import timedelta
 import hashlib
 from http import HTTPStatus
 import logging
-import time
-from typing import Tuple
 import urllib.parse
 
 from django.conf import settings
@@ -20,6 +16,7 @@ logger = logging.getLogger(__name__)
 # View decorators
 
 
+# pylint: disable=too-few-public-methods
 class AuthorizationRequiredMixin:
     """
     Verify that the current user has authorized the application to use Spotify.
@@ -54,9 +51,9 @@ def get_oauth_redirect_uri():
 
 def get_url_safe_oauth_request_state(request):
     session_id = request.COOKIES['sessionid']
-    m = hashlib.sha256()
-    m.update(session_id.encode())
-    return m.hexdigest()
+    unique_id = hashlib.sha256()
+    unique_id.update(session_id.encode())
+    return unique_id.hexdigest()
 
 
 # Spotify OAuth Step 1: Request Spotify authorization
@@ -69,7 +66,10 @@ def request_spotify_authorization(request):
 
 def build_request_authorization_url(request):
     url = 'https://accounts.spotify.com/authorize'
-    scope = 'streaming user-modify-playback-state user-read-birthdate user-read-email user-read-private'
+    scope = ' '.join([
+        'streaming', 'user-modify-playback-state', 'user-read-birthdate',
+        'user-read-email', 'user-read-private'
+    ])
     query_params = {
         'client_id': settings.SPOTIFY_CLIENT_ID,
         'response_type': 'code',
@@ -154,9 +154,9 @@ class AccessToken:
             'client_secret': settings.SPOTIFY_CLIENT_SECRET,
         }
 
-        r = requests.post(settings.SPOTIFY_TOKEN_API_URL, data)
+        req = requests.post(settings.SPOTIFY_TOKEN_API_URL, data)
 
-        response_data = r.json()
+        response_data = req.json()
         expires_in = int(response_data['expires_in'])
         expires_in = timedelta(seconds=expires_in)
         expiration_time = timezone.now() + expires_in
