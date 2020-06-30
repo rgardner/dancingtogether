@@ -15,6 +15,7 @@ djangorestframework = "*"
 drf-nested-routers = "*"
 raven = "*"
 requests = "*"
+whitenoise = "*"
 
 [requires]
 python_version = "3.7"

@@ -65,6 +65,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'dancingtogether.middleware.XContentTypeOptionsMiddleware',
     'dancingtogether.middleware.XXssProtectionMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
 ROOT_URLCONF = 'dancingtogether.urls'
@@ -100,8 +101,8 @@ if SECURE_SSL_REDIRECT:
 DB_CONN_MAX_AGE = 600
 DATABASES = {}
 if 'DATABASE_URL' in os.environ:  # Test doesn't use DATABASE_URL
-    DATABASES['default'] = dj_database_url.config(
-        conn_max_age=DB_CONN_MAX_AGE, ssl_require=True)
+    DATABASES['default'] = dj_database_url.config(conn_max_age=DB_CONN_MAX_AGE,
+                                                  ssl_require=True)
 
 # Password validation
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators

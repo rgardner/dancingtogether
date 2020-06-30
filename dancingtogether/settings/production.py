@@ -13,6 +13,12 @@ import os
 SECURE_HSTS_SECONDS = os.environ['DT_SECURE_HSTS_SECONDS']
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/2.0/howto/static-files/
+
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
 # Sentry Error Reporting
 
 RAVEN_CONFIG = {
