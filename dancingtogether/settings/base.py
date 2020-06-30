@@ -100,9 +100,11 @@ if SECURE_SSL_REDIRECT:
 
 DB_CONN_MAX_AGE = 600
 DATABASES = {}
-if 'DATABASE_URL' in os.environ:  # Test doesn't use DATABASE_URL
-    DATABASES['default'] = dj_database_url.config(conn_max_age=DB_CONN_MAX_AGE,
-                                                  ssl_require=True)
+if 'DATABASE_URL' in os.environ:  # Test env doesn't need DATABASE_URL
+    # Heroku encrypts DB connection already, so don't require SSL
+    # "django.db.utils.OperationalError: server does not support SSL, but SSL
+    # was required"
+    DATABASES['default'] = dj_database_url.config(conn_max_age=DB_CONN_MAX_AGE)
 
 # Password validation
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators
