@@ -8,6 +8,8 @@ from .base import *  # pylint: disable=unused-wildcard-import,wildcard-import
 
 import os
 
+ALLOWED_HOSTS = ["www.dancingtogether.live"]
+
 # https://docs.djangoproject.com/en/2.1/ref/middleware/#http-strict-transport-security
 
 SECURE_HSTS_SECONDS = os.environ['DT_SECURE_HSTS_SECONDS']
